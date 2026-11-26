@@ -121,6 +121,12 @@ export function stripAnsi(text: string): string {
 
 const SELECTOR_FN_RE =
   /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
+/** The link from a `frameLocator(…)` call into the locator call inside its frame, read at `lastIndex`. */
+const FRAME_LOCATOR_LINK_RE =
+  /\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
+/** The link through `.contentFrame()` into the locator call inside that frame, read at `lastIndex`. */
+const CONTENT_FRAME_LINK_RE =
+  /\.contentFrame\(\)\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
 
 /**
  * Cut the error down to its message head: everything before the Playwright
@@ -158,28 +164,48 @@ function stackStart(text: string): number {
 }
 
 /**
- * Extract the first Playwright locator expression, scanning forward with a
- * paren-depth counter so nested forms like getByRole('row', { name: '…' })
- * are captured whole.
+ * The index just past the closing parenthesis of the call whose name starts at
+ * `from`, counting parentheses within 200 characters of one line; -1 when the
+ * call does not close there.
  */
-export function extractSelector(text: string): string | null {
-  const match = SELECTOR_FN_RE.exec(text);
-  if (!match) return null;
-  const start = match.index;
+export function locatorCallEnd(text: string, from: number): number {
   let depth = 0;
-  for (let i = start; i < Math.min(text.length, start + 200); i++) {
+  for (let i = from; i < Math.min(text.length, from + 200); i++) {
     const ch = text[i];
     if (ch === '(') {
       depth++;
     } else if (ch === ')') {
       depth--;
-      if (depth === 0) return text.slice(start, i + 1);
+      if (depth === 0) return i + 1;
     } else if (ch === '\n') {
       break;
     }
   }
-  // Unbalanced within the window — keep a stable prefix
-  return text.slice(start, start + 80);
+  return -1;
+}
+
+/**
+ * Extract the first Playwright locator expression, scanning forward with a
+ * paren-depth counter so nested forms like getByRole('row', { name: '…' })
+ * are captured whole. A call that names a frame is read with the locator call
+ * inside it, frame after frame: a `frameLocator(…)` call, named or empty (any
+ * frame), and a call followed by `.contentFrame()`, so
+ * `locator('#pay').contentFrame().getByLabel('Card number')` is kept whole.
+ */
+export function extractSelector(text: string): string | null {
+  const match = SELECTOR_FN_RE.exec(text);
+  if (!match) return null;
+  const start = match.index;
+  let callStart = start;
+  for (;;) {
+    const end = locatorCallEnd(text, callStart);
+    // Unbalanced within the window — keep a stable prefix
+    if (end === -1) return text.slice(start, callStart + 80);
+    const link = text.startsWith('frameLocator(', callStart) ? FRAME_LOCATOR_LINK_RE : CONTENT_FRAME_LINK_RE;
+    link.lastIndex = end;
+    if (!link.test(text)) return text.slice(start, end);
+    callStart = link.lastIndex;
+  }
 }
 
 /**
@@ -283,7 +309,8 @@ function lenientLeaf(region: string): string | null {
  * The whole locator chain starting at the first locator call on its line —
  * every top-level `.method(...)` link included, so
  * `getByRole('row', { name: 'Acme' }).getByRole('button').first()` is kept
- * whole where `extractSelector` stops after the first balanced call.
+ * whole where `extractSelector` stops after the first balanced call, or after
+ * the first one inside the frame it names.
  */
 export function extractLocatorChain(text: string): string | null {
   const first = SELECTOR_FN_RE.exec(text);

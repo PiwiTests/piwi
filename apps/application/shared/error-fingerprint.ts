@@ -48,7 +48,7 @@ export type { ErrorSignature };
  * shared/handlers/failure-cluster-recluster.ts), so triage status, notes,
  * diagnoses and merges survive an algorithm change.
  */
-export const FINGERPRINT_VERSION = 5;
+export const FINGERPRINT_VERSION = 6;
 
 export interface ErrorFingerprint extends ErrorSignature {
   /**

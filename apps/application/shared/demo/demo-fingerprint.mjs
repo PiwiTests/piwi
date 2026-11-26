@@ -13,7 +13,7 @@
  * `shared/error-fingerprint.ts`; mirror its value.
  */
 
-const FINGERPRINT_VERSION = 5;
+const FINGERPRINT_VERSION = 6;
 
 // eslint-disable-next-line no-control-regex -- intentionally matches the ESC byte to strip ANSI color codes
 const ANSI_RE = new RegExp('\\u001B\\[[0-9;]*m', 'g');
@@ -37,6 +37,11 @@ const SELECTOR_OPTION_RE =
   /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])(?:\\.|(?!\2)[\s\S])*?\2/gi;
 const SELECTOR_FN_RE =
   /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
+const FRAME_LOCATOR_LINK_RE =
+  /\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
+const CONTENT_FRAME_LINK_RE =
+  /\.contentFrame\(\)\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
+const NAMED_FRAME_LOCATOR_RE = /\bframeLocator\(((['"`])(?:\\.|(?!\2)[^\\])*\2)\)/g;
 
 /** @param {string} text */
 export function stripAnsi(text) {
@@ -104,7 +109,25 @@ function maskSelectorOptions(text) {
 
 /** @param {string} selector */
 export function maskSelector(selector) {
-  return maskVolatile(maskSelectorOptions(selector));
+  const framed = selector.replace(NAMED_FRAME_LOCATOR_RE, 'locator($1).contentFrame()');
+  return maskVolatile(maskSelectorOptions(framed));
+}
+
+/** @param {string} text @param {number} from */
+function locatorCallEnd(text, from) {
+  let depth = 0;
+  for (let i = from; i < Math.min(text.length, from + 200); i++) {
+    const ch = text[i];
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth === 0) return i + 1;
+    } else if (ch === '\n') {
+      break;
+    }
+  }
+  return -1;
 }
 
 /** @param {string} text @returns {string | null} */
@@ -112,19 +135,15 @@ export function extractSelector(text) {
   const match = SELECTOR_FN_RE.exec(text);
   if (!match) return null;
   const start = match.index;
-  let depth = 0;
-  for (let i = start; i < Math.min(text.length, start + 200); i++) {
-    const ch = text[i];
-    if (ch === '(') {
-      depth++;
-    } else if (ch === ')') {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    } else if (ch === '\n') {
-      break;
-    }
+  let callStart = start;
+  for (;;) {
+    const end = locatorCallEnd(text, callStart);
+    if (end === -1) return text.slice(start, callStart + 80);
+    const link = text.startsWith('frameLocator(', callStart) ? FRAME_LOCATOR_LINK_RE : CONTENT_FRAME_LINK_RE;
+    link.lastIndex = end;
+    if (!link.test(text)) return text.slice(start, end);
+    callStart = link.lastIndex;
   }
-  return text.slice(start, start + 80);
 }
 
 /** @param {string} text @returns {string | null} */

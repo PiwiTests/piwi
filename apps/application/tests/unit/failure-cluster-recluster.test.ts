@@ -427,6 +427,66 @@ describe('a fingerprint version bump', () => {
     expect(row!.updatedAt).toEqual(resolvedAt);
   });
 
+  test("keys each cluster of failures in a frame by its sample's frame and locator, its triage kept", async () => {
+    const timeoutOn = (locator: string) =>
+      `TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${locator}\n    at tests/checkout.spec.ts:31:7`;
+    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+    // Under an earlier version, which hashed the frame alone, every failure in any frame joined one cluster and every
+    // failure in #pay another.
+    const anyCard = timeoutOn("frameLocator().getByLabel('Card number')");
+    const payCard = timeoutOn("locator('#pay').contentFrame().getByLabel('Card number')");
+    const anyFrame = await seedCluster({
+      fingerprint: STALE_A,
+      sampleError: anyCard,
+      fingerprintSample: anyCard,
+      errorType: 'timeout',
+      selector: 'frameLocator()',
+      triageNote: 'The payment frame loads late.',
+    });
+    const pay = await seedCluster({
+      fingerprint: STALE_B,
+      sampleError: payCard,
+      fingerprintSample: payCard,
+      errorType: 'timeout',
+      selector: "locator('#pay')",
+      triageNote: 'The card field is renamed.',
+    });
+
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 0 });
+
+    const rows = await db
+      .select({
+        id: schema.failureClusters.id,
+        fingerprint: schema.failureClusters.fingerprint,
+        selector: schema.failureClusters.selector,
+        triageNote: schema.failureClusters.triageNote,
+      })
+      .from(schema.failureClusters);
+    expect(rows).toEqual([
+      {
+        id: anyFrame,
+        fingerprint: (await computeErrorFingerprint(anyCard)).fingerprint,
+        selector: "frameLocator().getByLabel('Card number')",
+        triageNote: 'The payment frame loads late.',
+      },
+      {
+        id: pay,
+        fingerprint: (await computeErrorFingerprint(payCard)).fingerprint,
+        selector: "locator('#pay').contentFrame().getByLabel('Card number')",
+        triageNote: 'The card field is renamed.',
+      },
+    ]);
+    expect(await clusterJoined(1, anyCard, 1)).toBe(anyFrame);
+    expect(await clusterJoined(1, payCard, 1)).toBe(pay);
+    expect(await clusterJoined(2, timeoutOn("frameLocator('#pay').getByLabel('Card number')"), 1)).toBe(pay);
+    const others = [
+      await clusterJoined(2, timeoutOn("frameLocator().getByLabel('Expiry date')"), 1),
+      await clusterJoined(2, timeoutOn("locator('#pay').contentFrame().getByLabel('Expiry date')"), 1),
+    ];
+    expect(new Set([anyFrame, pay, ...others]).size).toBe(4);
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
+  });
+
   test('merges two clusters whose samples share a recomputed fingerprint into the one first seen earlier', async () => {
     await seedRun(1, new Date('2026-10-01T10:00:00Z'));
     await seedRun(2, new Date('2026-10-02T10:00:00Z'));

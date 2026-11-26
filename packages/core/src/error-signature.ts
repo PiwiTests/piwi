@@ -56,6 +56,8 @@ const UNDERSCORE_TOKEN_RE = /_([A-Za-z0-9]{8,})/g;
 // The primary positional arg (testid/text/role) is left intact so
 // getByTestId('login-button') and getByTestId('logout-button') stay distinct.
 const SELECTOR_OPTION_KEY_RE = /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])/gi;
+// A named `frameLocator('#pay')`, the frame Playwright prints as `locator('#pay').contentFrame()`.
+const NAMED_FRAME_LOCATOR_RE = /\bframeLocator\(((['"`])(?:\\.|(?!\2)[^\\])*\2)\)/g;
 
 const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
 
@@ -166,12 +168,15 @@ export function maskVolatile(text: string): string {
 }
 
 /**
- * Normalize a locator for the fingerprint: blank out dynamic option values
- * (row names, hasText, …) that carry per-row data, then apply the standard
- * volatile masking. The primary positional target is preserved.
+ * Normalize a locator for the fingerprint: spell a named frame as Playwright
+ * prints it (`frameLocator('#pay')` as `locator('#pay').contentFrame()`), so
+ * both spellings of one frame hash alike, blank out dynamic option values (row
+ * names, hasText, …) that carry per-row data, then apply the standard volatile
+ * masking. The primary positional target is preserved.
  */
 export function maskSelector(selector: string): string {
-  return maskVolatile(maskSelectorOptions(selector));
+  const framed = selector.replace(NAMED_FRAME_LOCATOR_RE, 'locator($1).contentFrame()');
+  return maskVolatile(maskSelectorOptions(framed));
 }
 
 /** Reduce raw error text to its {@link ErrorSignature}. */

@@ -19,7 +19,9 @@ fingerprint hashes the error type, message and locator, **masking what varies**:
 numbers, UUIDs, hashes, ids glued to an underscore (`order_5f3a9c1e2b`), URLs, emails, timestamps, the folders of a
 path under a home folder, CI workspace or Windows drive, a temporary folder's random suffix, an assertion's *expected*
 and *received* values, the elements a strict-mode violation lists, and dynamic locator options such as a row's
-`{ name: '…' }`. The locator's target (test id, role) still tells failures apart.
+`{ name: '…' }`. The locator's target (test id, role) still tells failures apart. Inside a frame, so do the frame
+(`frameLocator()` for any frame) and the locator in it; `frameLocator('#pay')` and `locator('#pay').contentFrame()` are
+one frame.
 
 It **ignores the failing stack frame** when the error says what failed, so one root cause reached from several spec
 files, through a helper or page object, stays one cluster. A **generic** error says nothing of its own: it names no

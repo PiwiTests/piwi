@@ -134,6 +134,12 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     'Error: browserType.launch: profile /tmp/playwright_chromiumdev_profile-Xo8n2p is locked',
     'Test timeout of 30000ms exceeded.\n    at /Users/alice/shop/tests/cart.spec.ts:4:1',
     "TypeError: Cannot read properties of undefined (reading 'id')\n    at C:\\Users\\alice\\shop\\tests\\orders.spec.ts:20:15",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator().getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+    "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator().locator('#my-frame').contentFrame().getByRole('button', { name: 'Pay' })",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator('#pay').getByLabel('Card number')",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('#pay').contentFrame().getByRole('row', { name: 'Order 42' })",
+    'TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\'#outer\').contentFrame().frameLocator("iframe[title=\\"Pay\\"]").getByText(\'Pay\')',
+    `Error: frameLocator().getByRole('row', { name: '${'x'.repeat(100)}`,
   ];
 
   for (const [i, err] of corpus.entries()) {
