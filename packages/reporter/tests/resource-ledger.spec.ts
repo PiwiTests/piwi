@@ -55,7 +55,8 @@ function fakePlaywright() {
     _routes: unknown[] = [];
     _opener: FakePage | null = null;
     private current = 'about:blank';
-    readonly frame = { url: () => this.current };
+    /** The main frame, with the URL Playwright created it on (`_initializer`): a `newPage` call's `about:blank`. */
+    readonly frame = { url: () => this.current, _initializer: { url: 'about:blank' } };
     constructor(readonly context: FakeContext) {
       super();
     }
@@ -98,12 +99,14 @@ function fakePlaywright() {
       return this.all.filter((p) => !p.closed);
     }
     /**
-     * A page this context opens on its own, on `url`: a popup of `opener`, or with no opener, as the tab a modifier
-     * click opens (on its URL) and a page another client's `newPage` opens (blank) arrive.
+     * A page this context opens on its own, arriving on `url`: a popup of `opener`, or with no opener, as the tab a
+     * modifier click opens (created on no URL, `createdOn: ''`) and a page another client's `newPage` opens (created on
+     * `about:blank`) arrive.
      */
-    popup(opener: FakePage | null, url = 'about:blank') {
+    popup(opener: FakePage | null, { url = 'about:blank', createdOn = 'about:blank' } = {}) {
       const page = new FakePage(this);
       page._opener = opener;
+      page.frame._initializer.url = createdOn;
       page.goto(url);
       this.all.push(page);
       this.emit('page', page);
@@ -267,24 +270,32 @@ describe('ResourceLedger', () => {
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
     const page = await context.newPage();
-    // The tab a modifier click opens has no opener, and arrives on its URL, after the click returned.
+    // The tab a modifier click opens has no opener and was created on no URL, whether it arrives on its URL, after the
+    // click returned, or still blank (Playwright 1.59).
     await fake.apiCall('locator.click', () => undefined, 'tests/cart.spec.ts', 30);
-    context.popup(null, 'https://shop.example.test/cart');
-    // The page another client's `newPage` opens is blank and has no opener, whether a call of the worker runs or not;
-    // a popup of that page is not the worker's either.
+    context.popup(null, { url: 'https://shop.example.test/cart', createdOn: '' });
+    context.popup(null, { createdOn: '' });
+    // The page another client's `newPage` opens was created on `about:blank` and has no opener, whether a call of the
+    // worker runs or not; a popup of that page is not the worker's either.
     const elsewhere = await fake.apiCall('page.waitForTimeout', () => context.popup(null), 'tests/cart.spec.ts', 31);
     context.popup(null);
-    context.popup(elsewhere, 'https://shop.example.test/help');
+    context.popup(elsewhere, { url: 'https://shop.example.test/help', createdOn: '' });
     // A popup of a page the worker opened.
-    await fake.apiCall('locator.click', () => context.popup(page, 'https://shop.example.test/terms'), 'tests/cart.spec.ts', 33);
+    await fake.apiCall(
+      'locator.click',
+      () => context.popup(page, { url: 'https://shop.example.test/terms', createdOn: '' }),
+      'tests/cart.spec.ts',
+      33,
+    );
 
     const { census } = await ledger.testEnded(info('t1'));
     expect(census.born.filter((b) => b.kind === 'page').map((b) => [b.id, b.site, b.opener, b.trigger])).toEqual([
       [3, 'tests/cart.spec.ts:7', undefined, undefined],
       [4, 'tests/cart.spec.ts:30', undefined, 'locator.click'],
-      [5, 'tests/cart.spec.ts:33', 3, 'locator.click'],
+      [5, 'tests/cart.spec.ts:30', undefined, 'locator.click'],
+      [6, 'tests/cart.spec.ts:33', 3, 'locator.click'],
     ]);
-    expect(census.open.map((o) => o.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(census.open.map((o) => o.id)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('marks a page used when it loads something or runs a reported call, never on its own reads', async () => {

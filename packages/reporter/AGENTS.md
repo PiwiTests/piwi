@@ -182,10 +182,11 @@ responsibilities.
 - **The resource ledger counts the contexts and pages the worker opens, and no other**: a context from the
   instrumentation's `runAfterCreateBrowserContext`, never `browser.on('context')`, which also reports those another
   client opens on a browser the worker shares (`browser.bind`, as a stop shares it with Playwright's tools); a page from
-  `context.on('page')` only when it is a popup of a page the ledger counts (`opener()`), has no opener and a URL other
-  than `about:blank` (a modifier click's tab, reported once its first navigation committed), or is blank while a
-  `newPage` call of the worker runs, since another client's `newPage` opens a blank page (`onPage`,
-  `internal/capture/resource-ledger.ts`). `tests/resource-ledger.spec.ts` checks both, in a real browser.
+  `context.on('page')` only when it is a popup of a page the ledger counts (`opener()`), has no opener and was not
+  created on `about:blank` (a modifier click's tab: its main frame's first URL, `_initializer.url`, is empty, while its
+  `url()` already reads `about:blank` as it arrives on 1.59), or arrives while a `newPage` call of the worker runs
+  (`onPage`, `internal/capture/resource-ledger.ts`). `tests/resource-ledger.spec.ts` checks both in a real browser, on
+  the floor too (`reporter-floor`).
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor

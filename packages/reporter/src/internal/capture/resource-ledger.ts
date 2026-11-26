@@ -221,8 +221,6 @@ const WAITS_CAP = 1000;
 
 /** A call that opens a page (`newPage`, and the capture fixtures' wrapper of it, `originalNewPage`). */
 const NEW_PAGE_CALL = /newpage$/i;
-/** The URL of a page that has not navigated: the one a `newPage` call opens. */
-const BLANK_URL = /^(?:about:blank)?$/;
 /** A call that opens a context with a browser of its own. */
 const PERSISTENT_CALL = /launchPersistentContext$/;
 
@@ -250,6 +248,19 @@ interface ChannelOwnerLike {
   _parent?: ChannelOwnerLike | null;
   /** A frame's page (internal). */
   _page?: object | null;
+}
+
+/**
+ * The URL a page's main frame had as Playwright created the page (`_initializer`, internal), whatever it navigated to
+ * before the page was reported; null when it cannot be read.
+ */
+function createdOn(page: Page): string | null {
+  try {
+    const url = (page.mainFrame() as unknown as { _initializer?: { url?: unknown } })._initializer?.url;
+    return typeof url === 'string' ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Who hears the page each call a test makes lands on (`onTestCallPage`). */
@@ -1089,18 +1100,18 @@ export class ResourceLedger {
    */
   private onPage(page: Page, context: BrowserContext, initial?: { site: string | null }): void {
     if (this.byObject.has(page)) return;
-    // Playwright reports a page a `newPage` call opens on `about:blank`, while that call runs, and a page the browser
-    // opens for a link or a script once its first navigation committed, on that URL. So a page is the worker's when it
-    // is a popup of a page the ledger counts (its `opener()`), when it has no opener and a URL other than `about:blank`
-    // (the tab a modifier click opens), or when it is blank while a `newPage` call of the worker runs. Any other page
-    // is another client's (on a browser the worker shares, `browser.bind`): a popup of its page, or a blank page its
-    // `newPage` opened. A page of the worker's that no `newPage` call opened is a popup, opened through the call that
-    // last ran.
+    // Playwright creates a page a `newPage` call opens with its main frame on `about:blank`, loaded, and a page the
+    // browser opens for a link or a script with its main frame on no URL yet (`createdOn`). So a page is the worker's
+    // when it is a popup of a page the ledger counts (its `opener()`), when it has no opener and was not created on
+    // `about:blank` (the tab a modifier click opens), or when a `newPage` call of the worker runs as it arrives. Any
+    // other page is another client's (on a browser the worker shares, `browser.bind`): a popup of its page, or a page
+    // its `newPage` opened. A page whose first URL cannot be read counts. A page of the worker's that no `newPage` call
+    // opened is a popup, opened through the call that last ran.
     const zone = this.latestPendingCall();
     const viaNewPage = NEW_PAGE_CALL.test(zone?.apiName ?? '');
     const opener = (page as unknown as { _opener?: object | null })._opener;
     const openerEntry = opener ? this.byObject.get(opener) : undefined;
-    if (!initial && (opener ? !openerEntry : BLANK_URL.test(page.url()) && !viaNewPage)) return;
+    if (!initial && (opener ? !openerEntry : createdOn(page) === 'about:blank' && !viaNewPage)) return;
     const popup = !viaNewPage && !initial;
     const site = viaNewPage ? zoneSite(zone) : initial ? initial.site : zoneSite(this.lastCall);
     const entry = this.track(page, 'page', context, site);
