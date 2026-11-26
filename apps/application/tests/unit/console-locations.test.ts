@@ -77,6 +77,14 @@ describe('shownConsoleLocation', () => {
     expect(shownConsoleLocation('http://localhost:5173')).toBe('http://localhost:5173');
   });
 
+  test('reads a place with an empty URL, an inline script’s, 1-based too', () => {
+    expect(shownConsoleLocation(':1:8')).toBe(':2:9');
+    expect(shownConsoleLocation(':0:0')).toBe('');
+    expect(withShownConsoleLocations([{ type: 'error', text: 'a', timestamp: 1, location: ':0:0' }])).toEqual([
+      { type: 'error', text: 'a', timestamp: 1, location: null },
+    ]);
+  });
+
   test('gives back the stack frame a page error was stored from', () => {
     const stack = 'TypeError: cart is undefined\n    at renderCart (https://shop.test/assets/cart.js:12:5)';
     const stored = pageErrorStackPlace(stack)!;

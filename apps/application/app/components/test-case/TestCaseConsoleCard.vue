@@ -121,7 +121,7 @@ function consoleTypeLabel(type: string): string {
             </UBadge>
             <span class="truncate">{{ entry.text }}</span>
           </div>
-          <div v-if="entry.location" class="text-xs text-gray-400 mt-0.5 ml-0">
+          <div v-if="entry.location && shownConsoleLocation(entry.location)" class="text-xs text-gray-400 mt-0.5 ml-0">
             {{ shownConsoleLocation(entry.location) }}
           </div>
         </div>

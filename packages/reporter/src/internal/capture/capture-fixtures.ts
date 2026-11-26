@@ -3371,7 +3371,8 @@ function instrumentPage(page: Page): void {
         type,
         text: msg.text(),
         timestamp: Date.now(),
-        location: location ? consoleLocation(location) : null,
+        // A message of an inline script, `page.evaluate` or a `data:` page has an empty URL: no place to name.
+        location: location?.url ? consoleLocation(location) : null,
       });
     }
   });
