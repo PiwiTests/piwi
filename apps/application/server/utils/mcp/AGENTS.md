@@ -46,6 +46,10 @@ A tool's result is JSON read by an AI coding agent: the same names and shapes ev
 - **Validation:** `numericParam(raw, name)` for every numeric argument, `numericCursor(raw)` for a cursor (never an
   inline `Number(cursor)`), `clampPageSize(raw)` (1 to 50, default 10), and `paginatedItems(items, pageSize, getCursor)`
   around a query that fetched `pageSize + 1` rows.
+- **An image goes out as an MCP `image` block, never as base64 in the JSON**: the handler fits it with
+  `fitImageForAgent` (`images.ts`: raster formats told by their bytes, re-encoded, never cut) and attaches it with
+  `withToolImages` for `toContent` to send, and attaches none when `ctx.textOnly` is set
+  (`tests/unit/mcp-screenshots.test.ts`).
 - **`getCursor` reads the field name after the mapping** (`r.executionId`, not the query's `r.caseId`): a renamed field
   gives an `"undefined"` cursor that crashes the next page. A list filtered in memory applies the cursor in memory, on
   the same field as the cursor it emits, or paging loops on page one.
