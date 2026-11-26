@@ -280,7 +280,10 @@ export interface TestTreeNode {
   runnable: boolean;
   /** On a test, what the service says of it. */
   test: TreeTest | null;
-  /** On a project node (a test that runs in several), the project's name. */
+  /**
+   * On a project node (a test that runs in several), the project's name; its label says `(only with --project)` after
+   * it for a project with `default: false`.
+   */
   project: string | null;
   children: TestTreeNode[];
 }
@@ -322,7 +325,8 @@ export const CONFIG_NODE = 'config\x1f';
  * `CONFIG_NODE`), without the nodes `exclude` names under them: each node by the narrowest filter Playwright takes for
  * it (a config whole, a folder or a spec by its path, a describe block or a test by `file:line`, a project with
  * `--project`, a test that shares its line with others by its title too), one run per config and set of projects, so
- * that a run needs no instance. A node that is not `runnable` runs nothing.
+ * that a run needs no instance. A test whose projects all have `default: false` runs with `--project` naming them, apart
+ * from the tests under the same node that run without it. A node that is not `runnable` runs nothing.
  */
 export interface TestRunsParams {
   nodes: string[];

@@ -61,16 +61,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The value of the reporter's `PIWI_USE` line, unchecked; undefined when there is none or it is not JSON. */
+export function useLineValue(output: string): unknown {
+  const line = output.split(/\r?\n/).find((l) => l.startsWith(USE_LINE));
+  if (!line) return undefined;
+  try {
+    return JSON.parse(line.slice(USE_LINE.length)) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The options in the reporter's output (its `PIWI_USE` line), checked field by field; null when there is none. */
 export function parseUseLine(output: string): ProjectOptions | null {
-  const line = output.split(/\r?\n/).find((l) => l.startsWith(USE_LINE));
-  if (!line) return null;
-  let value: unknown;
-  try {
-    value = JSON.parse(line.slice(USE_LINE.length));
-  } catch {
-    return null;
-  }
+  const value = useLineValue(output);
   if (!isRecord(value) || typeof value.rootDir !== 'string' || !Array.isArray(value.projects)) return null;
   const projects = value.projects.flatMap((p): ProjectUse[] =>
     isRecord(p) && typeof p.name === 'string' && typeof p.testDir === 'string' && isRecord(p.use)

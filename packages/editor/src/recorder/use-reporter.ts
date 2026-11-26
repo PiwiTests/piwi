@@ -2,10 +2,11 @@
  * A Playwright reporter for the editor service, run as `playwright test --list`, so nothing runs. It always prints the
  * configuration Playwright resolved: one line, `PIWI_USE <json>`, with the config file, its root directory, Piwi's
  * section of the config (`'@piwi'`, which Playwright hands to reporters as written) and each project's name, test
- * directory and `use` options, without the functions and other values JSON cannot hold; the options read passes a
- * filter no spec file matches, so no spec is loaded. With `PIWI_LIST_TESTS=1`, it also prints the tests Playwright
- * lists (`PIWI_TESTS <json>`) and each error Playwright reports while it loads the specs (`PIWI_ERROR <json>`), for
- * the test tree. Bundled on its own as `dist/piwi-use-reporter.cjs`; it imports only Node's own modules at run time.
+ * directory, `use` options, without the functions and other values JSON cannot hold, and whether it runs when no
+ * `--project` names it (`default`); the options read passes a filter no spec file matches, so no spec is loaded. With
+ * `PIWI_LIST_TESTS=1`, it also prints the tests Playwright lists (`PIWI_TESTS <json>`) and each error Playwright
+ * reports while it loads the specs (`PIWI_ERROR <json>`), for the test tree. Bundled on its own as
+ * `dist/piwi-use-reporter.cjs`; it imports only Node's own modules at run time.
  */
 import * as path from 'node:path';
 import type { FullConfig, Reporter, Suite, TestCase, TestError } from '@playwright/test/reporter';
@@ -73,6 +74,32 @@ function plain(value: unknown, parents: unknown[] = []): unknown {
   return out;
 }
 
+/** The description of the symbol Playwright keeps a config's internals under, on the config reporters get. */
+const CONFIG_INTERNALS = 'configInternalSymbol';
+
+/**
+ * The projects of `config.projects` that run only when `--project` names them (Playwright 1.64's `default: false`).
+ * `FullProject` has no `default`: it is read from the config's internals, which hold each project reporters get
+ * (`project`) beside its `default`, taken only where it is `false`. None when the internals cannot be read or hold no
+ * `default` (a Playwright older than 1.64): every project then runs by default.
+ */
+function namedOnlyProjects(config: FullConfig): Set<unknown> {
+  const named = new Set<unknown>();
+  try {
+    const symbol = Object.getOwnPropertySymbols(config).find((s) => s.description === CONFIG_INTERNALS);
+    const internals: unknown = symbol ? (config as unknown as Record<symbol, unknown>)[symbol] : undefined;
+    if (typeof internals !== 'object' || internals === null) return named;
+    const projects: unknown = (internals as Record<string, unknown>).projects;
+    for (const project of Array.isArray(projects) ? (projects as unknown[]) : []) {
+      const fields = typeof project === 'object' && project !== null ? (project as Record<string, unknown>) : null;
+      if (fields?.default === false && fields.project) named.add(fields.project);
+    }
+  } catch {
+    named.clear();
+  }
+  return named;
+}
+
 /** A file relative to `folder` with forward slashes when it is inside it, else as given. */
 function relativeFile(folder: string, file: string): string {
   const relative = path.relative(folder, file);
@@ -107,6 +134,7 @@ export default class UseReporter implements Reporter {
 
   onBegin(config: FullConfig, suite: Suite): void {
     this.folder = config.configFile ? path.dirname(config.configFile) : config.rootDir;
+    const named = namedOnlyProjects(config);
     const resolved = {
       configFile: config.configFile ?? null,
       rootDir: config.rootDir,
@@ -115,6 +143,7 @@ export default class UseReporter implements Reporter {
         name: project.name,
         testDir: project.testDir,
         use: plain(project.use) ?? {},
+        default: !named.has(project),
       })),
     };
     process.stdout.write(`${USE_LINE}${JSON.stringify(resolved)}\n`);

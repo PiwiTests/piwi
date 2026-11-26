@@ -34,7 +34,7 @@ The command, `npx playwright test` with the arguments `piwi run` would pass, run
 folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** restarts it), in the Run tool
 window in a JetBrains IDE, its tests in a test tree beside the output as they run (**Rerun** restarts it), or in the
 IDE's Playwright runner (Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**, offered once, that
-keeps every control of a Piwi run, through the runner's Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
+keeps every control of a Piwi run. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints and the editor pause it:
 [Pause and step from the editor](./editor-run-control).
 
@@ -50,10 +50,10 @@ options…**). A
 
 ## The Testing view (VS Code)
 
-VS Code's Testing view lists the tests `playwright test --list` gives for each config, under their folders and
-`test.describe` blocks, a test of several Playwright projects with a node per project, each with its latest result and
-duration, and where and why it failed (**Peek Error**). A spec is listed again when saved, and read from its text while
-you edit it. A config Playwright cannot list says why. Tests only your instance knows go in **Not in this checkout**,
+VS Code's Testing view lists the tests `playwright test --list --project=*` gives for each config, `default: false`
+projects' too, under their folders and `test.describe` blocks, a test of several Playwright projects with a node per
+project, each with its latest result and duration, and where and why it failed (**Peek Error**). A spec is listed again
+when saved, and read from its text while you edit it. A config Playwright cannot list says why. Tests only your instance knows go in **Not in this checkout**,
 which does not run. Results are published as a test run (`Piwi: run #120 on main`); a run in progress shows each test as
 it begins and ends. Its gutter shows each result in place of Piwi's icon; the line keeps Piwi's hover. A flaky test
 shows as passed, its line ending with _flaky_. An item is named by its test's title alone, as a screen reader reads it,
@@ -61,7 +61,7 @@ and the view's filter finds tests by `@piwi:flaky`, `@piwi:quarantined`, a Playw
 (`@piwi:owner:ada`). With the view off, Piwi's gutter marks a test with no recent result with a dashed ring.
 
 Each test's actions are one list in both editors: **Run with Piwi**, **Debug with Piwi** and **Verify ×3 with Piwi**,
-**Record steps in this test…** (a [recording](./editor-recording) after the last line of its body), a failure's trace
+**Record steps in this test…** (a [recording](./editor-recording) at its end), a failure's trace
 and screenshot, **Open in dashboard**, **Copy context for agent**, then the test's Flake Lab commands. **More…** on the [test's card](./editor-test-card) opens them, and in VS Code **Piwi: Show the test's actions…**
 from the Testing view's gutter and menus, and the line number's menu with the view off; in a JetBrains IDE, a
 right-click on the result icon. The IDE's own run
@@ -74,10 +74,10 @@ hides the result icon and its list.
 </figure>
 
 **Run with Piwi**, the view's run profile, runs what you pick by the narrowest filter Playwright takes: a config whole, a
-folder or a spec by its path, a describe block or a test by its line (a loop's by its title), a project's node with
-`--project`. **Debug with Piwi** runs them headed at your breakpoints, holding each failure, and **Verify ×3
-with Piwi** runs them three times. Under Run with Coverage, it also shows their coverage in the Test Coverage view
-([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as [Debug in my
+folder or a spec by its path, a describe block or a test by its line (a loop's by its title), a project's node, and a
+test of `default: false` projects alone, with `--project`. **Debug with Piwi** runs them headed at your breakpoints,
+holding each failure, and **Verify ×3 with Piwi** runs them three times. Under Run with Coverage, it also shows their
+coverage in the Test Coverage view ([Editor coverage](./editor-coverage)). From a failed test's actions, **Debug with Piwi** runs it as [Debug in my
 editor](./debug-in-editor) does, stopping once at the line it failed through. A test the run gave Piwi no result for
 passes when the command exited with 0, else is an error. Debug runs Piwi's run control, not a debug session.
 `piwi.testExplorer` turns the view's Piwi tests off.

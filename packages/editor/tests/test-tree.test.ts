@@ -7,6 +7,7 @@ import {
   locationArg,
   nodeRuns,
   NOT_IN_CHECKOUT,
+  ONLY_NAMED,
   titlePattern,
   type TreeEntry,
 } from '../src/test-tree';
@@ -415,5 +416,120 @@ describe('the runs of the nodes picked', () => {
   test('a title as --grep reads it, with no character a shell expands', () => {
     expect(titlePattern('pays (by card) $5 + 10% off!')).toBe('pays [(]by card[)] .5 [+] 10. off.');
     expect(titlePattern('a|b [c] {d} *e? ^f "g" \\h `i`')).toBe('a[|]b [[]c] [{]d[}] [*]e[?] .f .g. .h .i.');
+  });
+});
+
+describe('the runs of projects with default: false', () => {
+  const CART = 'file:///w/tests/cart.spec.ts';
+  const BIG = 'file:///w/tests/slow/big.spec.ts';
+  const pw = (...projects: string[]) => projects.map((project) => ({ project, id: project }));
+  const checkout = [{ start: 3, end: 9 }];
+  const onlyNamed = new Set(['slow', 'nightly']);
+  const nodes = configTree(
+    ROOT,
+    [
+      {
+        uri: CART,
+        file: 'tests/cart.spec.ts',
+        entries: [
+          entry({ uri: CART, title: 'adds', line: 1, playwright: pw('chromium') }),
+          entry(
+            { uri: CART, suite: ['checkout'], title: 'pays', line: 4, playwright: pw('chromium', 'slow') },
+            checkout,
+          ),
+          entry({ uri: CART, suite: ['checkout'], title: 'waits', line: 6, playwright: pw('slow') }, checkout),
+        ],
+      },
+      {
+        uri: BIG,
+        file: 'tests/slow/big.spec.ts',
+        entries: [
+          entry({ uri: BIG, title: 'loads', line: 1, playwright: pw('slow', 'nightly') }),
+          // Written since the listing: in its spec's projects.
+          entry({ uri: BIG, title: 'new', line: 3 }),
+        ],
+      },
+    ],
+    [],
+    onlyNamed,
+  );
+  const find = (label: string, from: readonly TestTreeNode[] = nodes): TestTreeNode | undefined => {
+    for (const n of from) {
+      if (n.label === label) return n;
+      const found = find(label, n.children);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  const id = (label: string) => find(label)!.id;
+  const runs = (picked: string[], excluded: string[] = [], named: ReadonlySet<string> | null = onlyNamed) =>
+    nodeRuns([{ root: ROOT, nodes, ...(named ? { onlyNamed: named } : {}) }], picked, excluded).map(
+      (r) => `${r.all ? 'all' : r.locations.join(' ')}${r.projects.map((p) => ` --project ${p}`).join('')}`,
+    );
+
+  test('a project’s node says it runs only with --project, and runs in it', () => {
+    const pays = find('pays')!;
+    expect(pays.children.map((n) => [n.label, n.project])).toEqual([
+      ['chromium', 'chromium'],
+      [`slow${ONLY_NAMED}`, 'slow'],
+    ]);
+    expect(runs([pays.children[1]!.id])).toEqual(['tests/cart.spec.ts:5 --project slow']);
+  });
+
+  test('a test of such projects alone runs with --project naming them; one of a default project too, as without', () => {
+    expect(runs([id('waits')])).toEqual(['tests/cart.spec.ts:7 --project slow']);
+    expect(runs([id('loads')])).toEqual(['tests/slow/big.spec.ts:2 --project nightly --project slow']);
+    expect(runs([id('new')])).toEqual(['tests/slow/big.spec.ts:4 --project nightly --project slow']);
+    expect(runs([id('pays')])).toEqual(['tests/cart.spec.ts:5']);
+    expect(runs([id('adds')])).toEqual(['tests/cart.spec.ts:2']);
+  });
+
+  test('a node of such tests alone runs with --project naming their projects', () => {
+    expect(runs([id('big.spec.ts')])).toEqual(['tests/slow/big.spec.ts --project nightly --project slow']);
+    expect(runs([id('slow')])).toEqual(['tests/slow/ --project nightly --project slow']);
+  });
+
+  test('a node holding both runs as Playwright does without --project, and the others apart in their projects', () => {
+    expect(runs([id('checkout')])).toEqual(['tests/cart.spec.ts:4', 'tests/cart.spec.ts:7 --project slow']);
+    expect(runs([id('cart.spec.ts')])).toEqual(['tests/cart.spec.ts', 'tests/cart.spec.ts:7 --project slow']);
+    expect(runs([id('tests')])).toEqual([
+      'tests/',
+      'tests/cart.spec.ts:7 --project slow',
+      'tests/slow/ --project nightly --project slow',
+    ]);
+    expect(runs([`${CONFIG_NODE}${ROOT}`])).toEqual([
+      'all',
+      'tests/cart.spec.ts:7 --project slow',
+      'tests/slow/ --project nightly --project slow',
+    ]);
+    // Without the one that runs by default, the config runs in the projects its tests need.
+    expect(runs([`${CONFIG_NODE}${ROOT}`], [id('adds'), id('pays')])).toEqual([
+      'tests/cart.spec.ts:7 --project slow',
+      'tests/slow/ --project nightly --project slow',
+    ]);
+    expect(runs([`${CONFIG_NODE}${ROOT}`], [id('adds')])).toEqual([
+      'tests/cart.spec.ts:4',
+      'tests/cart.spec.ts:7 --project slow',
+      'tests/slow/ --project nightly --project slow',
+    ]);
+  });
+
+  test('a config of such tests alone runs with --project naming every project they run in', () => {
+    const slow = configTree(
+      ROOT,
+      [{ uri: BIG, file: 'tests/slow/big.spec.ts', entries: [entry({ uri: BIG, line: 1, playwright: pw('slow') })] }],
+      [],
+      onlyNamed,
+    );
+    expect(nodeRuns([{ root: ROOT, nodes: slow, onlyNamed }], [`${CONFIG_NODE}${ROOT}`])).toEqual([
+      { root: ROOT, uri: null, locations: [], all: true, projects: ['slow'], grep: null, grepInvert: null },
+    ]);
+  });
+
+  test('without the projects a listing names, every node runs as Playwright does without --project', () => {
+    expect(runs([id('waits'), id('big.spec.ts'), `${CONFIG_NODE}${ROOT}`], [], null)).toEqual(['all']);
+    expect(runs([id('waits'), id('big.spec.ts')], [], new Set())).toEqual([
+      'tests/cart.spec.ts:7 tests/slow/big.spec.ts',
+    ]);
   });
 });

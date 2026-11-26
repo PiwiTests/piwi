@@ -4301,7 +4301,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           missing.push({ file: c.filePath, test: missingTest(context, c) });
         }
       }
-      const nodes = configTree(context.root, treeSpecs, missing);
+      const nodes = configTree(context.root, treeSpecs, missing, listing?.onlyNamed);
       if (!nodes.length && !state?.error) continue;
       result.contexts.push({
         root: context.root,
@@ -4351,7 +4351,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
     const tree = await testItemsOf({ uris: documents.all().map((d) => d.uri) });
     const repeat = typeof params?.repeat === 'number' ? params.repeat : null;
-    const contexts = tree.contexts.map((c) => ({ ...c, folder: canonicalPath(c.root) }));
+    const contexts = tree.contexts.map((c) => ({
+      ...c,
+      folder: canonicalPath(c.root),
+      onlyNamed: testListings.state(c.root)?.listing?.onlyNamed,
+    }));
     return nodeRuns(contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
       uri: run.uri ?? pathToFileURL(run.root).href,
       root: run.root,

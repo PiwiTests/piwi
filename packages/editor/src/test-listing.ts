@@ -1,13 +1,20 @@
 /**
- * The listing: the tests Playwright lists for a config (`playwright test --list`), run with the project's own
- * Playwright and the service's reporter (`piwi-use-reporter.cjs` with `PIWI_LIST_TESTS=1`), for the test tree.
+ * The listing: the tests Playwright lists for a config (`playwright test --list --project=*`), run with the project's
+ * own Playwright and the service's reporter (`piwi-use-reporter.cjs` with `PIWI_LIST_TESTS=1`), for the test tree:
+ * every project's, a project with `default: false` included, and which projects run only when `--project` names them.
  * `TestListings` keeps each config's last listing, runs one listing per config at a time, and lists a config whole or
  * some of its specs alone. A spec that does not load is listed again without the others failing: Playwright lists
  * nothing once one spec fails, so the listing is run once more without the specs that failed.
  */
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { configFingerprint, firstLine, ProjectOptionsError, type ListOutput } from './recorder/project-options.js';
+import {
+  configFingerprint,
+  firstLine,
+  ProjectOptionsError,
+  useLineValue,
+  type ListOutput,
+} from './recorder/project-options.js';
 import { ERROR_LINE, TESTS_LINE, type ListErrorLine, type ListedTestLine } from './recorder/use-reporter.js';
 
 export type ListedTest = ListedTestLine;
@@ -25,6 +32,8 @@ export interface ConfigListing {
   broken: Map<string, string>;
   /** When the whole config was last listed: the time that listing started (ms). */
   at: number;
+  /** The projects that run only when `--project` names them (`default: false`), as the last listing read them. */
+  onlyNamed: Set<string>;
 }
 
 /** What the tree says of a config's listing. */
@@ -38,6 +47,12 @@ export interface ListingState {
 
 /** More specs than this in one change list the whole config. */
 const MAX_SPECS = 50;
+
+/** The option that lists every project, those with `default: false` too. */
+const EVERY_PROJECT = '--project=*';
+
+/** What Playwright says when `--project=*` matches no project: a config with `projects: []`. */
+const NO_PROJECT_MATCHED = /\bNo projects matched\b/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -90,6 +105,24 @@ export function parseTestsLine(output: string): ListedTest[] | null {
     const test = listedTest(t);
     return test ? [test] : [];
   });
+}
+
+/**
+ * The projects the reporter's `PIWI_USE` line says run only when `--project` names them (`default: false`), by name;
+ * none of a name a project that runs by default holds too, which `--project` would name with it, ignoring case as
+ * Playwright matches it. Null when the line is missing.
+ */
+export function parseOnlyNamed(output: string): string[] | null {
+  const value = useLineValue(output);
+  if (!isRecord(value) || !Array.isArray(value.projects)) return null;
+  const named = new Set<string>();
+  const byDefault = new Set<string>();
+  for (const project of value.projects) {
+    if (!isRecord(project) || !isString(project.name)) continue;
+    if (project.default === false) named.add(project.name);
+    else byDefault.add(project.name.toLocaleLowerCase());
+  }
+  return [...named].filter((name) => !byDefault.has(name.toLocaleLowerCase()));
 }
 
 /** The errors of the reporter's `PIWI_ERROR` lines. */
@@ -157,11 +190,17 @@ function brokenWhy(error: ListErrorLine): string {
   return error.line ? `${error.message} (line ${error.line})` : error.message;
 }
 
-/** What one listing gave: its tests and the specs that did not load; or why it gave none. */
-export type ListResult = { tests: ListedTest[]; broken: Map<string, string> } | { error: string };
+/**
+ * What one listing gave: its tests, the specs that did not load, and the projects that run only when named (null when
+ * Playwright was not asked); or why it gave none.
+ */
+export type ListResult =
+  | { tests: ListedTest[]; broken: Map<string, string>; onlyNamed: string[] | null }
+  | { error: string };
 
 /**
- * Lists the tests of a config, or of the specs `files` names (relative to the config's folder), with `run`. When a
+ * Lists the tests of a config, or of the specs `files` names (relative to the config's folder), with `run`, in every
+ * project (`--project=*`), or with no `--project` for a config whose projects none matches (`projects: []`). When a
  * spec does not load, Playwright lists none: the listing runs once more without the specs that failed.
  */
 export async function listTests(
@@ -172,9 +211,10 @@ export async function listTests(
   const name = path.basename(configFile);
   const root = path.dirname(configFile);
   type Once = { output: ListOutput; tests: ListedTest[] | null; errors: ListErrorLine[] } | { error: string };
-  const once = async (args: string[]): Promise<Once> => {
+  let projects = [EVERY_PROJECT];
+  const once = async (filters: string[]): Promise<Once> => {
     try {
-      const output = await run(configFile, args);
+      const output = await run(configFile, [...filters, ...projects]);
       return { output, tests: parseTestsLine(output.stdout), errors: parseErrorLines(output.stdout) };
     } catch (error) {
       return {
@@ -182,8 +222,17 @@ export async function listTests(
       };
     }
   };
-  if (files && !files.length) return { tests: [], broken: new Map() };
-  let result = await once(files ? files.map((f) => specFilter(root, f)) : []);
+  if (files && !files.length) return { tests: [], broken: new Map(), onlyNamed: null };
+  const first = files ? files.map((f) => specFilter(root, f)) : [];
+  let result = await once(first);
+  if (
+    !('error' in result) &&
+    !result.tests &&
+    NO_PROJECT_MATCHED.test(`${result.output.stderr}\n${result.output.stdout}`)
+  ) {
+    projects = [];
+    result = await once(first);
+  }
   const broken = new Map<string, string>();
   for (let tries = 0; tries < 2; tries++) {
     if ('error' in result) return { error: result.error };
@@ -194,7 +243,7 @@ export async function listTests(
     if (!failed.length) break;
     for (const { spec, why } of failed) broken.set(spec, why);
     const left = files ? files.filter((f) => !broken.has(f)) : null;
-    if (left && !left.length) return { tests: [], broken };
+    if (left && !left.length) return { tests: [], broken, onlyNamed: parseOnlyNamed(result.output.stdout) };
     result = await once(left ? left.map((f) => specFilter(root, f)) : [excludingFilter(root, [...broken.keys()])]);
   }
   if ('error' in result) return { error: result.error };
@@ -202,7 +251,7 @@ export async function listTests(
     const said = result.errors[0]?.message ?? firstLine(result.output.stderr || result.output.stdout);
     return { error: `Playwright could not list the tests of ${name}: ${said.replace(/[.!?…]?$/, '.')}` };
   }
-  return { tests: result.tests, broken };
+  return { tests: result.tests, broken, onlyNamed: parseOnlyNamed(result.output.stdout) };
 }
 
 interface Kept extends ListingState {
@@ -301,7 +350,7 @@ export class TestListings {
 /** A listing with a new one's tests: in place of every spec when `files` is null, else of those specs alone. */
 function merged(
   before: ConfigListing | null,
-  result: { tests: ListedTest[]; broken: Map<string, string> },
+  result: { tests: ListedTest[]; broken: Map<string, string>; onlyNamed: string[] | null },
   files: string[] | null,
   at: number,
 ): ConfigListing {
@@ -312,8 +361,10 @@ function merged(
           listedAt: new Map(before.listedAt),
           broken: new Map(before.broken),
           at: before.at,
+          onlyNamed: before.onlyNamed,
         }
-      : { specs: new Map(), listedAt: new Map(), broken: new Map(), at };
+      : { specs: new Map(), listedAt: new Map(), broken: new Map(), at, onlyNamed: before?.onlyNamed ?? new Set() };
+  if (result.onlyNamed) listing.onlyNamed = new Set(result.onlyNamed);
   for (const file of files ?? []) {
     listing.specs.delete(file);
     listing.broken.delete(file);
