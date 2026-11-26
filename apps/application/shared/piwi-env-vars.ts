@@ -243,7 +243,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 13,
     intro:
       'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection, and `PIWI_ZEPHYR_API_TOKEN` one for Zephyr Scale Cloud; otherwise connections are managed from **Settings → Integrations**.',
-    note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Jira Cloud](/operate/integrations).',
+    note: 'A Jira site or an AI base URL set in Settings reaches a private address only on a host the environment sets or `PIWI_PRIVATE_HOSTS` lists. See [Private hosts](/operate/production-checklist#private-hosts).',
   },
   clustering: {
     title: 'Failure clustering',
@@ -1441,6 +1441,15 @@ export const PIWI_ENV_VARS = {
     example: 'jenkins.internal:8080',
     since: '0.67.0',
     docs: 'features/ci-actions',
+  },
+  PIWI_PRIVATE_HOSTS: {
+    description:
+      'Hosts (comma-separated, e.g. ollama:11434,jira.lan) a Jira site or an AI base URL set in Settings may reach on a private address: a loopback, private, link-local or reserved one. A name without a port allows every port of that host. The host of an address the environment sets (PIWI_JIRA_BASE_URL, PIWI_AI_BASE_URL and the AI roles’ base URLs) is allowed without being listed, and so is any address in the desktop app. Any other address must resolve to public addresses only.',
+    category: 'integrations',
+    type: 'list',
+    example: 'ollama:11434,jira.lan',
+    since: '0.79.0',
+    docs: 'operate/production-checklist#private-hosts',
   },
   PIWI_CI_SERVER_ALLOWED_INPUTS: {
     description:

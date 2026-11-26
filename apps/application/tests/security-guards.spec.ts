@@ -29,6 +29,16 @@ test.describe('request guards', () => {
     expect(res.status()).toBe(400);
   });
 
+  test('a Jira site on a private address the operator did not allow is never reached', async ({ request }) => {
+    const res = await request.post('/api/integrations/connections/check', {
+      data: { provider: 'jira', baseUrl: 'http://169.254.169.254' },
+    });
+    expect(res.ok()).toBe(true);
+    const { site } = (await res.json()) as { site: { ok: boolean; error: string; hint: string | null } };
+    expect(site).toMatchObject({ ok: false, hint: null });
+    expect(site.error).toContain('PIWI_PRIVATE_HOSTS');
+  });
+
   test('no other site may frame a dashboard page or an API response', async ({ request }) => {
     for (const path of ['/', '/api/health']) {
       const headers = (await request.get(path)).headers();

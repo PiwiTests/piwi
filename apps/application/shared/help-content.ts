@@ -1507,8 +1507,9 @@ export const HELP_TOPICS = {
   },
   'settings.integrations.private-host': {
     title: 'Private hosts',
-    text: 'A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private network works. Links a non-administrator pins are still fetched through the SSRF guard.',
-    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
+    text: 'A connection’s address reaches only public addresses, unless the operator sets it in the environment or lists its host in `PIWI_PRIVATE_HOSTS`; the desktop app reaches any address. A name that resolves to a private address is refused when the connection opens, and so is a redirect to one.',
+    doc: 'operate/production-checklist#private-hosts',
+    envVars: ['PIWI_PRIVATE_HOSTS'],
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',

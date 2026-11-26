@@ -12,6 +12,7 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts'],
     // Migrates one SQLite database for every test file to copy (`migrateToLatest`, tests/unit/temp-db.ts).
     globalSetup: ['tests/unit/global-setup.ts'],
+    setupFiles: ['tests/unit/setup.ts'],
     // @piwitests/core, @piwitests/editor, @piwitests/run-ui and @piwitests/run-model ship TS source;
     // inline them so Vitest transpiles them from the workspace instead of trying to load them
     // as built dependencies.

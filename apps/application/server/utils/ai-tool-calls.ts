@@ -18,6 +18,7 @@ import {
 import type { ResolvedAiRole } from '~~/types/api';
 import type { AssistantToolMode } from '#shared/assistant';
 import { assertAiKey } from './ai-credentials';
+import { connectionFetch } from './connection-fetch';
 
 export interface AiToolDef {
   name: string;
@@ -286,7 +287,7 @@ async function* openAiStep(config: ResolvedAiRole, req: AiStepRequest): AsyncGen
 
   const { res, errorBody } = await postOpenAiWithFallbacks(
     (attempt) =>
-      fetch(url, {
+      connectionFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(buildOpenAiToolBody(config, req, attempt)),

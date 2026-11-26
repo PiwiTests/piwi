@@ -20,7 +20,14 @@
  *   connection opens.
  */
 import type { Agent } from 'undici';
-import { assertPublicHttpUrl, publicOnlyLookup } from './safe-fetch';
+import {
+  assertPublicHttpUrl,
+  hostPlace,
+  hostPlaces,
+  placesAllow,
+  publicOnlyLookup,
+  type HostPlace,
+} from './safe-fetch';
 import { isDesktopRuntime } from './ai-claude-cli';
 import {
   CredentialRefusedError,
@@ -85,48 +92,19 @@ export function instanceCiServerUrl(): string | null {
   return normalizeCiServerBaseUrl(process.env.PIWI_CI_SERVER_URL);
 }
 
-/** A URL's host name, lowercased and without IPv6 brackets, and its port (the scheme's default when absent). */
-function hostAndPort(url: URL): { host: string; port: string } {
-  return {
-    host: url.hostname.replace(/^\[|\]$/g, '').toLowerCase(),
-    port: url.port || (url.protocol === 'https:' ? '443' : '80'),
-  };
-}
-
 /**
  * The places a CI server dispatch may reach on a private address: the host and
  * port of `PIWI_CI_SERVER_URL`, and each `PIWI_CI_SERVER_HOSTS` entry, a host
  * name (any port) or `host:port` (that port only, `:80` included).
  */
-export function ciServerHosts(): Array<{ host: string; port: string | null }> {
-  const places: Array<{ host: string; port: string | null }> = [];
+export function ciServerHosts(): HostPlace[] {
   const instance = instanceCiServerUrl();
-  if (instance) places.push(hostAndPort(new URL(instance)));
-  for (const entry of (process.env.PIWI_CI_SERVER_HOSTS ?? '').split(',')) {
-    const name = entry.trim();
-    // A host or `host:port` alone: an entry with a path, query, fragment, user or empty port allows nothing.
-    if (!name || /[/?#\\@\s]/.test(name) || name.endsWith(':')) continue;
-    try {
-      // `URL` drops a port equal to the scheme's default, so `host:80` reads its port from the entry.
-      const place = hostAndPort(new URL(`http://${name}`));
-      places.push({ host: place.host, port: /:\d+$/.test(name) ? place.port : null });
-    } catch {
-      // An entry that is not a host name allows nothing.
-    }
-  }
-  return places;
+  return [...(instance ? [hostPlace(new URL(instance))] : []), ...hostPlaces(process.env.PIWI_CI_SERVER_HOSTS)];
 }
 
 /** Whether a dispatch to this URL may reach a private address: a listed place, or the desktop app. */
 export function mayReachPrivateAddress(url: string): boolean {
-  if (isDesktopRuntime()) return true;
-  let target: { host: string; port: string };
-  try {
-    target = hostAndPort(new URL(url));
-  } catch {
-    return false;
-  }
-  return ciServerHosts().some((place) => place.host === target.host && (place.port ?? target.port) === target.port);
+  return isDesktopRuntime() || placesAllow(ciServerHosts(), url);
 }
 
 function toCiServerCredential(record: CredentialRecord, source: CiServerCredential['source']): CiServerCredential {

@@ -92,6 +92,51 @@ export function isBlockedAddress(ip: string): boolean {
   return true; // not a valid IP → refuse
 }
 
+/** A host an operator lets a request reach on a private address: any port of it, or `port` alone. */
+export interface HostPlace {
+  host: string;
+  port: string | null;
+}
+
+/** A URL's host name, lowercased and without IPv6 brackets, and its port (the scheme's default when absent). */
+export function hostPlace(url: URL): { host: string; port: string } {
+  return {
+    host: url.hostname.replace(/^\[|\]$/g, '').toLowerCase(),
+    port: url.port || (url.protocol === 'https:' ? '443' : '80'),
+  };
+}
+
+/**
+ * The places of a comma-separated list of hosts: a host name (any port) or `host:port` (that port only, `:80`
+ * included). An entry with a path, query, fragment, user or empty port, or that is no host name, allows nothing.
+ */
+export function hostPlaces(list: string | undefined): HostPlace[] {
+  const places: HostPlace[] = [];
+  for (const entry of (list ?? '').split(',')) {
+    const name = entry.trim();
+    if (!name || /[/?#\\@\s]/.test(name) || name.endsWith(':')) continue;
+    try {
+      // `URL` drops a port equal to the scheme's default, so `host:80` reads its port from the entry.
+      const place = hostPlace(new URL(`http://${name}`));
+      places.push({ host: place.host, port: /:\d+$/.test(name) ? place.port : null });
+    } catch {
+      // not a host name
+    }
+  }
+  return places;
+}
+
+/** Whether one of `places` names the host and port of `url`. */
+export function placesAllow(places: readonly HostPlace[], url: string): boolean {
+  let target: { host: string; port: string };
+  try {
+    target = hostPlace(new URL(url));
+  } catch {
+    return false;
+  }
+  return places.some((place) => place.host === target.host && (place.port ?? target.port) === target.port);
+}
+
 /**
  * Validate that `rawUrl` is an `http(s)` URL whose host is public. Resolves the
  * hostname and rejects if any resolved address is blocked. Throws on violation.

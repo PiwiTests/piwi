@@ -523,10 +523,10 @@ export const SETTINGS_ANCHORS = [
     kind: 'block',
     pages: ['/settings/integrations'],
     describes:
-      'The note under the Jira card: a connection’s base URL is trusted as an administrator’s, so a self-hosted tracker on a private host works.',
+      'The note under the Jira card: a site on a private address is reached only when the operator lists its host in PIWI_PRIVATE_HOSTS.',
     requires: { capability: 'integrations', permission: 'connections:manage' },
     help: 'settings.integrations.private-host',
-    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
+    doc: 'operate/production-checklist#private-hosts',
     sample: { route: '/settings/integrations' },
   },
 

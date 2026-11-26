@@ -33,6 +33,20 @@ The defaults are conservative, so the checklist above is short. Without any extr
 - Stored credentials are encrypted with **AES-256-GCM**, API keys kept only as hashes, and secrets set by environment variable never written to the database: [Secrets at rest](/guide/privacy#secrets-at-rest).
 - Database **migrations are forward-only** and run on startup, before any request reaches the database; if one fails, every database call fails and `/api/health` returns `503` rather than serving a half-migrated schema.
 
+## Private hosts
+
+An address an administrator sets in the dashboard, a Jira site in **Settings → Integrations** or an AI base URL in
+**Settings → AI**, reaches only public addresses. A name that resolves to a loopback, private (RFC 1918), link-local or
+reserved address is refused when the connection opens, and so is a redirect to one. Three things let it reach a private
+address:
+
+- the address is set in the environment (`PIWI_JIRA_BASE_URL`, `PIWI_AI_BASE_URL` or a role's base URL): its host
+  and port are allowed;
+- `PIWI_PRIVATE_HOSTS` lists the host, or `host:port` for one port only: `PIWI_PRIVATE_HOSTS=ollama:11434,jira.lan`;
+- the dashboard runs in the [desktop app](/features/desktop), which reaches any address.
+
+A link someone pins and a webhook go through a stricter guard, which allows no private address at all.
+
 ## Optional, and worth a thought
 
 - **Public share links** are off by default (`PIWI_SHARE_LINKS_ENABLED`). If you turn them on, know that anyone with the link sees the execution, cluster, report snapshot or dashboard it opens without signing in — see [Share links](/features/share-links).

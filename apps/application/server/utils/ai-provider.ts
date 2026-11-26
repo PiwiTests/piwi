@@ -15,6 +15,7 @@ import {
   type AiKeyScope,
 } from './ai-credentials';
 import { CredentialRefusedError, withCredential, type CredentialActor } from './credentials';
+import { connectionFetch } from './connection-fetch';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -377,6 +378,7 @@ export async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic
   return new anthropicSdk.default({
     apiKey: config.apiKey,
     baseURL: config.baseUrl || undefined,
+    fetch: connectionFetch as typeof fetch,
     timeout: 120_000,
     maxRetries: 1,
   });
@@ -596,7 +598,7 @@ async function callOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions): Pr
 
   const { res, errorBody } = await postOpenAiWithFallbacks(
     (attempt) =>
-      fetch(url, {
+      connectionFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(buildOpenAiBody(config, opts, attempt)),
@@ -720,7 +722,7 @@ async function* streamOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions):
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
 
   const post = (attempt: OpenAiAttempt) =>
-    fetch(url, {
+    connectionFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({

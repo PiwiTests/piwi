@@ -617,7 +617,8 @@ describe('the privacy page lists every destination', () => {
   // table. A file that only sends what its callers give it is a helper. The S3, PostgreSQL and OpenTelemetry clients
   // are libraries this pattern does not see: their rows come from the registry and UNREGISTERED. A new call in a file
   // already listed is not seen either.
-  const CALL = /\bfetch\(|\$fetch\b|\bofetch\b|\bsafeFetch\(|\bfetchPublicImage\(|\bcreateTransport\(/;
+  const CALL =
+    /\bfetch\(|\$fetch\b|\bofetch\b|\bsafeFetch\(|\bconnectionFetch\b|\bfetchPublicImage\(|\bcreateTransport\(/;
   // A comment names calls it does not make, and a `$fetch` of a path that starts with `/` is the server calling itself.
   const COMMENT = /\/\*[\s\S]*?\*\/|(^|[^:'"`\\])\/\/.*$/gm;
   const INTERNAL_CALL = /\$fetch(?:<[^>]*>)?\(\s*['"`]\//g;
@@ -646,7 +647,7 @@ describe('the privacy page lists every destination', () => {
     'server/utils/scm/GitLabProvider.ts': 'Your git host',
     'server/utils/unfurl/GenericUnfurlProvider.ts': 'A URL you attach as a link',
   };
-  const HELPERS = ['server/utils/safe-fetch.ts', 'server/utils/public-image.ts'];
+  const HELPERS = ['server/utils/safe-fetch.ts', 'server/utils/connection-fetch.ts', 'server/utils/public-image.ts'];
 
   const callers = (function walk(dir: string): string[] {
     return readdirSync(join(repoRoot, 'apps/application', dir), { withFileTypes: true }).flatMap((entry) => {
