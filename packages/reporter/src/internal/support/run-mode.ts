@@ -75,6 +75,9 @@ export function isListMode(argv: string[] = process.argv): boolean {
  * which replays blob reports through the reporters: no test runs, no worker
  * starts and nothing of the run is live. The command is the first argument
  * that is not an option, so a spec filter that reads `merge-reports` is not it.
+ *
+ * `argv` is the runner's command line (`runnerArgv`, whose empty snapshot under
+ * merge-reports reads as this process's), `process.argv` by default.
  */
 export function isMergeReports(argv: readonly string[] = process.argv): boolean {
   return argv.slice(2).find((arg) => !arg.startsWith('-')) === 'merge-reports';

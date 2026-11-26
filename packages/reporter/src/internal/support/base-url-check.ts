@@ -11,6 +11,7 @@
  */
 import * as net from 'node:net';
 import { errorMessage } from './errors.js';
+import { runnerArgv } from './run-mode.js';
 
 /** How many times a base URL is tried before it counts as down. */
 export const BASE_URL_CHECK_ATTEMPTS = 3;
@@ -28,6 +29,8 @@ const GATEWAY_ANSWERS: Record<number, string> = {
 interface ProjectLike {
   name?: string;
   dependencies?: string[];
+  /** The project Playwright runs after the projects that depend on this one. */
+  teardown?: string;
   use?: { baseURL?: unknown; ignoreHTTPSErrors?: unknown; proxy?: unknown; connectOptions?: unknown };
 }
 
@@ -41,6 +44,8 @@ export interface BaseUrlConfig {
    */
   filteredProjects?: ProjectLike[];
   use?: ProjectLike['use'];
+  /** Playwright's snapshot of the runner's command line (Playwright 1.61+, `runnerArgv`). */
+  argv?: unknown;
 }
 
 type Proxy = { server: string; bypass?: string; username?: string; password?: string };
@@ -64,6 +69,8 @@ export interface BaseUrlTarget {
  * The project names `--project` selects on a Playwright command line, or null
  * when it selects none and every project runs. A bare `--project` takes the
  * arguments after it up to the next option, as Playwright's command line does.
+ * With no config to read the runner's command line from, `argv` is this
+ * process's.
  */
 export function cliProjectNames(argv: string[] = process.argv): string[] | null {
   let names: string[] | null = null;
@@ -86,10 +93,13 @@ function wildcard(pattern: string, flags = 'i'): RegExp {
 
 /**
  * The projects the run selects, and, unless `--no-deps` is given, the projects
- * they depend on. The selection is Playwright's own `filteredProjects` when it
- * is given (Playwright 1.64+), matched by identity or, for a named project, by name. Otherwise it is
- * read off the command line: the projects `--project` names (case-insensitive,
- * `*` as a wildcard), or every project when `--project` is absent.
+ * they depend on and the teardown project of each, which Playwright runs after
+ * the projects that depend on it. The selection is Playwright's own
+ * `filteredProjects` when it is given (Playwright 1.64+), matched by identity
+ * or, for a named project, by name. Otherwise it is read off the command line:
+ * the projects `--project` names (case-insensitive, `*` as a wildcard), or
+ * every project when `--project` is absent. With no config to read the
+ * runner's command line from, `argv` is this process's.
  */
 export function selectedProjects<T extends ProjectLike>(
   projects: T[],
@@ -110,7 +120,8 @@ export function selectedProjects<T extends ProjectLike>(
     const byName = new Map(projects.map((p) => [p.name ?? '', p]));
     const queue = [...chosen];
     while (queue.length > 0) {
-      for (const dep of queue.shift()!.dependencies ?? []) {
+      const next = queue.shift()!;
+      for (const dep of [...(next.dependencies ?? []), ...(next.teardown ? [next.teardown] : [])]) {
         const project = byName.get(dep);
         if (project && !chosen.has(project)) {
           chosen.add(project);
@@ -177,10 +188,13 @@ function reachedRemotely(use: ProjectLike['use'], url: string, env: NodeJS.Proce
   return !exposeNetworkCovers(typeof connect.exposeNetwork === 'string' ? connect.exposeNetwork : undefined, url);
 }
 
-/** The distinct base URLs of the projects the run selects, each with the projects that use it. */
+/**
+ * The distinct base URLs of the projects the run selects, each with the projects that use it. `argv` is the runner's
+ * command line (`runnerArgv`).
+ */
 export function baseUrlTargets(
   config: BaseUrlConfig,
-  argv: string[] = process.argv,
+  argv: string[] = runnerArgv(config),
   env: NodeJS.ProcessEnv = process.env,
 ): BaseUrlTarget[] {
   const projects: ProjectLike[] = config.projects?.length ? config.projects : [{ name: '', use: config.use }];

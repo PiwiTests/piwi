@@ -330,8 +330,11 @@ export class PiwiDashboardReporter {
    * Read in `onBegin`, from the runner's command line (`runnerArgv`).
    */
   private listMode = false;
-  /** True under `playwright merge-reports`, which replays blob reports: no test runs and nothing of the run is live. */
-  private readonly mergingReports = isMergeReports();
+  /**
+   * True under `playwright merge-reports`, which replays blob reports: no test runs and nothing of the run is live.
+   * Read in `onBegin`, from the runner's command line (`runnerArgv`).
+   */
+  private mergingReports = false;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
   /** The team instance a requested run uploads to, or why it uploads nowhere. */
@@ -617,6 +620,7 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
     const argv = runnerArgv(config);
+    this.mergingReports = isMergeReports(argv);
     this.listMode = isListMode(argv);
     if (this.listMode) {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');

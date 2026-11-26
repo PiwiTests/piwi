@@ -313,13 +313,13 @@ export interface PiwiDashboardOptions {
    * runs no test and reaches no dashboard. The check runs in the reporter's
    * global setup, after `webServer` has started and before the config's own
    * `globalSetup`, so leave it off when that setup is what starts the app. Only
-   * the projects the run selects are checked, with their dependencies: the ones
-   * `--project` names, or every project but those declared `default: false`
-   * (Playwright 1.64+). The check runs from this machine's network: for a
-   * project whose browser runs on another machine (`connectOptions`) and whose
-   * `exposeNetwork` rule does not cover the base URL's host and port, its message says
-   * so, since that browser reaches the app from its own network. **Defaults to
-   * `false`**. Can also be set with `PIWI_CHECK_BASE_URL=true`.
+   * the projects the run selects are checked, with their dependencies and
+   * teardown projects: the ones `--project` names, or every project but those
+   * declared `default: false` (Playwright 1.64+). The check runs from this
+   * machine's network: for a project whose browser runs on another machine
+   * (`connectOptions`) and whose `exposeNetwork` rule does not cover the base
+   * URL's host and port, its message says so, since that browser reaches the
+   * app from its own network. **Defaults to `false`**. Can also be set with `PIWI_CHECK_BASE_URL=true`.
    */
   checkBaseUrl?: boolean;
 

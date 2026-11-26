@@ -80,6 +80,21 @@ describe('which projects the run selects', () => {
     expect(names([...PW], [])).toEqual([]);
   });
 
+  it('adds the teardown project of each project it lists, as Playwright runs it, unless --no-deps', () => {
+    const setup = { name: 'setup', teardown: 'cleanup' };
+    const cleanup = { name: 'cleanup' };
+    const chromium = { name: 'chromium', dependencies: ['setup'] };
+    const seed = { name: 'seed', teardown: 'unseed' };
+    const unseed = { name: 'unseed' };
+    const projects = [setup, cleanup, chromium, seed, unseed];
+    const names = (argv: string[], filtered?: object[]) =>
+      selectedProjects(projects, argv, filtered).map((p) => p.name);
+    expect(names([...PW, '--project=chromium'])).toEqual(['setup', 'cleanup', 'chromium']);
+    expect(names([...PW], [chromium])).toEqual(['setup', 'cleanup', 'chromium']);
+    expect(names([...PW, '--project=seed'])).toEqual(['seed', 'unseed']);
+    expect(names([...PW, '--project=chromium', '--no-deps'])).toEqual(['chromium']);
+  });
+
   it('matches an unnamed project in filteredProjects by identity only', () => {
     const selected = {};
     const other = { default: false };
@@ -115,6 +130,17 @@ describe('baseUrlTargets', () => {
       },
     ]);
     expect(baseUrlTargets(config, [...PW, '--project=api']).map((t) => t.url)).toEqual(['https://api.example.test']);
+  });
+
+  it("reads the projects off Playwright's snapshot of the runner's command line", () => {
+    const config = {
+      projects: [
+        { name: 'chromium', use: { baseURL: 'https://staging.example.test' } },
+        { name: 'api', use: { baseURL: 'https://api.example.test' } },
+      ],
+      argv: [...PW, '--project=api'],
+    };
+    expect(baseUrlTargets(config).map((t) => t.url)).toEqual(['https://api.example.test']);
   });
 
   it('leaves out a project declared default: false that the run does not select', () => {

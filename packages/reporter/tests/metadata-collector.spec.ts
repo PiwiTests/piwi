@@ -793,6 +793,14 @@ describe('ranProjectNames', () => {
     expect(ranProjectNames(config, [...NODE, 'test', '--no-deps'])).toEqual(['webkit']);
   });
 
+  it('adds the teardown projects of the projects it lists', () => {
+    const withTeardown = { name: 'setup', teardown: 'cleanup' };
+    const cleanup = { name: 'cleanup' };
+    const config = { projects: [withTeardown, cleanup, chromium, webkit], filteredProjects: [webkit] };
+    expect(ranProjectNames(config, [...NODE, 'test'])).toEqual(['setup', 'cleanup', 'webkit']);
+    expect(ranProjectNames(config, [...NODE, 'test', '--no-deps'])).toEqual(['webkit']);
+  });
+
   it('reads --project off the command line where Playwright names no selection (before 1.64, merge-reports)', () => {
     for (const filteredProjects of [undefined, []]) {
       const config = { projects: [setup, chromium, webkit], filteredProjects };

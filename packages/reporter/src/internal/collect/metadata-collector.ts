@@ -198,9 +198,9 @@ export function failsOnFlakyTests(
 }
 
 /**
- * The names of the Playwright projects the run ran, in the config's order, with the projects they depend on unless
- * `--no-deps` (`selectedProjects`): Playwright's `filteredProjects` (Playwright 1.64 and later), else those `--project`
- * names on the runner's command line, else every project. A run with no selection of its own (merge-reports) has an
+ * The names of the Playwright projects the run ran, in the config's order, with the projects they depend on and their
+ * teardown projects unless `--no-deps` (`selectedProjects`): Playwright's `filteredProjects` (Playwright 1.64 and
+ * later), else those `--project` names on the runner's command line, else every project. A run with no selection of its own (merge-reports) has an
  * empty `filteredProjects`, which reads as none.
  */
 export function ranProjectNames(config: { projects?: unknown; filteredProjects?: unknown }, argv: string[]): string[] {
