@@ -199,7 +199,7 @@ import {
 } from './recorder/page-candidates.js';
 import { listWithReporter, readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
-import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
+import { onlyNamedIds, TestListings, type ListedTest, type ListRunner } from './test-listing.js';
 import { configTree, locationArg, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
 import { canonicalPath, resolvePlaywrightCli } from './recorder/playwright.js';
 import {
@@ -984,10 +984,16 @@ export function requiredTagsWords(tags: readonly string[]): string {
 
 /**
  * The Playwright arguments of a run for `environment`: as they are, but for a protected one, kept to the tests
- * carrying one of its required tags (`withRequiredTags`); null when they cannot be.
+ * carrying one of its required tags (`withRequiredTags`); a sentence saying why the run's own `--grep-invert` cannot be
+ * kept with them, or null, when they cannot be.
  */
-function keptToEnvironment(args: string[], environment: EnvironmentForRun | null): string[] | null {
+function keptToEnvironment(args: string[], environment: EnvironmentForRun | null): string[] | string | null {
   return environment?.protected ? withRequiredTags(args, environment.requiredTags) : args;
+}
+
+/** Why a run for `environment` cannot keep its own `--grep-invert` (`keptToEnvironment`), as a notice says it. */
+function ownGrepInvertRefused(environment: EnvironmentForRun | null, why: string): string {
+  return `Piwi runs nothing against ${environment?.name ?? 'this environment'}: ${why}.`;
 }
 
 /** What **Choose environment…** offers for a context: **None**, then its project's environments. */
@@ -4301,7 +4307,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           missing.push({ file: c.filePath, test: missingTest(context, c) });
         }
       }
-      const nodes = configTree(context.root, treeSpecs, missing);
+      const nodes = configTree(context.root, treeSpecs, missing, onlyNamedIds(listing));
       if (!nodes.length && !state?.error) continue;
       result.contexts.push({
         root: context.root,
@@ -4351,7 +4357,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
     const tree = await testItemsOf({ uris: documents.all().map((d) => d.uri) });
     const repeat = typeof params?.repeat === 'number' ? params.repeat : null;
-    const contexts = tree.contexts.map((c) => ({ ...c, folder: canonicalPath(c.root) }));
+    const contexts = tree.contexts.map((c) => ({
+      ...c,
+      folder: canonicalPath(c.root),
+      onlyNamed: onlyNamedIds(testListings.state(c.root)?.listing ?? null),
+    }));
     return nodeRuns(contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
       uri: run.uri ?? pathToFileURL(run.root).href,
       root: run.root,
@@ -4707,6 +4717,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       debugArgs(locationArg(commandFolder(context), `${relative}:${test.line + 1}`), debug.project, test, debug.title),
       settings.environment,
     );
+    if (typeof args === 'string') return refuse(ownGrepInvertRefused(settings.environment, args));
     if (!args || !playwrightTestCommand(args)) {
       return refuse(
         args && playwrightTestCommand([args[0]!])
@@ -4869,6 +4880,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
+   * A run's `args` kept to `environment` (`keptToEnvironment`); null when they cannot be, with a notice saying why when
+   * the run's own `--grep-invert` cannot be kept.
+   */
+  const keptForRun = (context: PiwiContext, args: string[], environment: EnvironmentForRun | null): string[] | null => {
+    const kept = keptToEnvironment(args, environment);
+    if (typeof kept !== 'string') return kept;
+    void connection.sendNotification(NOTICE_NOTIFICATION, {
+      root: context.root,
+      severity: 'warning',
+      message: ownGrepInvertRefused(environment, kept),
+    } satisfies Notice);
+    return null;
+  };
+
+  /**
    * The command line of a run's `args` in a context, for `environment`: `npx playwright test …`, but for a protected
    * environment on Windows the project's own Playwright CLI started by `node` (`playwrightNodeCommand`), since
    * PowerShell hands `npx.cmd` an argument without whitespace bare, and cmd would read the filter's `^` and `|`. Null,
@@ -4909,14 +4935,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const named = await testArgs(context, params);
     // The projects and the titles the tests run in and by, as Playwright's options.
     const option = (name: string, value: unknown) => (typeof value === 'string' && value ? [name, value] : []);
+    // An unnamed project is `--project=`, which Playwright reads as the projects with no name.
+    const project = (name: unknown) => (name === '' ? ['--project='] : option('--project', name));
     const tests = named && [
       ...named,
-      ...(Array.isArray(params.projects) ? params.projects.flatMap((p) => option('--project', p)) : []),
+      ...(Array.isArray(params.projects) ? params.projects.flatMap(project) : []),
       ...option('--grep', params.grep),
       ...option('--grep-invert', params.grepInvert),
     ];
     const repeated = tests && repeat !== null ? repeatArgs(tests, repeat) : tests;
-    const args = repeated && keptToEnvironment(repeated, settings.environment);
+    const args = repeated && keptForRun(context, repeated, settings.environment);
     const command =
       args && (repeated!.length || params.all === true) ? runCommandLine(context, args, settings.environment) : null;
     if (!args || !command) return null;
@@ -5115,7 +5143,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!context || !selected?.length || !playwrightTestCommand(selected)) return null;
     const settings = await runSettingsFor(context);
     if (settings === null) return null;
-    const args = keptToEnvironment(selected, settings.environment);
+    const args = keptForRun(context, selected, settings.environment);
     const command = args && runCommandLine(context, args, settings.environment);
     if (!args || !command) return null;
     const ref = newRunRef();

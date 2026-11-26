@@ -502,6 +502,19 @@ ${STACK}`);
     expect(parsed.leafLocator).toBeNull();
   });
 
+  test("the call log's Expect line gives the matcher and the timeout, with or without the locator in it", () => {
+    for (const line of [
+      'Expect "toBeVisible" with timeout 1000ms',
+      'Expect "toBeVisible" Place order button with timeout 1000ms',
+      `Expect "toBeVisible" getByRole('button', { name: 'Place order' }) with timeout 1000ms`,
+    ]) {
+      const parsed = parsePlaywrightError(
+        `Error: Place order is offered\n\nCall log:\n  - ${line}\n  - waiting for getByRole('button', { name: 'Place order' })\n`,
+      );
+      expect(parsed, line).toMatchObject({ assertion: 'toBeVisible', timeoutMs: 1000 });
+    }
+  });
+
   test('a header that holds a chain wins over the call log', () => {
     const parsed = parsePlaywrightError(`Error: expect(locator).toBeVisible() failed
 
@@ -557,6 +570,42 @@ describe('locator and frame helpers', () => {
       "getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' }).first()",
     );
     expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Delete' })");
+  });
+
+  test('extractSelector reads a chain that enters a frame through the first locator call inside it', () => {
+    const waitingFor = (locator: string) =>
+      `TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${locator}\n`;
+    for (const locator of [
+      "frameLocator().getByLabel('Card number')",
+      "frameLocator('#pay').getByLabel('Card number')",
+      "locator('#pay').contentFrame().getByLabel('Card number')",
+      "locator('iframe').first().contentFrame().getByLabel('Expiry')",
+      "locator('iframe').nth(2).contentFrame().getByLabel('Expiry')",
+      "locator('iframe').filter({ hasText: 'a' }).contentFrame().getByLabel('Expiry')",
+      "getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card number')",
+      "frameLocator().locator('#my-frame').contentFrame().getByRole('button')",
+      "locator('#outer').contentFrame().locator('#inner').contentFrame().getByLabel('Card number')",
+      "locator('#outer').contentFrame().frameLocator('#inner').getByLabel('Card number')",
+    ]) {
+      expect(extractSelector(waitingFor(`${locator}.first()`)), locator).toBe(locator);
+    }
+    expect(extractSelector("await page.frameLocator('#pay').getByLabel('Card').fill('4242')")).toBe(
+      "frameLocator('#pay').getByLabel('Card')",
+    );
+    expect(extractSelector("Error: frameLocator('#pay').owner().first() has no src")).toBe("frameLocator('#pay')");
+    expect(extractSelector("Error: locator('iframe#pay').contentFrame().owner() has no src")).toBe(
+      "locator('iframe#pay')",
+    );
+    const cutShort = `locator('iframe').first().contentFrame().getByRole('button', { name: '${'x'.repeat(100)}`;
+    const inner = cutShort.indexOf('getByRole');
+    expect(extractSelector(cutShort)).toBe(cutShort.slice(0, inner + 80));
+  });
+
+  test('extractSelector reads the first call alone of a chain that enters no frame', () => {
+    expect(extractSelector("waiting for getByRole('row', { name: 'Acme' }).getByRole('button').first()")).toBe(
+      "getByRole('row', { name: 'Acme' })",
+    );
+    expect(extractSelector("waiting for locator('iframe').first().owner().click()")).toBe("locator('iframe')");
   });
 
   test('extractLeafSelector reads parentheses inside names as text', () => {

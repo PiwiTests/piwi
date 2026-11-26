@@ -93,7 +93,7 @@ What the package does to a user's run, process by process.
   `browser.bind` or a shared browser server; its `runBeforeCloseBrowserContext` hook marks
   when a context's close began, before its `close` event), its wrappers on
   the browser types' `launch`/`connect` (and `connectOverCDP`), which have no event for the
-  browsers they open, and its wrapper on the
+  browsers they open, put back as the ledger uninstalls, and its wrapper on the
   `sendMessageToServer` of the worker's connection and of each browser it connects to,
   put back as that browser disconnects (internal, feature-checked). The wrapper reads each
   call a test makes to know when and from which line it last used each page, context,

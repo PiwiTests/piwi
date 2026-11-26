@@ -45,6 +45,10 @@ const MAX_SAFE_ID: u64 = (1 << 53) - 1;
 const GREP_INVERT_START: &str = r"^(?!.*(?:^|\s)(?:";
 /// The `--grep-invert` pattern after the required tags.
 const GREP_INVERT_END: &str = r")(?:\s|$))";
+/// The `--grep-invert` pattern before a run's own pattern, kept in it: core's `requiredTagsGrepInvert`.
+const OWN_PATTERN_START: &str = "(?:";
+/// The `--grep-invert` pattern after a run's own pattern, before the required tags' pattern.
+const OWN_PATTERN_END: &str = ")|";
 /// The most env files of a linked folder its check lists.
 const MAX_ENV_FILES_LISTED: usize = 50;
 /// The largest env file the shell copies into a worktree.
@@ -103,33 +107,25 @@ impl RunSettings {
     /// The run's arguments `given`, checked ([`crate::runner::validate_args`]), as Playwright gets them: for a protected
     /// environment, with the `--grep-invert` that limits the run to the tests carrying one of its required tags, beside
     /// the setup and teardown projects they depend on, which Playwright runs whole, written last. The run's own `-G`
-    /// (the last, as Playwright reads it) is taken out and kept in it: a test either pattern matches is left out.
-    pub(crate) fn args(&self, given: Vec<String>) -> Vec<String> {
+    /// (the last, as Playwright reads it) is kept in it ([`required_tags_grep_invert`]): a test either pattern matches is
+    /// left out. Each given argument stays in its place, so Playwright reads them as written and takes the
+    /// `--grep-invert` written last. Err for an own `-G` the pattern cannot keep.
+    pub(crate) fn args(&self, given: Vec<String>) -> Result<Vec<String>, String> {
         let Some(environment) = self
             .environment
             .as_ref()
             .filter(|environment| environment.protected)
         else {
-            return given;
+            return Ok(given);
         };
-        let mut kept = Vec::with_capacity(given.len() + 1);
-        let mut own = None;
-        let mut given = given.into_iter();
-        while let Some(arg) = given.next() {
-            if arg == "-G" {
-                own = given.next();
-            } else if crate::spec_filter::VALUE_FLAGS.contains(&arg.as_str()) {
-                kept.push(arg);
-                kept.extend(given.next());
-            } else {
-                kept.push(arg);
-            }
-        }
-        kept.push(format!(
-            "--grep-invert={}",
-            required_tags_grep_invert(&environment.required_tags, own.as_deref())
-        ));
-        kept
+        let read = crate::spec_filter::read_args(&given);
+        let own = (0..given.len())
+            .rfind(|&index| read[index] == crate::spec_filter::Arg::Flag && given[index] == "-G")
+            .and_then(|index| given.get(index + 1));
+        let invert = required_tags_grep_invert(&environment.required_tags, own.map(String::as_str))?;
+        let mut args = given;
+        args.push(format!("--grep-invert={invert}"));
+        Ok(args)
     }
 
     /// Refuses a protected environment for `what`, which never runs against one, saying `why`: `piwi flake` cannot be
@@ -214,12 +210,33 @@ pub(crate) fn listed_tests(stdout: &str) -> Option<ListedTests> {
 
 /// The `--grep-invert` pattern that leaves out every test whose title and tags hold none of `tags` as a word, and every
 /// test the run's `own` pattern matches: core's `requiredTagsGrepInvert(tags, own)`. The tags are checked
-/// ([`tag_ok`]), so none needs escaping.
-pub(crate) fn required_tags_grep_invert(tags: &[String], own: Option<&str>) -> String {
+/// ([`tag_ok`]), so none needs escaping. An empty `own` is none, as Playwright reads an empty `-G`; another is kept as
+/// [`kept_own_pattern`] keeps it, or refused.
+pub(crate) fn required_tags_grep_invert(tags: &[String], own: Option<&str>) -> Result<String, String> {
     let required = format!("{GREP_INVERT_START}{}{GREP_INVERT_END}", tags.join("|"));
     match own.filter(|own| !own.is_empty()) {
-        Some(own) => format!("(?:{own})|{required}"),
-        None => required,
+        Some(own) => Ok(format!(
+            "{OWN_PATTERN_START}{}{OWN_PATTERN_END}{required}",
+            kept_own_pattern(own)?
+        )),
+        None => Ok(required),
+    }
+}
+
+/// A run's own `-G` as the pattern a protected environment's `--grep-invert` keeps, which Playwright reads ignoring case:
+/// `own` itself, which it reads ignoring case too, or the source of `own` written `/source/flags` with `i`. Playwright
+/// reads `/source/flags` so when the flags are `g` and `i` alone and the source holds no line break; it reads another
+/// `/…` as a plain pattern. Err for `/source/flags` without `i`, which matches letters in their case.
+fn kept_own_pattern(own: &str) -> Result<&str, String> {
+    let literal = own.strip_prefix('/').and_then(|rest| rest.rsplit_once('/')).filter(|(source, flags)| {
+        flags.chars().all(|c| c == 'g' || c == 'i') && !source.contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+    });
+    match literal {
+        None => Ok(own),
+        Some((source, flags)) if flags.contains('i') => Ok(source),
+        Some((source, _)) => Err(format!(
+            "-G {own} matches letters in their case, which a protected environment's run cannot keep: it reads -G ignoring case, as -G /{source}/i does"
+        )),
     }
 }
 
@@ -877,12 +894,12 @@ mod tests {
             ]
         );
         assert_eq!(
-            settings.args(Vec::new()),
+            settings.args(Vec::new()).unwrap(),
             vec![r"--grep-invert=^(?!.*(?:^|\s)(?:@smoke|@read-only)(?:\s|$))".to_string()]
         );
         assert!(settings.refuse_protected("Flake Lab", "why").is_err());
         // The shell adds it; the window can never pass one.
-        assert!(crate::runner::validate_args(&settings.args(Vec::new())).is_err());
+        assert!(crate::runner::validate_args(&settings.args(Vec::new()).unwrap()).is_err());
 
         let staging = checked_run_settings(
             &json!({ "runVariables": [], "environment": staging() }),
@@ -893,8 +910,8 @@ mod tests {
             }),
         )
         .unwrap();
-        let given = vec!["-G".to_string(), "slow".to_string()];
-        assert_eq!(staging.args(given.clone()), given);
+        let given = vec!["-G".to_string(), "/Slow/".to_string()];
+        assert_eq!(staging.args(given.clone()).unwrap(), given);
         assert!(staging.refuse_protected("Flake Lab", "why").is_ok());
         assert_eq!(
             staging.envs(),
@@ -916,33 +933,53 @@ mod tests {
         let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
         let required = r"^(?!.*(?:^|\s)(?:@smoke|@read-only)(?:\s|$))";
         // The last `-G` is the one Playwright reads; a `-G` that is another option's value stays that value.
+        let given = args(&["tests/a.spec.ts", "-G", "wip", "--grep", "-G", "-G", "slow", "-x"]);
+        let mut kept = given.clone();
+        kept.push(format!("--grep-invert=(?:slow)|{required}"));
+        assert_eq!(settings.args(given).unwrap(), kept);
+        // Each argument stays where Playwright reads it: the filter after `-G` is no project name.
+        let given = args(&["--project", "api", "-G", "/Slow/i", "tests/a.spec.ts", "--shuffle", "-G", ""]);
+        let mut kept = given.clone();
+        kept.push(format!("--grep-invert={required}"));
+        assert_eq!(settings.args(given).unwrap(), kept);
+        let refused = settings.args(args(&["-G", "/Slow/", "tests/a.spec.ts"])).unwrap_err();
+        assert!(refused.contains("-G /Slow/i"), "{refused}");
+    }
+
+    #[test]
+    fn keeps_a_run_s_own_pattern_as_playwright_reads_it() {
+        let tags = ["@smoke".to_string()];
+        let required = required_tags_grep_invert(&tags, None).unwrap();
+        assert_eq!(required, r"^(?!.*(?:^|\s)(?:@smoke)(?:\s|$))");
+        assert_eq!(required_tags_grep_invert(&tags, Some("")).unwrap(), required);
+        // Playwright reads `/source/flags` as its source when the flags are `g` and `i` alone, and any other pattern
+        // as it is, ignoring case.
+        for (own, kept) in [
+            ("a|b", "a|b"),
+            ("/slow/i", "slow"),
+            ("/slow/gi", "slow"),
+            ("/a/b/ig", "a/b"),
+            ("//i", ""),
+            ("/slow/m", "/slow/m"),
+            ("/slow", "/slow"),
+        ] {
+            assert_eq!(
+                required_tags_grep_invert(&tags, Some(own)).unwrap(),
+                format!("(?:{kept})|{required}"),
+                "{own}"
+            );
+        }
+        // A source holding a line break is a plain pattern too.
         assert_eq!(
-            settings.args(args(&[
-                "tests/a.spec.ts",
-                "-G",
-                "wip",
-                "--grep",
-                "-G",
-                "-G",
-                "slow",
-                "-x"
-            ])),
-            args(&[
-                "tests/a.spec.ts",
-                "--grep",
-                "-G",
-                "-x",
-                &format!("--grep-invert=(?:slow)|{required}"),
-            ])
+            required_tags_grep_invert(&tags, Some("/a\u{2028}b/i")).unwrap(),
+            format!("(?:/a\u{2028}b/i)|{required}")
         );
-        assert_eq!(
-            settings.args(args(&["--project", "api", "-G", ""])),
-            args(&["--project", "api", &format!("--grep-invert={required}")])
-        );
-        assert_eq!(
-            required_tags_grep_invert(&["@smoke".to_string()], Some("a|b")),
-            r"(?:a|b)|^(?!.*(?:^|\s)(?:@smoke)(?:\s|$))"
-        );
+        // Without `i`, Playwright matches letters in their case, which the `--grep-invert` it reads ignoring case
+        // cannot keep.
+        for case_sensitive in ["/Slow/", "/slow/g", "/x/i/"] {
+            let refused = required_tags_grep_invert(&tags, Some(case_sensitive)).unwrap_err();
+            assert!(refused.contains(case_sensitive), "{refused}");
+        }
     }
 
     #[test]
@@ -950,7 +987,7 @@ mod tests {
         let none = checked_run_settings(&json!({ "runVariables": [], "environment": null }), None)
             .unwrap();
         assert_eq!(none, RunSettings::default());
-        assert!(none.envs().is_empty() && none.args(Vec::new()).is_empty());
+        assert!(none.envs().is_empty() && none.args(Vec::new()).unwrap().is_empty());
         assert!(checked_run_settings(
             &json!({ "runVariables": [], "environment": staging() }),
             None

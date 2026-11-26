@@ -1064,6 +1064,7 @@ export interface ConsoleEntry {
   type: string;
   text: string;
   timestamp: number;
+  /** `url:line:column`, both 0-based as Playwright places a console message. */
   location?: string | null;
 }
 

@@ -205,10 +205,10 @@ describe('planned runs', () => {
   it('runs the selection plain when the plan reuses nothing', async () => {
     dashboard({ skip: [] });
     expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
-    expect(spawned()[0]!.args).toEqual([]);
+    expect(spawned()[0]!.args).toEqual(['--pass-with-no-tests']);
   });
 
-  it('passes --pass-with-no-tests to each shard of a plan that reuses nothing, once', async () => {
+  it('passes --pass-with-no-tests to every run of a plan that reuses nothing, sharded or not, once', async () => {
     dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
     expect(await runPlannedRun(['--plan', '9', '--shard', '1/2'], env)).toBe(0);
     expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--shard=1/2', '--pass-with-no-tests']);
@@ -221,7 +221,44 @@ describe('planned runs', () => {
     vi.mocked(spawn).mockClear();
     dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
     expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
-    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3']);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--pass-with-no-tests']);
+
+    vi.mocked(spawn).mockClear();
+    dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
+    expect(await runPlannedRun(['--plan', '9', '--', '--pass-with-no-tests'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--pass-with-no-tests']);
+  });
+
+  it('leaves --pass-with-no-tests out when the run’s own arguments choose tests, so their typo fails', async () => {
+    const own = async (argv: string[]) => {
+      vi.mocked(spawn).mockClear();
+      dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
+      expect(await runPlannedRun(['--plan', '9', ...argv], env)).toBe(0);
+      return spawned()[0]!.args;
+    };
+    expect(await own(['--', '--grep', '@smoek'])).toEqual(['tests/a.spec.ts:3', '--grep', '@smoek']);
+    expect(await own(['--', '-G=@slow'])).toEqual(['tests/a.spec.ts:3', '-G=@slow']);
+    expect(await own(['--', 'tests/typo.spec.ts'])).toEqual(['tests/a.spec.ts:3', 'tests/typo.spec.ts']);
+    expect(await own(['--', '--last-failed'])).toEqual(['tests/a.spec.ts:3', '--last-failed']);
+    expect(await own(['--', '--only-changed', 'main'])).toEqual(['tests/a.spec.ts:3', '--only-changed', 'main']);
+    expect(await own(['--shard', '1/2', '--', '-g', 'x'])).toEqual(['tests/a.spec.ts:3', '--shard=1/2', '-g', 'x']);
+    // Options that choose no tests keep it: a value an option takes is no file filter, and Playwright refuses a
+    // project it does not know.
+    expect(await own(['--', '--workers', '2', '--project', 'firefox', '--reporter', 'dot'])).toEqual([
+      'tests/a.spec.ts:3',
+      '--pass-with-no-tests',
+      '--workers',
+      '2',
+      '--project',
+      'firefox',
+      '--reporter',
+      'dot',
+    ]);
+
+    vi.mocked(spawn).mockClear();
+    dashboard();
+    expect(await runPlannedRun(['full', '--reuse', '--', '--grep', '@smoek'], env)).toBe(0);
+    expect(spawned()[0]!.args).not.toContain('--pass-with-no-tests');
   });
 
   it('runs the whole suite in a shard whose checkout is not at the plan’s commit', async () => {

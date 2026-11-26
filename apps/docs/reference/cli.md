@@ -263,9 +263,11 @@ In a CI matrix, one job runs `plan` and hands the id to the shard jobs. `run --p
 the reused tests, and the plan names only those, so a test the dashboard has not seen yet runs. With
 Playwright 1.62 or later in the project, it sets `PIWI_PLAN` and `PIWI_PLAN_SKIP=true` for the reporter, which reads the
 plan and skips each reused test itself, naming the run whose pass stands in for it; below 1.62, it passes Playwright's
-`--test-list-invert` naming them. Each shard passes Playwright's own `--shard` and `--pass-with-no-tests`, so a plan
-whose tests were all renamed or deleted runs none and passes. A shard that cannot use the plan runs the whole suite, or
-exits `2` under `--strict`; a shard whose reporter cannot read it runs the whole suite too.
+`--test-list-invert` naming them. Each shard passes Playwright's own `--shard`. A run whose own arguments after `--`
+choose no tests also passes `--pass-with-no-tests`, so a plan whose tests were all renamed or deleted runs none and
+passes; one that chooses its own (a file filter, `--grep`, `--grep-invert`, `--last-failed`, `--only-changed`,
+`--test-list`, `--test-list-invert`) fails as Playwright does when they match nothing. A shard that cannot use the plan
+runs the whole suite, or exits `2` under `--strict`; a shard whose reporter cannot read it runs the whole suite too.
 
 | Flag | Description |
 |---|---|

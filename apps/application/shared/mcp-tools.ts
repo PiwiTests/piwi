@@ -514,7 +514,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals, the ARIA snapshot and the test’s stdout and stderr.',
-      '`include` fetches only the heavy parts you need; the error, status and summary always come back. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+      '`include` fetches only the heavy parts you need; the error, status and summary always come back. A console entry’s `location` is `url:line:column`, 1-based as an editor counts them. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
       EXECUTION_WORKER,
     ),
     inputSchema: {
@@ -782,6 +782,7 @@ export const MCP_TOOL_DEFS = [
       [
         'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before, and for a leaked or lingering one `lastUse`: the line of the last call a test made on it, where its close belongs',
         'each shard’s machine: cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk',
+        'each shard’s workers (`workerHealth`): how busy their event loop was, the worst p99 delay and the context switches per test, with `gcReported` false where the runtime (Bun) reports no garbage collection, so no worker’s heap was judged piling up',
         'the busiest open pages per worker',
         'the costliest tests by the CPU of their worker and browser processes, with the pages each found already open',
       ],

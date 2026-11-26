@@ -1062,7 +1062,7 @@ export const HELP_TOPICS = {
   },
   'case.resources': {
     title: 'What the test cost',
-    text: 'The CPU this test used in its worker and in the browser processes it started, the largest of those processes, how busy the worker’s event loop was, and the pages it found open when it started and left open when it ended. Browser processes are read on Linux only.',
+    text: 'The CPU this test used in its worker and in the browser processes it started, the largest of those processes, how busy the worker’s event loop was, and the pages it found open when it started and left open when it ended. Browser processes are read on Linux only, and under Bun the event loop’s busy time is not measured.',
     doc: 'features/cpu-memory-disk#in-the-dashboard',
   },
   'case.web-vitals': {

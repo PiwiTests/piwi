@@ -20,8 +20,10 @@
  *  - otherwise → update the fingerprint + derived fields on the row
  * Each merge alias is then recomputed the same way from the sample it keeps,
  * so the failures a merge sent to a cluster keep reaching it. Per-test routes
- * keyed by a changed fingerprint, a cluster's or an alias's, move to the new
- * one, or for a generic failure to those the routed test's own errors carry.
+ * keyed by a changed fingerprint, a cluster's or an alias's, move to those the
+ * routed test's own errors carry, or to the new one when none is stored. A
+ * cluster whose recomputed signature, error type or locator differs has its
+ * embedding marked stale, so it is embedded again from the text it now holds.
  * A cluster made by moving tests out of another has no computed
  * fingerprint and is left as-is, as is an alias with no sample.
  *
@@ -36,7 +38,7 @@ import {
   testRuns,
   testRunsCases,
 } from '../../server/database/schema';
-import { computeErrorFingerprint, isGenericFailure, type ErrorFingerprint } from '../error-fingerprint';
+import { computeErrorFingerprint, type ErrorFingerprint } from '../error-fingerprint';
 import { errorFingerprintV4 } from '../error-fingerprint-v4';
 import { isSplitFingerprint, mergeFailureClusters } from './failure-cluster-ops';
 import type { DrizzleDB } from './db';
@@ -119,10 +121,11 @@ export async function backfillAliasSamples(db: DrizzleDB): Promise<number> {
 }
 
 /**
- * The fingerprints a routed test's failures carry, for a generic failure
- * `fp` hashes with the file it failed in: those of the test's errors in the
- * route's cluster that share `fp`'s signature, from its most recent
- * executions. Empty when none of them does.
+ * The fingerprints a routed test's failures carry: those of the test's errors
+ * in the route's cluster that share `fp`'s error type and message, from its
+ * most recent executions. Empty when none of them does. One fingerprint of an
+ * earlier version can stand for several of this one (the files a generic
+ * failure failed in, the elements of a frame), so each test keeps its own.
  */
 async function routedTestFingerprints(
   db: DrizzleDB,
@@ -146,18 +149,17 @@ async function routedTestFingerprints(
   for (const error of new Set(rows.map((row) => row.error))) {
     if (!error) continue;
     const own = await computeErrorFingerprint(error);
-    const sameSignature =
-      own.errorType === fp.errorType && own.normalizedMessage === fp.normalizedMessage && own.selector === fp.selector;
-    if (sameSignature) fingerprints.add(own.fingerprint);
+    if (own.errorType === fp.errorType && own.normalizedMessage === fp.normalizedMessage) {
+      fingerprints.add(own.fingerprint);
+    }
   }
   return [...fingerprints];
 }
 
 /**
- * Move a project's per-test routes from one fingerprint to the one `fp`
- * computed; a route already on the new one wins. A generic failure's
- * fingerprint holds the file it failed in, so each routed test takes the
- * fingerprints of its own errors, and `fp`'s when none is stored.
+ * Move a project's per-test routes from one fingerprint to those each routed
+ * test's own errors carry ({@link routedTestFingerprints}), or to the one `fp`
+ * computed when none is stored; a route already on a new one wins.
  */
 async function renameRouteFingerprint(
   db: DrizzleDB,
@@ -171,10 +173,9 @@ async function renameRouteFingerprint(
     .from(failureClusterTestRoutes)
     .where(where);
   if (routes.length === 0) return;
-  const generic = isGenericFailure(fp);
   const values: Array<typeof failureClusterTestRoutes.$inferInsert> = [];
   for (const { testCaseId, clusterId } of routes) {
-    const own = generic ? await routedTestFingerprints(db, testCaseId, clusterId, fp) : [];
+    const own = await routedTestFingerprints(db, testCaseId, clusterId, fp);
     for (const fingerprint of own.length ? own : [fp.fingerprint]) {
       values.push({ projectId, fingerprint, testCaseId, clusterId });
     }
@@ -224,12 +225,17 @@ async function mergeIntoOlder(db: DrizzleDB, a: number, b: number): Promise<numb
 /**
  * Give cluster `id` its recomputed fingerprint and the fields derived from it.
  * An alias of the cluster with that fingerprint has nothing left to lead to.
+ * When the signature, error type or locator differ from `stored`, the text its
+ * embedding was built from (`buildEmbedText`) differs too: its model tag is
+ * cleared, which keeps the vector out of every comparison until the
+ * reconciler embeds the cluster again.
  */
 async function rewriteClusterFingerprint(
   db: DrizzleDB,
   id: number,
   projectId: number,
   fp: ErrorFingerprint,
+  stored: { signature: string; errorType: string | null; selector: string | null },
 ): Promise<void> {
   await db
     .delete(failureClusterAliases)
@@ -242,7 +248,15 @@ async function rewriteClusterFingerprint(
     );
   await db
     .update(failureClusters)
-    .set({ fingerprint: fp.fingerprint, signature: fp.signature, errorType: fp.errorType, selector: fp.selector })
+    .set({
+      fingerprint: fp.fingerprint,
+      signature: fp.signature,
+      errorType: fp.errorType,
+      selector: fp.selector,
+      ...(fp.signature !== stored.signature || fp.errorType !== stored.errorType || fp.selector !== stored.selector
+        ? { embeddingModel: null }
+        : {}),
+    })
     .where(eq(failureClusters.id, id));
 }
 
@@ -258,6 +272,9 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       fingerprint: failureClusters.fingerprint,
       sampleError: failureClusters.sampleError,
       fingerprintSample: failureClusters.fingerprintSample,
+      signature: failureClusters.signature,
+      errorType: failureClusters.errorType,
+      selector: failureClusters.selector,
     })
     .from(failureClusters)
     .orderBy(asc(failureClusters.id));
@@ -284,7 +301,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       merged++;
     }
     if (survivor === id) {
-      await rewriteClusterFingerprint(db, id, cluster.projectId, fp);
+      await rewriteClusterFingerprint(db, id, cluster.projectId, fp, cluster);
       updated++;
     }
     await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp);

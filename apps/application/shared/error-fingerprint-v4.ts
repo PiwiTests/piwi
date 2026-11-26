@@ -6,10 +6,11 @@
  *
  * Version 4 masked fewer volatile tokens and never hashed the top frame. It
  * read the error type and the locator as `extractErrorSignature` reads them
- * (`classifyError`, `extractSelector`) and the message head as
+ * (`classifyError`, `extractSelector`), a chain that enters a frame cut back
+ * to its first call ({@link selectorV4}), and the message head as
  * `extractMessageHead` cuts it.
  */
-import { extractMessageHead, stripAnsi } from '@piwitests/core/error-parse';
+import { extractMessageHead, locatorCallEnd, stripAnsi } from '@piwitests/core/error-parse';
 import { extractErrorSignature, maskSelectorOptions } from '@piwitests/core/error-signature';
 import { sha256Hex } from './utils/hash';
 
@@ -31,9 +32,22 @@ function maskVolatileV4(text: string): string {
     .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
 }
 
+/**
+ * The locator version 4 hashed: the first call of `selector`, up to the
+ * parenthesis that closes it, so a chain that enters a frame
+ * (`locator('iframe').first().contentFrame().getByLabel(…)`) stands as
+ * `locator('iframe')`.
+ */
+function selectorV4(selector: string | null): string | null {
+  if (!selector) return selector;
+  const end = locatorCallEnd(selector, 0);
+  return end === -1 ? selector : selector.slice(0, end);
+}
+
 /** The fingerprint version 4 computed for `rawError`. */
 export async function errorFingerprintV4(rawError: string): Promise<string> {
-  const { errorType, selector } = extractErrorSignature(rawError);
+  const { errorType, selector: current } = extractErrorSignature(rawError);
+  const selector = selectorV4(current);
   const normalizedMessage = maskVolatileV4(maskSelectorOptions(extractMessageHead(stripAnsi(rawError))));
   const maskedSelector = selector ? maskVolatileV4(maskSelectorOptions(selector)) : '';
   return sha256Hex(['v4', errorType, normalizedMessage, maskedSelector].join('\u0000'));

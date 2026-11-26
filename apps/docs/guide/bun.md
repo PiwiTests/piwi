@@ -42,12 +42,12 @@ as under Node: Piwi tells a worker by the script Playwright runs in it, whicheve
 - **A test's column can be off by one.** Under Bun 1.4.4 and later, Playwright can report a test's column one off
   ([microsoft/playwright#43934](https://github.com/microsoft/playwright/issues/43934)), and Piwi keeps the location
   it reports. The file and the line are right, and a test's history does not depend on the column.
-- **The worker's event loop reads 0%.** Bun's `performance.eventLoopUtilization()` measures nothing, so the panel's
-  **Workers** line and each execution's Performance tab show the event loop busy 0% of the time. The loop's delay and
-  the context switches are measured.
+- **The worker's event loop busy time is not measured.** Bun's `performance.eventLoopUtilization()` reads no idle
+  and no active time, so the panel's **Workers** line leaves it out and its **Not measured** line names it, and each
+  execution's Performance tab shows no busy share. The loop's delay and the context switches are measured.
 - **No heap after garbage collection.** Bun reports no garbage collections to the performance observer Piwi reads, so
-  a worker's heap never counts as [piling up](/features/resource-leaks#what-it-reports); its open file descriptors
-  still do.
+  a worker's heap is never judged [piling up](/features/resource-leaks#what-it-reports), and the panel's **Not
+  measured** line names it. Its open file descriptors are still judged.
 
 ## Related
 

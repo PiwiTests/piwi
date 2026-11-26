@@ -173,7 +173,7 @@ export function consoleLogsFromTrace(
 
 /**
  * Traces carry the console location as an object (`lineNumber` and `columnNumber`, a page error's `line` and
- * `column`); storage wants `url:line:col`.
+ * `column`); storage wants `url:line:col`, 0-based as the trace records them (`#shared/console-entries`).
  */
 function normalizeConsoleLocation(location: unknown): string | null {
   if (typeof location === 'string') return location || null;

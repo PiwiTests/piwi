@@ -361,7 +361,7 @@ pub async fn desktop_run_repro(
         "test".into(),
         repro_file_filter(&request_id),
     ];
-    cmd_args.extend(settings.args(args));
+    cmd_args.extend(settings.args(args)?);
     let sidecar = app.shell().sidecar(crate::NODE_SIDECAR).map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();

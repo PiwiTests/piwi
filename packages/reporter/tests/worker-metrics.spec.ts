@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
+import { PerformanceObserver, performance } from 'node:perf_hooks';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { PageReader, WorkerMetrics } from '../src/internal/capture/worker-metrics.js';
+import { PageReader, WorkerMetrics, loopShare } from '../src/internal/capture/worker-metrics.js';
 import { ProcFs } from '../src/internal/support/system-readers.js';
 
 let dir: string;
@@ -70,6 +71,31 @@ describe('WorkerMetrics', () => {
     expect(result.roles).toBeUndefined();
     expect(result.worker.fds).toBeNull();
     expect(result.worker.heapUsedMb).toBeGreaterThan(0);
+    expect(result.worker.gcReported).toBe(true);
+  });
+
+  it('reads a window with no idle and no active time as an event loop not measured', () => {
+    expect(loopShare({ idle: 0, active: 0, utilization: 0 })).toBeNull();
+    expect(loopShare({ idle: 75, active: 25, utilization: 0.25 })).toBe(0.25);
+    expect(loopShare({ idle: 100, active: 0, utilization: 0 })).toBe(0);
+  });
+
+  it('measures neither the event loop nor the heap after garbage collection on a runtime that reports neither', () => {
+    // Bun's: every event loop reading is zero, and no `gc` entry type.
+    const loop = vi.spyOn(performance, 'eventLoopUtilization').mockReturnValue({ idle: 0, active: 0, utilization: 0 });
+    const types = vi.spyOn(PerformanceObserver, 'supportedEntryTypes', 'get').mockReturnValue(['mark', 'measure']);
+    try {
+      const metrics = new WorkerMetrics(new ProcFs(path.join(dir, 'missing')), process.pid, 'darwin');
+      metrics.start();
+      const result = metrics.end()!;
+      metrics.dispose();
+      expect(result.worker.loopUtilization).toBeNull();
+      expect(result.worker.heapAfterGcMb).toBeNull();
+      expect(result.worker.gcReported).toBe(false);
+    } finally {
+      loop.mockRestore();
+      types.mockRestore();
+    }
   });
 });
 

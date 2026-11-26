@@ -151,11 +151,25 @@ function diskFacts(profile: WireRunProfile, artifacts: WireResourceReport['artif
 
 function workerFacts(workers: WorkerHealth | null): string[] {
   if (!workers || workers.tests === 0) return [];
-  return [
-    `event loop busy ${Math.round(workers.loopUtilization * 100)}%`,
+  const facts: string[] = [];
+  if (workers.loopUtilization !== null) facts.push(`event loop busy ${Math.round(workers.loopUtilization * 100)}%`);
+  facts.push(
     `p99 delay ${Math.round(workers.loopDelayP99Ms)} ms at worst`,
     `${Math.round(workers.involuntarySwitchesPerTest).toLocaleString('en-US')} involuntary context switches per test`,
-  ];
+  );
+  return facts;
+}
+
+/**
+ * What the workers' runtime did not measure (Bun's event loop and garbage
+ * collections), in the words of the reporter's `Not measured` line.
+ */
+function workersNotMeasured(workers: WorkerHealth | null): string[] {
+  if (!workers || workers.tests === 0) return [];
+  const out: string[] = [];
+  if (workers.loopUtilization === null) out.push('workers’ event loop busy time');
+  if (workers.gcReported === false) out.push('workers’ heap after garbage collection');
+  return out;
 }
 
 /** What one reporter measured about its machine, one line per resource. */
@@ -167,7 +181,8 @@ export function machineFacts(part: WireResourceReport): MachineFact[] {
     out.push({ label: 'Disk', facts: diskFacts(profile, part.artifactBytes) });
   }
   out.push({ label: 'Workers', facts: workerFacts(part.workerHealth) });
-  if (profile?.notMeasured.length) out.push({ label: 'Not measured', facts: [profile.notMeasured.join(', ')] });
+  const notMeasured = [...(profile?.notMeasured ?? []), ...workersNotMeasured(part.workerHealth)];
+  if (notMeasured.length) out.push({ label: 'Not measured', facts: [notMeasured.join(', ')] });
   return out.filter((fact) => fact.facts.length > 0);
 }
 

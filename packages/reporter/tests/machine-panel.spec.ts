@@ -5,6 +5,7 @@ import {
   formatMachinePanel,
   sparkline,
   workerHealthOf,
+  workersNotMeasured,
 } from '../src/internal/collect/machine-panel.js';
 import type { RunProfile } from '../src/internal/collect/process-sampler.js';
 import type { ResourceCensus } from '../src/internal/capture/resource-ledger.js';
@@ -92,10 +93,24 @@ describe('formatMachinePanel', () => {
       '  Not measured here: CPU and memory of the run’s processes, CPU pressure',
     ]);
   });
+
+  it('leaves out of the Workers line what the workers’ runtime did not measure, and names it', () => {
+    const lines = formatMachinePanel(profile({ notMeasured: ['CPU pressure'] }), {
+      artifacts: null,
+      workers: { tests: 12, loopUtilization: null, loopDelayP99Ms: 40.2, involuntarySwitchesPerTest: 90, gcReported: false },
+    });
+    expect(lines.slice(-2)).toEqual([
+      '  Workers  p99 delay 40 ms at worst · 90 involuntary context switches per test',
+      '  Not measured here: CPU pressure, workers’ event loop busy time, workers’ heap after garbage collection',
+    ]);
+  });
 });
 
 describe('workerHealthOf', () => {
-  const census = (title: string | null, worker?: { loopUtilization: number; loopDelayP99Ms: number; involuntarySwitches: number }) =>
+  const census = (
+    title: string | null,
+    worker?: { loopUtilization: number | null; loopDelayP99Ms: number; involuntarySwitches: number; gcReported?: boolean },
+  ) =>
     ({
       v: 1,
       worker: 0,
@@ -117,9 +132,32 @@ describe('workerHealthOf', () => {
       census('t3'),
       census(null, { loopUtilization: 1, loopDelayP99Ms: 999, involuntarySwitches: 999 }),
     ]);
-    expect(health).toMatchObject({ tests: 2, loopDelayP99Ms: 90, involuntarySwitchesPerTest: 200 });
+    expect(health).toMatchObject({ tests: 2, loopDelayP99Ms: 90, involuntarySwitchesPerTest: 200, gcReported: true });
     expect(health!.loopUtilization).toBeCloseTo(0.3);
     expect(workerHealthOf([census('t1')])).toBeNull();
+  });
+
+  it('averages the event loop over the tests that measured it, and reads none measured as null', () => {
+    const health = workerHealthOf([
+      census('t1', { loopUtilization: 0.2, loopDelayP99Ms: 30, involuntarySwitches: 100 }),
+      census('t2', { loopUtilization: null, loopDelayP99Ms: 90, involuntarySwitches: 300 }),
+    ]);
+    expect(health!.loopUtilization).toBeCloseTo(0.2);
+    expect(health).toMatchObject({ tests: 2, involuntarySwitchesPerTest: 200 });
+  });
+
+  it('says what a runtime that measures no event loop and reports no garbage collection left unmeasured', () => {
+    const bun = { loopUtilization: null, loopDelayP99Ms: 30, involuntarySwitches: 100, gcReported: false };
+    const health = workerHealthOf([census('t1', bun), census('t2', bun)]);
+    expect(health).toEqual({
+      tests: 2,
+      loopUtilization: null,
+      loopDelayP99Ms: 30,
+      involuntarySwitchesPerTest: 100,
+      gcReported: false,
+    });
+    expect(workersNotMeasured(health)).toEqual(['workers’ event loop busy time', 'workers’ heap after garbage collection']);
+    expect(workersNotMeasured(workerHealthOf([census('t1', { ...bun, loopUtilization: 0.1, gcReported: true })]))).toEqual([]);
   });
 });
 

@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { locatorCallValues, parseLeafLocatorCall } from '@piwitests/core/locator-chain';
-import { readLocatorHeader, stripAnsi } from '@piwitests/core/error-parse';
+import { parsePlaywrightError, readLocatorHeader, stripAnsi } from '@piwitests/core/error-parse';
 import type { Page, TestInfo } from '@playwright/test';
 import {
   installPickerOverlay,
@@ -93,7 +93,8 @@ export interface UserPickResult {
 // A locator *action* that throws is captured with its call site (see the
 // fixture proxy). An `expect(locator).toBeVisible()` assertion is not an action,
 // so nothing is captured — but Playwright's error still names the locator
-// (`Locator: …`) and its call site, which is enough to run the picker.
+// (`Locator: …`, or the chain its call log waited for under a `describe()` text)
+// and its call site, which is enough to run the picker.
 
 /**
  * Parse a Playwright locator expression into `{ method, args }` for its leaf —
@@ -107,8 +108,10 @@ export function parseLeafLocatorExpression(rawExpr: string): { method: string; a
 
 /**
  * Derive the failing locator + call site from a test's error(s) when no locator
- * action was captured (an `expect(...)` assertion failure). Reads the
- * `Locator: …` line Playwright prints and the error's own call location,
+ * action was captured (an `expect(...)` assertion failure). Reads the locator of
+ * an error with a `Locator: …` line as `parsePlaywrightError` does: the line's
+ * chain, or for a locator named with `describe()`, whose text the line holds, the
+ * chain the call log waited for. The call site is the error's own location,
  * normalized cwd-relative to match captured snapshot locations. Returns null
  * when no locator can be identified. Exported for tests.
  */
@@ -119,9 +122,10 @@ export function deriveFailedLocator(testInfo: TestInfo): FailedLocatorInfo | nul
   };
   const errors = info.errors && info.errors.length > 0 ? info.errors : info.error ? [info.error] : [];
   for (const err of errors) {
-    const header = readLocatorHeader(stripAnsi(`${err.message ?? ''}\n${err.stack ?? ''}`));
-    if (!header) continue;
-    const parsed = parseLeafLocatorExpression(header);
+    const text = `${err.message ?? ''}\n${err.stack ?? ''}`;
+    if (!readLocatorHeader(stripAnsi(text))) continue;
+    const locator = parsePlaywrightError(text).locator;
+    const parsed = locator ? parseLeafLocatorExpression(locator) : null;
     if (!parsed) continue;
     const loc = err.location;
     const location = loc

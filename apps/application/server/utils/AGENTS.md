@@ -54,9 +54,9 @@ in-app assistant).
   object stays one cluster (`tests/unit/error-fingerprint.test.ts`).
 - **A normalization change bumps `FINGERPRINT_VERSION`** and makes the same change to
   `shared/demo/demo-fingerprint.mjs#computeDemoFingerprint`, regex for regex: the seed generator runs under plain Node,
-  which cannot load the TypeScript module, and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run
-  `npm run app:seed:demo`. `shared/error-fingerprint-v4.ts` stays as it is: the aliases stored without a sample hold
-  version 4 fingerprints, which `backfillAliasSamples` matches with it.
+  and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run `npm run app:seed:demo`.
+  `shared/error-fingerprint-v4.ts` keeps computing what version 4 stored, whatever `extractSelector` reads (its test
+  pins the values), for the aliases stored without a sample (`backfillAliasSamples`).
 - **A change to `maskVolatile` or `condenseErrorText` also bumps `EMBEDDING_INPUT_VERSION`**
   (`server/utils/cluster-similarity.ts`): they shape the text embedded for cluster similarity, and the bump re-embeds
   the stored vectors. `tests/unit/cluster-similarity.test.ts` pins that text.

@@ -10,6 +10,7 @@ import {
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
+import { withShownConsoleLocations } from '#shared/console-entries';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { workerNumber } from '#shared/worker-lane';
 import { describeProjectRunScope, type ProjectRunScope } from '#shared/project-run-scope';
@@ -1373,7 +1374,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             status: row.status,
             error: trunc(row.error, 1500),
             steps: row.steps,
-            consoleLogs: row.consoleLogs,
+            consoleLogs: withShownConsoleLocations(row.consoleLogs),
             webVitals: row.webVitals,
             ariaSnapshot: trunc(evidence.ariaSnapshot, 4000),
           }),
@@ -1594,7 +1595,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       stepEvents: want('steps') ? row.stepEvents : null,
       slowestStep: row.slowestStep || null,
       slowestStepDuration: row.slowestStepDuration || null,
-      consoleLogs: want('console') ? row.consoleLogs : null,
+      consoleLogs: want('console') ? withShownConsoleLocations(row.consoleLogs) : null,
       webVitals: want('webVitals') ? row.webVitals : null,
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
@@ -2735,7 +2736,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       clusterId: row.failureClusterId || null,
       slowestStep: row.slowestStep || null,
       steps: row.steps,
-      consoleLogs: row.consoleLogs,
+      consoleLogs: withShownConsoleLocations(row.consoleLogs),
       ariaSnapshot: trunc(evidence.ariaSnapshot, 3000),
       locatorFix: rec ? dropNulls({ locator: rec.locator, method: rec.method, score: rec.score }) : null,
       pageDiff:

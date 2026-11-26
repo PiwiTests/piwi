@@ -25,8 +25,11 @@ export interface TestMetrics {
   worker: {
     cpuMs: number;
     involuntarySwitches: number;
-    /** Share of the test's time the event loop was busy. */
-    loopUtilization: number;
+    /**
+     * Share of the test's time the event loop was busy; null where the runtime
+     * does not measure it (Bun reads no idle and no active time).
+     */
+    loopUtilization: number | null;
     loopDelayP99Ms: number;
     loopDelayMaxMs: number;
     heapUsedMb: number;
@@ -36,6 +39,11 @@ export interface TestMetrics {
      * the garbage `heapUsedMb` counts until it is collected.
      */
     heapAfterGcMb?: number | null;
+    /**
+     * Whether the worker observes its runtime's full garbage collections:
+     * false under Bun, which reports none, so `heapAfterGcMb` stays null.
+     */
+    gcReported?: boolean;
     /** Open file descriptors at the test's end (Linux). */
     fds: number | null;
   };
@@ -59,6 +67,24 @@ const MB = 1024 * 1024;
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+/**
+ * The share of a window the event loop was busy, to three decimals; null when
+ * the window reads no idle and no active time, as every window does under Bun.
+ */
+export function loopShare(loop: EventLoopUtilization): number | null {
+  if (loop.idle + loop.active === 0) return null;
+  return Math.round(loop.utilization * 1000) / 1000;
+}
+
+/** Whether the runtime reports garbage collections to a performance observer: Bun lists no `gc` entry type. */
+function runtimeReportsGc(): boolean {
+  try {
+    return PerformanceObserver.supportedEntryTypes?.includes('gc') !== false;
+  } catch {
+    return false;
+  }
 }
 
 export class WorkerMetrics {
@@ -92,9 +118,11 @@ export class WorkerMetrics {
 
   /**
    * Read the heap after each full (major) garbage collection V8 runs on its
-   * own: nothing is forced, so a test that triggers none reads null.
+   * own: nothing is forced, so a test that triggers none reads null. Null on a
+   * runtime that reports no garbage collections.
    */
   private observeFullCollections(): PerformanceObserver | null {
+    if (!runtimeReportsGc()) return null;
     try {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
@@ -167,11 +195,12 @@ export class WorkerMetrics {
             (usage.userCPUTime - this.usage.userCPUTime + usage.systemCPUTime - this.usage.systemCPUTime) / 1000,
           ),
           involuntarySwitches: usage.involuntaryContextSwitches - this.usage.involuntaryContextSwitches,
-          loopUtilization: Math.round(loop.utilization * 1000) / 1000,
+          loopUtilization: loopShare(loop),
           loopDelayP99Ms: this.histogram ? round1(this.histogram.percentile(99) / 1e6) : 0,
           loopDelayMaxMs: this.histogram ? round1(this.histogram.max / 1e6) : 0,
           heapUsedMb: round1(process.memoryUsage().heapUsed / MB),
           heapAfterGcMb: this.heapAfterGc === null ? null : round1(this.heapAfterGc / MB),
+          gcReported: this.gcObserver !== null,
           fds: this.linux ? this.proc.fdCount(this.pid) : null,
         },
       };

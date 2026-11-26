@@ -507,11 +507,17 @@ its nodes (`configTree` in `src/test-tree.ts`), folders, specs, describe blocks,
 test that runs in several, then the **Not in this checkout** group. A node's id holds no URI: a spec's is its config's
 folder and its path, so an id stays whichever source gave the node, and in both editors' spellings of a URI.
 
-**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list` with the project's own
-Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests Playwright lists
-(`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe blocks with their
-lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `TestListings` keeps each
-config's last listing:
+**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list --project=*` with the
+project's own Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests
+Playwright lists (`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe
+blocks with their lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `--project=*`
+lists every project, one with `default: false` (Playwright 1.64) too. Each listed test says whether its project runs
+only when `--project` names it (`onlyNamed`): `default: false`, read from the config's internals under its
+`configInternalSymbol` as `FullProject` has none (no project is where they cannot be read), and no project a run without
+`--project` runs depends on it or has it as its teardown, which Playwright would run with that one. The reporter tells
+the projects apart, not their names, so of two projects of one name only the tests of the one left out are named; the
+tree keeps their Playwright ids (`onlyNamedIds`). A config with `projects: []`, which `--project=*` fails ("No projects
+matched"), is listed without it. `TestListings` keeps each config's last listing:
 
 - the first `piwi/testItems` of the whole tree lists every config not listed yet; a config nobody asked the tree of is
   never listed;
@@ -573,6 +579,19 @@ filter Playwright takes for it, so a run needs no instance and a group is one ar
 | A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text)                                                                                                                                     |
 | A test           | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
 | A project's node | its test's, in that project alone (`--project`)                                                                                                                                                                                                                                             |
+
+A test runs only when named when the listing names it so in every project it runs in (`onlyNamedIds`; a test the
+listing gives no project, one written since, goes by its spec's other tests). A node holding only such tests runs with
+`--project` naming their projects (a config whole too), `--project=` for an unnamed one, which Playwright reads as the
+projects with no name. A node holding both runs as Playwright runs it without `--project`, a test of both kinds of
+projects in the others, and the named-only tests under it run apart, in a run per set of projects, each by the widest
+node holding none of the others: a spec of such a project whole, else the test's own filter. So no picked test is left
+to a command that does not run it, which the Testing view, counting a test with no result as passed on a 0 exit, would
+show green. A setup or teardown project with `default: false` that a default project depends on is no such project:
+without `--project` Playwright runs it whole beside a project that depends on it, else the tests of it a filter takes,
+so it never runs in a second command. A project's node of a named-only project reads `(only with --project)` after its
+name (`ONLY_NAMED`). The clients start the runs of one pick at once (VS Code's `executeTask` resolves as the task
+starts, JetBrains starts each), so a node holding both kinds runs two Playwright processes in one folder side by side.
 
 A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
 Every location is written by `locationArg`, from the config's folder as the file system spells it: its whole path,
@@ -2151,6 +2170,14 @@ test filter, or an option of `PLAYWRIGHT_OPTIONS`, none of which names a file Pl
 An argument that is anything else, or that a shell would expand, refuses the whole command, and the clients run only
 what the service built.
 
+The arguments are read as Playwright's command line (commander) reads them (`readArgs`): an option's value after `=`,
+or the next word whatever it is; an optional value (`--shuffle [seed]`, `--debug [mode]`) the next word unless it reads
+as an option (a negative number does not); a variadic one (`--project <name...>`) every next word up to one that reads
+as an option, so a filter written after `--project x` is a project. `--debug` takes `inspector` or `cli` alone
+(`OPTION_CHOICES`, Playwright 1.63), and refuses the command for any other word after it, a test filter included, as
+Playwright does. A command whose options are taken out (`repeatArgs`, `withRequiredTags`) is written with its test
+filters first (`writtenArgs`), so no option left before a filter takes it as its value.
+
 ### Run variables
 
 A project's run variables (`@piwitests/core/run-variables`, `adr/run-variables.md`) are environment variables, never
@@ -2187,7 +2214,10 @@ environment's run variables merged (`parseRunVariables` with `RUN_VARIABLE_LIMIT
 **Allow** question covers each new set: the merged variables with the environment's key. A protected environment asks
 before every run instead (`confirmProtected`), and its arguments keep to the tests carrying one of its required tags:
 the run's own `--grep-invert` merged into one with `requiredTagsGrepInvert` (`withRequiredTags`), which `shellWord`
-double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). Playwright applies a
+double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). The merged pattern is a
+plain one, which Playwright matches ignoring case: an own pattern written `/source/flags` with `i` is kept as its
+source, and one without `i`, which matches letters in their case, refuses the run with a notice saying so
+(`requiredTagsGrepInvertProblem`), as the desktop app's shell refuses it. Playwright applies a
 CLI filter before it adds the projects a run's projects depend on, so their setup and teardown tests run whole: every
 sentence that states the rule says so (`requiredTagsWords`). On Windows such a run starts the project's Playwright CLI
 with `node` (`playwrightNodeCommand`), since PowerShell hands `npx.cmd` the filter bare and cmd would read its `^` and
