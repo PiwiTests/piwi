@@ -190,6 +190,40 @@ describe('deriveFailedLocator', () => {
     });
     expect(deriveFailedLocator({ errors: [{ message: 'plain assertion failure' }] } as never)).toBeNull();
   });
+
+  it('reads the chain the call log waited for when the Locator line holds a describe() text', () => {
+    // Playwright 1.65's error for `expect(page.getByRole(…).describe('Place order button')).toBeVisible()`.
+    const message = [
+      'Error: \x1b[2mexpect(\x1b[22m\x1b[31mlocator\x1b[39m\x1b[2m).\x1b[22mtoBeVisible\x1b[2m(\x1b[22m\x1b[2m)\x1b[22m failed',
+      '',
+      'Locator: Place order button',
+      'Expected: visible',
+      'Timeout: 1000ms',
+      'Error: element(s) not found',
+      '',
+      'Call log:',
+      '\x1b[2m  - Expect "toBeVisible" Place order button with timeout 1000ms\x1b[22m',
+      "\x1b[2m  - waiting for getByRole('button', { name: 'Place order' })\x1b[22m",
+      '',
+      '',
+      "  2 | test('places an order', async ({ page }) => {",
+      "  3 |   await page.setContent('<button hidden>Place order</button>');",
+      "> 4 |   await expect(page.getByRole('button', { name: 'Place order' }).describe('Place order button')).toBeVisible({ timeout: 1000 });",
+      '    |                                                                                                  ^',
+      '  5 | });',
+    ].join('\n');
+    const file = `${process.cwd()}/tests/checkout.spec.ts`;
+    const testInfo = { errors: [{ message, location: { file, line: 4, column: 98 } }] } as never;
+    expect(deriveFailedLocator(testInfo)).toEqual({
+      method: 'getByRole',
+      args: ['button', { name: 'Place order' }],
+      location: 'tests/checkout.spec.ts:4:98',
+    });
+    // A describe() text with no chain in a call log names no locator to pick on.
+    expect(
+      deriveFailedLocator({ errors: [{ message: 'Locator: Place order button\nExpected: visible' }] } as never),
+    ).toBeNull();
+  });
 });
 
 describe('renderFailing', () => {
