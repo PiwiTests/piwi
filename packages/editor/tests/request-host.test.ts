@@ -293,6 +293,27 @@ describe('the request host', () => {
     await expect(made.compare(0, { filePath: 'a.spec.ts', title: 'a' })).rejects.toMatchObject({ status: 404 });
   });
 
+  test('lists the projects its owner reads, and a key that cannot compare refuses the list alone', async () => {
+    let refuse = false;
+    const instance = await fakeInstance({
+      status: (path) => (refuse && path === '/api/run-targets/projects' ? 403 : null),
+      refusalJson: { message: 'This app’s key cannot compare', data: { errorCode: 'RUN_TARGET_KEY_CANNOT_COMPARE' } },
+    });
+    cleanups.push(instance.close);
+    const { made, statuses, keyGone } = host(instance.url);
+    made.start();
+    await until(() => statuses.includes('online'));
+
+    await made.projects();
+    const asked = instance.calls.find((c) => c.path === '/api/run-targets/projects')!;
+    expect(asked.method).toBe('GET');
+    expect(asked.authorization).toBe(`Bearer ${KEY}`);
+    refuse = true;
+    await expect(made.projects()).rejects.toMatchObject({ status: 403, code: 'RUN_TARGET_KEY_CANNOT_COMPARE' });
+    expect(made.state).toBe('online');
+    expect(keyGone).toEqual([]);
+  });
+
   test('passes on the project names of the describe answer, the snapshot, each request and the list', async () => {
     const instance = await fakeInstance({
       self: () => ({ projects: [{ id: 1, name: 'Checkout' }] }),

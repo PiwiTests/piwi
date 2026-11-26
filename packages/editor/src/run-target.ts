@@ -565,11 +565,17 @@ async function realFolder(folder: string): Promise<string> {
  * several are. Null without a connected instance or such a link.
  */
 export async function teamProjectOfFolder(folder: string): Promise<number | null> {
-  if (state.instance === null) return null;
+  const ids = await teamProjectsOfFolder(folder);
+  return ids.length ? ids[0]! : null;
+}
+
+/** Every project of the connected instance the shell links `folder` to, compared by real path, lowest id first. */
+export async function teamProjectsOfFolder(folder: string): Promise<number[]> {
+  if (state.instance === null) return [];
   const own = await realFolder(folder);
   const ids: number[] = [];
   for (const [id, linked] of linksHere()) if ((await realFolder(linked)) === own) ids.push(id);
-  return ids.length ? Math.min(...ids) : null;
+  return ids.sort((a, b) => a - b);
 }
 
 /**
@@ -597,17 +603,60 @@ export async function compareWithTeam(
   try {
     return { ok: true, instance, projectId, answer: await host.compare(projectId, query) };
   } catch (error) {
-    if (!(error instanceof RequestHostError)) {
-      return { ok: false, problem: 'unreachable', message: 'The team instance did not answer.' };
-    }
-    if (error.code === 'RUN_TARGET_KEY_CANNOT_COMPARE')
-      return { ok: false, problem: 'reconnect', message: error.message };
-    if (error.status === 401) return { ok: false, problem: 'not-connected', message: error.message };
-    if (error.status === 403 || error.status === 400) return { ok: false, problem: 'refused', message: error.message };
-    if (error.status === 404 || error.status === 405) {
-      return { ok: false, problem: 'not-supported', message: 'The team instance cannot compare yet: update it.' };
-    }
-    return { ok: false, problem: 'unreachable', message: error.message };
+    return { ok: false, ...comparisonRefusal(error) };
+  }
+}
+
+/** Why the instance did not answer a question of Compare with team instance, from what its call threw. */
+function comparisonRefusal(error: unknown): { problem: TeamComparisonProblem; message: string } {
+  if (!(error instanceof RequestHostError))
+    return { problem: 'unreachable', message: 'The team instance did not answer.' };
+  if (error.code === 'RUN_TARGET_KEY_CANNOT_COMPARE') return { problem: 'reconnect', message: error.message };
+  if (error.status === 401) return { problem: 'not-connected', message: error.message };
+  if (error.status === 403 || error.status === 400) return { problem: 'refused', message: error.message };
+  if (error.status === 404 || error.status === 405) {
+    return { problem: 'not-supported', message: 'The team instance cannot compare yet: update it.' };
+  }
+  return { problem: 'unreachable', message: error.message };
+}
+
+/** A project of the connected instance, as it names it. */
+export interface TeamProject {
+  id: number;
+  name: string;
+}
+
+/** How many projects of the instance the app reads at most, and the longest name it keeps. */
+const TEAM_PROJECTS_MAX = 1000;
+const TEAM_PROJECT_NAME_MAX = 200;
+
+/**
+ * The projects of the connected instance its owner can read, to link a folder of this machine to: the instance's
+ * answer, kept to the projects it names with a positive id and a name. Why it cannot list them otherwise.
+ */
+export async function teamProjects(): Promise<
+  | { ok: true; instance: string; projects: TeamProject[] }
+  | { ok: false; problem: TeamComparisonProblem; message: string }
+> {
+  const host = state.host;
+  const instance = state.instance;
+  if (!host || instance === null || state.status === 'revoked') {
+    return { ok: false, problem: 'not-connected', message: 'The app is connected to no team instance.' };
+  }
+  try {
+    const answer = (await host.projects()) as { projects?: unknown } | null;
+    const listed = Array.isArray(answer?.projects) ? answer.projects.slice(0, TEAM_PROJECTS_MAX) : [];
+    const seen = new Set<number>();
+    const projects = listed.flatMap((entry: unknown) => {
+      const { id, name } = (entry ?? {}) as { id?: unknown; name?: unknown };
+      if (!Number.isSafeInteger(id) || (id as number) < 1 || typeof name !== 'string' || name.trim() === '') return [];
+      if (seen.has(id as number)) return [];
+      seen.add(id as number);
+      return [{ id: id as number, name: name.slice(0, TEAM_PROJECT_NAME_MAX) }];
+    });
+    return { ok: true, instance, projects };
+  } catch (error) {
+    return { ok: false, ...comparisonRefusal(error) };
   }
 }
 

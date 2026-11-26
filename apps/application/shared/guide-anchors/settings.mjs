@@ -24,6 +24,16 @@ export const SETTINGS_ANCHORS = [
     doc: 'features/desktop',
     sample: { route: '/settings/desktop', surface: 'desktop' },
   },
+  {
+    id: 'team-instance-settings-page',
+    kind: 'page',
+    pages: ['/settings/team-instance'],
+    describes:
+      'Settings → Team instance: the connection to a team instance, and the team project each project’s folder is linked to, for Run on my machine and Team CI.',
+    requires: { permission: 'settings:manage', desktop: true },
+    doc: 'features/compare-with-team',
+    sample: { route: '/settings/team-instance', surface: 'desktop' },
+  },
 
   // Account
   {

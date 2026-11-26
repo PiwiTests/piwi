@@ -368,6 +368,14 @@ export class RequestHost {
   }
 
   /**
+   * The projects the app's owner can read on the instance (`GET /api/run-targets/projects`), as the instance answers
+   * them: the reader checks their shape. A key lacking `project:read` throws `RUN_TARGET_KEY_CANNOT_COMPARE`.
+   */
+  async projects(): Promise<unknown> {
+    return this.call('GET', '/api/run-targets/projects', undefined, { onlyRequest: true, timeoutMs: COMPARE_WAIT_MS });
+  }
+
+  /**
    * The run variables of a request this app claimed and the environment it names, as `parseEnvironmentForRun` and
    * `parseRunVariables` read them (the project's and the environment's merged, `RUN_VARIABLE_LIMITS.merged` at most):
    * a list or an environment either refuses, or an answer it cannot read, is a problem the plan fails with. An

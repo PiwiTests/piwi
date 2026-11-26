@@ -43,6 +43,7 @@ export type SettingsPageId =
   | 'credentials'
   | 'ai'
   | 'desktop'
+  | 'team-instance'
   | 'connect'
   | 'capabilities'
   | 'mcp'
@@ -120,6 +121,19 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     label: 'Desktop app',
     icon: 'i-lucide-monitor',
     to: '/settings/desktop',
+    group: 'instance',
+    permission: 'settings:manage',
+    desktopOnly: true,
+    fields: [],
+  },
+  {
+    // The desktop app's connection to a team instance: Run on my machine takes
+    // its requests, Compare with team instance reads its CI, both for the
+    // folders linked to its projects.
+    id: 'team-instance',
+    label: 'Team instance',
+    icon: 'i-lucide-server',
+    to: '/settings/team-instance',
     group: 'instance',
     permission: 'settings:manage',
     desktopOnly: true,

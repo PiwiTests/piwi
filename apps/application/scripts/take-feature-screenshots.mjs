@@ -11545,11 +11545,10 @@ const SCENES = [
   {
     name: 'desktop-team-instance-card',
     description:
-      'Settings → Desktop app → Run on my machine: connected to a team instance, with a linked folder (desktop shell)',
+      'Settings → Team instance → Connection: connected to a team instance, which takes run requests and compares with its CI (desktop shell)',
     tags: ['desktop'],
     mode: 'desktop',
-    route: '/settings/desktop',
-    requestFolders: { 1: '/home/dev/code/acme-checkout' },
+    route: '/settings/team-instance',
     viewport: { width: 1280, height: 2400 },
     async run({ page, shoot, settle }) {
       const connection = {
@@ -11578,6 +11577,64 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="desktop-team-instance-card"]', pad: 16 });
     },
   },
+  ...[
+    { name: 'desktop-team-project-links', width: 1280, height: 1400 },
+    { name: 'desktop-team-project-links-narrow', width: 390, height: 2200 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Team instance at ${width} px: each project with a folder on this machine and the team project its folder is linked to, one not linked yet, and a folder a run request linked (desktop shell)`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/team-instance',
+    requestFolders: { 1: '/home/dev/code/acme-checkout', 3: '/home/dev/code/acme-mobile' },
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const connection = {
+        state: 'online',
+        instance: 'https://piwi.example.com',
+        userCode: null,
+        verificationUrl: null,
+        error: null,
+        keyToKeep: false,
+        linkedProjectIds: [1, 3],
+        projectNames: { 1: 'Acme Checkout', 3: 'Acme Mobile' },
+        compares: true,
+      };
+      await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-target', connection })}\n\n`,
+        }),
+      );
+      await page.route('**/api/desktop/team/projects', (route) =>
+        route.fulfill({
+          json: {
+            status: 'ok',
+            instance: 'https://piwi.example.com',
+            teamProjects: [
+              { id: 1, name: 'Acme Checkout' },
+              { id: 2, name: 'Acme Back office' },
+            ],
+            folders: [
+              { projectId: 1, projectName: 'Acme Checkout', folder: '/home/dev/code/acme-checkout', teamProjectId: 1 },
+              {
+                projectId: 2,
+                projectName: 'Acme Back office',
+                folder: '/home/dev/code/acme-admin',
+                teamProjectId: null,
+              },
+            ],
+          },
+        }),
+      );
+      await page.reload();
+      const card = page.locator('[data-shot="desktop-team-project-links"]');
+      await card.getByText('/home/dev/code/acme-mobile').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  })),
   ...[
     { name: 'desktop-team-ci', width: 1280, height: 1100 },
     { name: 'desktop-team-ci-narrow', width: 390, height: 1800 },
@@ -11620,6 +11677,31 @@ const SCENES = [
       await card.scrollIntoViewIfNeeded();
       await settle();
       await shoot(undefined, { of: '[data-shot="test-case-team-ci"]', pad: 12 });
+    },
+  },
+  {
+    name: 'desktop-team-ci-unlinked',
+    description:
+      "A failing execution in the desktop app, connected to a team instance, whose project's folder is linked to no team project: the Team CI line says so and links Settings → Team instance (desktop shell)",
+    mode: 'desktop',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/desktop/team/executions/*/comparison', (route) =>
+        route.fulfill({
+          json: {
+            status: 'unavailable',
+            problem: 'no-team-project',
+            message: 'This folder is linked to no project of the team instance.',
+          },
+        }),
+      );
+      await page.reload();
+      const line = page.locator('[data-shot="team-ci-line"]');
+      await line.getByText('Link it on Settings → Team instance').waitFor({ timeout: 60_000 });
+      await line.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="situation-block"]', pad: 12 });
     },
   },
   {

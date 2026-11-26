@@ -1,6 +1,6 @@
 ---
 title: Compare with team instance
-description: 'In the Piwi desktop app, see whether a Playwright test that fails on your machine fails in your team’s CI too: the same error, each environment’s results, and what differs from the closest CI pass.'
+description: "In the Piwi desktop app, see whether a Playwright test that fails on your machine fails in your team’s CI too: the same error, each environment’s results, and what differs from the closest CI pass."
 lang: en-US
 ---
 
@@ -26,7 +26,9 @@ On a failing execution, the situation block gets a **Team CI** line:
 - **The environment differences from the closest CI pass**, in a side panel.
 
 The test's own page shows the same strips in a **Team CI** card, without the conclusion. Neither shows while the app
-is connected to no team instance, or the project's folder is linked to no project of it.
+is connected to no team instance. Connected, a project whose folder is linked to no team project says so, with a link
+to **Settings → Team instance**, where you pick it; a project with no folder on this machine says to link one first,
+under **Project → Settings → Local folder**.
 
 The results are the team's CI runs. Your teammates' runs show apart and never count in the conclusion: their machines
 are not the reference. A run someone asked for with [Run on my machine](./run-on-my-machine) is theirs alone and never
@@ -65,13 +67,15 @@ check, never the verdict: the side panel says which run it compared with, and op
 
 ## Setting it up
 
-- **Connect the desktop app to the team instance**: **Settings → Desktop app → Connect**, then allow **Piwi Desktop**
-  on the instance's page. The instance needs sign-in turned on, since the connection's key belongs to you. The same
-  connection takes [Run on my machine](./run-on-my-machine) requests where an administrator turned it on; the
+- **Connect the desktop app to the team instance**: **Settings → Team instance → Connect**, then allow **Piwi
+  Desktop** on the instance's page. The instance needs sign-in turned on, since the connection's key belongs to you.
+  The same connection takes [Run on my machine](./run-on-my-machine) requests where an administrator turned it on; the
   comparison works either way.
-- **Link the project's folder** to the team project in the same card, as Run on my machine does. The comparison reads
-  the team project of the folder your local project is linked to.
-- A connection made before the comparison existed cannot compare: the card says so, and connecting again replaces it.
+- **Link each project's folder to its team project**: on the same page, **Projects and team projects** lists the
+  projects of the app that have a folder on this machine; pick the team project of each. The comparison reads the CI
+  of the team project the folder is linked to. A Run on my machine request links the folder of its project too. A team
+  project has one folder: picking it for another project moves its link there.
+- A connection made before the comparison existed cannot compare: the page says so, and connecting again replaces it.
 
 It is on for every project. An administrator declines it for the instance on **Settings → Capabilities**, and a
 project in its own settings, where a project can also turn it back on for itself: the team instance then refuses or
