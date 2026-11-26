@@ -258,8 +258,11 @@ export interface WireExecutionResources {
   workerCpuMs: number;
   /** The processes the worker started (its browsers), by role; Linux only. */
   roles?: Partial<Record<ProcessRole, RoleCost>> | null;
-  /** Share of the test's time the worker's event loop was busy. */
-  loopUtilization: number;
+  /**
+   * Share of the test's time the worker's event loop was busy; null where the
+   * runtime does not measure it (Bun reads no idle and no active time).
+   */
+  loopUtilization: number | null;
   loopDelayP99Ms: number;
   involuntarySwitches: number;
   heapUsedMb: number;
@@ -379,12 +382,21 @@ export interface WireRunProfile {
 /** The workers' health over the run's tests, from their censuses. */
 export interface WorkerHealth {
   tests: number;
-  /** Mean share of each test's time the worker's event loop was busy. */
-  loopUtilization: number;
+  /**
+   * Mean share of each test's time the worker's event loop was busy, over the
+   * tests that measured it; null when none did (under Bun).
+   */
+  loopUtilization: number | null;
   /** The worst test's p99 event-loop delay. */
   loopDelayP99Ms: number;
   /** Mean involuntary context switches of the worker per test. */
   involuntarySwitchesPerTest: number;
+  /**
+   * Whether the workers' runtime reports its full garbage collections, after
+   * which a worker's heap is read for piling up: false under Bun, where no
+   * worker's heap is judged. Absent from reporters before it.
+   */
+  gcReported?: boolean;
 }
 
 /** One point of a series over time: milliseconds after the series' `startedAt`, and the value then. */

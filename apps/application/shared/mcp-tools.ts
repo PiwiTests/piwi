@@ -782,6 +782,7 @@ export const MCP_TOOL_DEFS = [
       [
         'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before, and for a leaked or lingering one `lastUse`: the line of the last call a test made on it, where its close belongs',
         'each shard’s machine: cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk',
+        'each shard’s workers (`workerHealth`): how busy their event loop was, the worst p99 delay and the context switches per test, with `gcReported` false where the runtime (Bun) reports no garbage collection, so no worker’s heap was judged piling up',
         'the busiest open pages per worker',
         'the costliest tests by the CPU of their worker and browser processes, with the pages each found already open',
       ],
