@@ -1,4 +1,5 @@
-//! The test filters of a run the shell starts in a folder it knows, anchored at that folder.
+//! The test filters of a run the shell starts in a folder it knows, anchored at that folder, and how Playwright reads
+//! each argument of such a run ([`read_args`]).
 
 /// The options of `ALLOWED_FLAGS` that take a value, which an argument may give apart (`--project x`, `-G x`).
 pub(crate) const VALUE_FLAGS: [&str; 9] = [
@@ -13,43 +14,92 @@ pub(crate) const VALUE_FLAGS: [&str; 9] = [
     "--timeout",
 ];
 
+/// The options of `VALUE_FLAGS` that take several values: given apart, each argument after their first value up to the
+/// next option is one more (`--project api web`); given after `=`, none is (`--project=api`).
+const VARIADIC_FLAGS: [&str; 1] = ["--project"];
+
 /// The options of `ALLOWED_FLAGS` whose value is optional: Playwright takes the next argument as their value when it
-/// is no option (`--shuffle 42`).
-const OPTIONAL_VALUE_FLAGS: [&str; 1] = ["--shuffle"];
+/// is no option (`--shuffle 42`, `--debug cli`).
+const OPTIONAL_VALUE_FLAGS: [&str; 2] = ["--shuffle", "--debug"];
 
 /// The ASCII characters Node's `pathToFileURL` may percent-encode in a Windows path, which a filter of the `file:` URL
 /// matches written either way.
 const URL_ENCODED: &str = " \"#%<>?[]^`{|}~";
 
+/// What Playwright reads an argument of `playwright test` as ([`read_args`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Arg {
+    /// An option, with its value when it is written after `=` (`--project=api`).
+    Flag,
+    /// The value of the option before it, given apart (`-G slow`, `--shuffle 42`, `--debug cli`), or one more value of
+    /// a variadic one (`web` in `--project api web`).
+    Value,
+    /// A test filter.
+    Filter,
+}
+
+/// How Playwright's command line parser reads each of `args`. An option is an argument of two characters or more that
+/// starts with `-`. The argument after one of [`VALUE_FLAGS`] given apart is its value, whatever it is; after one of
+/// [`OPTIONAL_VALUE_FLAGS`], unless it is an option; after the first value of one of [`VARIADIC_FLAGS`], each argument
+/// up to the next option is one more value. Any other argument is a test filter.
+pub(crate) fn read_args(args: &[String]) -> Vec<Arg> {
+    /// What the arguments before take of the next one.
+    #[derive(Clone, Copy)]
+    enum Takes {
+        Nothing,
+        Value,
+        Values,
+        MaybeValue,
+        MoreValues,
+    }
+    let takes_after = |flag: &str| {
+        if flag.contains('=') {
+            Takes::Nothing
+        } else if VARIADIC_FLAGS.contains(&flag) {
+            Takes::Values
+        } else if VALUE_FLAGS.contains(&flag) {
+            Takes::Value
+        } else if OPTIONAL_VALUE_FLAGS.contains(&flag) {
+            Takes::MaybeValue
+        } else {
+            Takes::Nothing
+        }
+    };
+    let mut takes = Takes::Nothing;
+    args.iter()
+        .map(|arg| {
+            let flag = arg.len() > 1 && arg.starts_with('-');
+            let (read, next) = match takes {
+                Takes::Value => (Arg::Value, Takes::Nothing),
+                Takes::Values => (Arg::Value, Takes::MoreValues),
+                Takes::MaybeValue if !flag => (Arg::Value, Takes::Nothing),
+                Takes::MoreValues if !flag => (Arg::Value, Takes::MoreValues),
+                _ if flag => (Arg::Flag, takes_after(arg)),
+                _ => (Arg::Filter, Takes::Nothing),
+            };
+            takes = next;
+            read
+        })
+        .collect()
+}
+
 /// `args` with each test filter anchored at `folder`, the folder Playwright runs in as its `process.cwd()` spells it.
 ///
-/// A test filter is an argument that is neither an option nor an option's value. The app writes it relative to the
-/// config's folder, as `specPattern` does (`tests/cart.spec.ts:12`). It becomes the spec's whole path, anchored at both
-/// ends, its `:line` kept (`^/repo/tests/cart.spec.ts$:12`), so it never takes a spec whose path ends as its own
-/// (`e2e/tests/cart.spec.ts`, `tests/cart.spec.tsx`). With `windows`, the path's `file:` URL is an alternative: Playwright
-/// up to 1.62 tests a filter there against the native path and the `file:` URL, never the `/`-separated path. A filter
-/// already anchored (`^…`, or a `/…/` regular expression) is left as it is.
+/// A test filter is an argument Playwright reads as one ([`read_args`]): neither an option nor an option's value
+/// (`cli` in `--debug cli`, `web` in `--project api web`). The app writes it relative to the config's folder, as
+/// `specPattern` does (`tests/cart.spec.ts:12`). It becomes the spec's whole path, anchored at both ends, its `:line`
+/// kept (`^/repo/tests/cart.spec.ts$:12`), so it never takes a spec whose path ends as its own
+/// (`e2e/tests/cart.spec.ts`, `tests/cart.spec.tsx`). With `windows`, the path's `file:` URL is an alternative:
+/// Playwright up to 1.62 tests a filter there against the native path and the `file:` URL, never the `/`-separated
+/// path. A filter already anchored (`^…`, or a `/…/` regular expression) is left as it is.
 pub(crate) fn anchored_filters(folder: &str, args: &[String], windows: bool) -> Vec<String> {
-    let mut out = Vec::with_capacity(args.len());
-    let mut value_next = false;
-    let mut optional_value_next = false;
-    for arg in args {
-        if value_next || (optional_value_next && !arg.starts_with('-')) {
-            value_next = false;
-            optional_value_next = false;
-            out.push(arg.clone());
-        } else if arg.starts_with('-') {
-            let apart = !arg.contains('=');
-            value_next = apart && VALUE_FLAGS.contains(&arg.as_str());
-            optional_value_next = apart && OPTIONAL_VALUE_FLAGS.contains(&arg.as_str());
-            out.push(arg.clone());
-        } else if arg.starts_with('^') || arg.starts_with('/') {
-            out.push(arg.clone());
-        } else {
-            out.push(anchored(folder, arg, windows));
-        }
-    }
-    out
+    args.iter()
+        .zip(read_args(args))
+        .map(|(arg, read)| match read {
+            Arg::Filter if !arg.starts_with('^') && !arg.starts_with('/') => anchored(folder, arg, windows),
+            _ => arg.clone(),
+        })
+        .collect()
 }
 
 /// One filter anchored at `folder` (see [`anchored_filters`]).
@@ -227,6 +277,83 @@ mod tests {
                 "^/repo/tests/c.spec.ts$",
             ])
         );
+    }
+
+    #[test]
+    fn leaves_a_debug_mode_given_apart() {
+        let out = anchored_filters(
+            "/repo",
+            &args(&[
+                "--debug",
+                "cli",
+                "tests/a.spec.ts",
+                "--debug",
+                "--headed",
+                "tests/b.spec.ts",
+                "--debug=inspector",
+                "tests/c.spec.ts",
+            ]),
+            false,
+        );
+        assert_eq!(
+            out,
+            args(&[
+                "--debug",
+                "cli",
+                "^/repo/tests/a.spec.ts$",
+                "--debug",
+                "--headed",
+                "^/repo/tests/b.spec.ts$",
+                "--debug=inspector",
+                "^/repo/tests/c.spec.ts$",
+            ])
+        );
+    }
+
+    #[test]
+    fn leaves_each_project_name_given_apart() {
+        let out = anchored_filters(
+            "/repo",
+            &args(&[
+                "--project",
+                "chromium",
+                "mobile safari",
+                "-x",
+                "tests/a.spec.ts",
+                "--project=api",
+                "tests/b.spec.ts",
+            ]),
+            false,
+        );
+        assert_eq!(
+            out,
+            args(&[
+                "--project",
+                "chromium",
+                "mobile safari",
+                "-x",
+                "^/repo/tests/a.spec.ts$",
+                "--project=api",
+                "^/repo/tests/b.spec.ts$",
+            ])
+        );
+    }
+
+    #[test]
+    fn reads_each_argument_as_playwright_does() {
+        use Arg::{Filter, Flag, Value};
+        let cases: [(&[&str], &[Arg]); 7] = [
+            (&["a.spec.ts", "-G", "-x", "b.spec.ts"], &[Filter, Flag, Value, Filter]),
+            (&["--project", "-x", "web", "-x", "c"], &[Flag, Value, Value, Flag, Filter]),
+            (&["--grep", "--project", "web"], &[Flag, Value, Filter]),
+            (&["--shuffle", "--debug", "-x"], &[Flag, Flag, Flag]),
+            (&["--shuffle", "7", "--debug", "cli", "a"], &[Flag, Value, Flag, Value, Filter]),
+            (&["--project=api", "web", "--debug=cli", "a"], &[Flag, Filter, Flag, Filter]),
+            (&["-", "--project", "api", "-"], &[Filter, Flag, Value, Value]),
+        ];
+        for (given, read) in cases {
+            assert_eq!(read_args(&args(given)), read, "{given:?}");
+        }
     }
 
     #[test]

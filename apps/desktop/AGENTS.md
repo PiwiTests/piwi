@@ -112,7 +112,7 @@ shell and are feature-equivalent.
   window names it by id (`EnvironmentPick`); the shell reads the merged run variables and the environment from its
   server, or from the team instance with the target key for the folder's team project, checks them again, sets them and
   `PIWI_ENVIRONMENT` on the process, and adds a protected environment's `--grep-invert` itself, the run's own `-G`
-  kept in it (`--grep-invert` never in `ALLOWED_FLAGS`; `validate_args` refuses an option left waiting for its value as
+  kept in it, a case-sensitive `/…/` refused as core refuses it (`--grep-invert` never in `ALLOWED_FLAGS`; `validate_args` refuses an option left waiting for its value as
   the last argument, which would take the shell's); `piwi flake` refuses a protected one. `tests/unit/environments-shell.test.ts` holds it to core.
 - **The instance's key lives in the OS keychain and never reaches the window**: read only while `runTargetInstance` is
   set and handed to the server after each start (`hand_kept_key`), it is forgotten on `key-revoked` only when that

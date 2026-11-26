@@ -1276,6 +1276,8 @@ pub async fn desktop_reproduce_here(
     let (folder, git, place) = resolve_repo(&app, &project_id)?;
     let settings =
         crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
+    // An own `-G` the environment cannot keep refuses the reproduction here, before its worktree.
+    settings.args(args.clone())?;
 
     let state = app.state::<LocalRuns>();
     let id = state.allocate_id();
@@ -1389,11 +1391,13 @@ async fn selects_a_test(
         "--reporter=json".to_string(),
         "--pass-with-no-tests".to_string(),
     ];
-    list_args.extend(settings.args(crate::spec_filter::anchored_filters(
-        &cwd,
-        args,
-        cfg!(windows),
-    )));
+    match settings.args(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows))) {
+        Ok(args) => list_args.extend(args),
+        Err(e) => {
+            emit_line(app, id, "error", &e);
+            return false;
+        }
+    }
     let listed = match app.shell().sidecar(crate::NODE_SIDECAR) {
         Ok(command) => {
             command
@@ -1563,7 +1567,13 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     let cwd = crate::runner::playwright_folder(dir);
-    node_args.extend(settings.args(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows))));
+    match settings.args(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows))) {
+        Ok(args) => node_args.extend(args),
+        Err(e) => {
+            emit_line(app, id, "error", &e);
+            return None;
+        }
+    }
     let mut env_with_app = lab_env_with_hub(app, id, attended, job.0, job.1).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), dir, node_args, &env_with_app, &settings.envs()).await

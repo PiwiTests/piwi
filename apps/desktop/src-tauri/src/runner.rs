@@ -68,6 +68,9 @@ const ALLOWED_FLAGS: [&str; 16] = [
     "--pass-with-no-tests",
 ];
 
+/// The modes `--debug` takes (Playwright 1.63 and later).
+const DEBUG_MODES: [&str; 2] = ["inspector", "cli"];
+
 /// The child a reproduce/bisect job is running right now. A pid rather than a
 /// handle so the same stop path reaches a Tauri sidecar child and a plain
 /// `npm`/`git` child alike, together with the process tree each spawned.
@@ -799,7 +802,10 @@ pub fn desktop_check_local_env(
 /// argument is never an option waiting for its value
 /// ([`crate::spec_filter::VALUE_FLAGS`] given apart): Playwright would take the
 /// argument the shell writes after it, such as a protected environment's
-/// `--grep-invert`, as that value.
+/// `--grep-invert`, as that value. A mode of `--debug` is one of
+/// [`DEBUG_MODES`], and Playwright reads the argument after a bare `--debug`
+/// as its mode unless it is an option ([`crate::spec_filter::read_args`]), so
+/// a test filter there is refused.
 pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
     for arg in args {
         if arg.contains('\0') {
@@ -820,6 +826,24 @@ pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
         .filter(|last| crate::spec_filter::VALUE_FLAGS.contains(&last.as_str()))
     {
         return Err(format!("{last} needs a value"));
+    }
+    let read = crate::spec_filter::read_args(args);
+    for (index, arg) in args.iter().enumerate() {
+        if read[index] != crate::spec_filter::Arg::Flag {
+            continue;
+        }
+        if let Some(mode) = arg.strip_prefix("--debug=") {
+            if !DEBUG_MODES.contains(&mode) {
+                return Err(format!("--debug takes inspector or cli, not {mode:?}"));
+            }
+        } else if arg == "--debug" && read.get(index + 1) == Some(&crate::spec_filter::Arg::Value) {
+            let mode = &args[index + 1];
+            if !DEBUG_MODES.contains(&mode.as_str()) {
+                return Err(format!(
+                    "Playwright reads {mode} after --debug as its mode, inspector or cli: write the test filter before --debug"
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -1064,7 +1088,7 @@ pub async fn desktop_run_local_tests(
         &playwright_folder(&folder),
         &args,
         cfg!(windows),
-    ));
+    ))?;
     let id = spawn_tests(&app, &folder, &cli, args, settings.envs(), origin, |_, _| {}).await?;
     if let Some(origin_ref) = origin_ref {
         app.state::<LocalRuns>().note_origin(id, origin_ref);
@@ -1378,6 +1402,30 @@ mod tests {
     }
 
     #[test]
+    fn a_debug_mode_is_inspector_or_cli() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        for taken in [
+            args(&["tests/a.spec.ts", "--debug"]),
+            args(&["tests/a.spec.ts", "--debug", "cli"]),
+            args(&["--debug", "inspector", "tests/a.spec.ts"]),
+            args(&["--debug=cli", "tests/a.spec.ts"]),
+            args(&["--debug", "--headed", "tests/a.spec.ts"]),
+            args(&["--grep", "--debug", "tests/a.spec.ts"]),
+        ] {
+            assert!(validate_args(&taken).is_ok(), "{taken:?}");
+        }
+        for refused in [
+            args(&["--debug", "tests/a.spec.ts"]),
+            args(&["--debug", "Cli"]),
+            args(&["--debug="]),
+            args(&["--debug=tests/a.spec.ts"]),
+        ] {
+            let error = validate_args(&refused).unwrap_err();
+            assert!(error.contains("inspector or cli"), "{refused:?}: {error}");
+        }
+    }
+
+    #[test]
     fn the_last_argument_never_waits_for_a_value() {
         let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
         // Playwright gives such an option the argument the shell writes next, such as a protected environment's
@@ -1390,6 +1438,7 @@ mod tests {
             assert!(validate_args(&refused).is_err(), "{refused:?}");
         }
         assert!(validate_args(&args(&["--shuffle"])).is_ok());
+        assert!(validate_args(&args(&["--project", "api", "web"])).is_ok());
         for flag in crate::spec_filter::VALUE_FLAGS {
             assert!(ALLOWED_FLAGS.contains(&flag), "{flag}");
         }
