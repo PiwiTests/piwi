@@ -125,7 +125,7 @@ export default defineNuxtConfig({
   // @piwitests/run-model, the run model the Local runs tray shares with Piwi
   // Picker's Runs window; Vite must transpile them since node_modules is not
   // transpiled by default. Nuxt also passes this list to Nitro's
-  // externals.inline, so they are bundled into the server build instead of
+  // noExternals, so they are bundled into the server build instead of
   // being copied as TypeScript into .output/server/node_modules.
   build: {
     transpile: [
@@ -329,37 +329,28 @@ export default defineNuxtConfig({
   },
 
   compatibilityDate: '2025-02-23',
+  // The server runs on Nitro 3 (the `nitro` dependency) and is written for it, with h3 v2: no layer gives it the
+  // Nitro 2 API.
+  nitroLegacy: false,
 
-  // No other site may frame the dashboard (clickjacking). A route that sets its
-  // own Content-Security-Policy (a sandboxed file, a share view, the desktop
-  // shell's page policy) replaces this one and keeps X-Frame-Options. Badges and
-  // charts are images, which neither header restricts.
+  // No other site may frame the dashboard (clickjacking): every response says so, built assets included. The
+  // `frame-ancestors` policy beside it is set by `server/middleware/frame-ancestors.ts`, as a default a route's own
+  // Content-Security-Policy replaces: route rule headers are applied after the route and would win over it. Badges
+  // and charts are images, which neither header restricts.
   routeRules: {
-    '/**': {
-      headers: { 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "frame-ancestors 'self'" },
-    },
+    '/**': { headers: { 'X-Frame-Options': 'SAMEORIGIN' } },
   },
 
   nitro: {
-    hooks: {
-      // The app's `$fetch` and `useFetch` carry no typed route map. With one,
-      // every call on a URL built at run time is matched against every server
-      // route at type level, and past about 220 routes TypeScript gives up
-      // ("excessive stack depth"). A call site names its response type instead,
-      // with `ApiResponse<typeof handler>` or a type from `types/api.ts`.
-      'types:extend'(types) {
-        types.routes = {};
-      },
-    },
     // Pre-render /_openapi.json so it ships as a static file in the demo.
     // Nitro's built-in OpenAPI handler reads compiled route metadata (from
     // defineRouteMeta transforms) and writes the full spec to
     // .output/public/_openapi.json, which the /docs page fetches at runtime.
     prerender: isDemo ? { failOnError: false, routes: ['/_openapi.json'] } : undefined,
     // The demo's prerender cache lives in memory (a generate run discards it
-    // anyway), so the prerenderer never imports @nuxt/nitro-server's disk cache
-    // driver, which it registers by file:// URL on Windows.
-    storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
+    // anyway), so the prerenderer never imports Nuxt's disk cache driver, which
+    // it registers by file:// URL on Windows.
+    kv: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
     serverAssets,
     publicAssets: [
       {
@@ -416,34 +407,8 @@ export default defineNuxtConfig({
         swagger: false,
       },
     },
-    // npm dependencies stay external: Nitro traces the files the server uses and
-    // copies them into .output/server/node_modules. The Docker image, the desktop
-    // staging (apps/desktop/scripts/stage-server.mjs) and @piwitests/server
-    // (packages/server/scripts/copy-output.mjs) prune the sharp and libsql
-    // platform binaries in that folder and install the target platform's beside
-    // it. Nitro's top-level `noExternals` does not fit that: it bundles every
-    // dependency and refuses any external, native modules included.
-    // date-fns and drizzle-orm are bundled all the same: Node parses a package's
-    // whole `exports` map again for every file it loads from it, theirs list
-    // hundreds of entries, and the server loads hundreds of their files, which
-    // adds seconds to every server start.
-    externals: {
-      inline: ['date-fns', 'drizzle-orm'],
-    },
     experimental: {
       openAPI: true,
-      // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
-      // resolution on Windows. legacyExternals swaps the plugin that traces the externals
-      // above for Nitro's older one, which avoids intermittent build timeouts / failures
-      // during Nitro server bundling on Windows. `nuxi build` sets NODE_ENV=production
-      // before it loads this file.
-      // See: https://github.com/nuxt/nuxt/issues/31836
-      // Never in the demo, whose only server bundle is the prerenderer: the older
-      // resolver resolves bare imports from the project root rather than the importing
-      // file, which would hand Nitro's runtime the hoisted hookable 6 in place of its own
-      // hookable 5 (whose callHook() always returns a promise), and every prerendered
-      // route would answer 500.
-      legacyExternals: !isDemo && process.platform === 'win32' && process.env.NODE_ENV === 'production',
       tasks: true,
     },
     scheduledTasks: {

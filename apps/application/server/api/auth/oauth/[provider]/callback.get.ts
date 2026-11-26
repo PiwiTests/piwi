@@ -13,7 +13,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     return sendRedirect(event, '/login?error=auth-disabled');
   }
 

@@ -1,4 +1,4 @@
-import { getRequestHeader, getRequestURL, type H3Event } from 'h3';
+import { getRequestHeader, getRequestURL, type H3Event } from 'nitro/h3';
 import { isAuthEnabled } from '../utils/auth';
 import { requireMcpAuth } from '../utils/mcp-oauth';
 import { getDatabase, type DbClient } from '../database';
@@ -7,6 +7,7 @@ import type { McpContext, McpTool } from '../utils/mcp/tools';
 import { mcpCatalog, requestMcpContext, toolsForCaller } from '../utils/mcp/catalog';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { publicBaseUrl } from '../utils/public-base-url';
+import { nodeHttp, responseClosed } from '../utils/node-http';
 import {
   checkMcpRequest,
   discoverResult,
@@ -119,23 +120,21 @@ export default eventHandler(async (event) => {
     };
   }
 
-  // A run tool waits for a stop up to half a minute: the wait ends once the client has gone.
-  const gone = new AbortController();
-  event.node.res.on('close', () => {
-    if (!event.node.res.writableFinished) gone.abort();
-  });
+  // A run tool waits for a stop up to half a minute: the wait ends once the client has gone, which aborts the request.
+  const gone = event.req.signal;
   const headers = readMcpHeaders((name) => getRequestHeader(event, name));
   // A modern subscriptions/listen gets its stream, which acknowledges no notification: this server sends none.
   if (!Array.isArray(body) && body?.jsonrpc === '2.0' && body.method === 'subscriptions/listen') {
     const era = checkMcpRequest(body, headers);
     if (!isRefusal(era) && isListenRequest(era, body)) {
-      openListenStream(event.node.res, body.id, {}, serverInfo(event));
-      return;
+      const { res } = nodeHttp(event);
+      openListenStream(res, body.id, {}, serverInfo());
+      return responseClosed(res);
     }
   }
   const post = postAnswer(
     Array.isArray(body),
-    await Promise.all(requests.map((req) => handleRequest(ctx, req, headers, event, db, gone.signal))),
+    await Promise.all(requests.map((req) => handleRequest(ctx, req, headers, event, db, gone))),
   );
 
   // A body of notifications alone is accepted with no answer.
@@ -168,7 +167,7 @@ async function handleRequest(
   if (req.id === undefined || req.id === null) return null;
 
   try {
-    return servedResponse(era, req.method, await dispatch(ctx, req, event, db, signal), serverInfo(event));
+    return servedResponse(era, req.method, await dispatch(ctx, req, event, db, signal), serverInfo());
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[MCP] error handling', req.method, message);
@@ -176,8 +175,8 @@ async function handleRequest(
   }
 }
 
-function serverInfo(event: H3Event) {
-  return mcpServerInfo(useRuntimeConfig(event).public.appVersion as string, { desktop: IS_DESKTOP });
+function serverInfo() {
+  return mcpServerInfo(useRuntimeConfig().public.appVersion as string, { desktop: IS_DESKTOP });
 }
 
 /** What the server says it is for and how to use it, in `initialize` and `server/discover` alike. */
@@ -218,7 +217,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       return ok(id, {
         protocolVersion: negotiateProtocolVersion(requested),
         capabilities: CAPABILITIES,
-        serverInfo: serverInfo(event),
+        serverInfo: serverInfo(),
         instructions: instructions(event),
       });
     }
@@ -310,9 +309,9 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
         db,
         ctx,
         baseUrl,
-        authEnabled: isAuthEnabled(event),
+        authEnabled: isAuthEnabled(),
         args: p.arguments ?? {},
-        version: String(useRuntimeConfig(event).public.appVersion ?? ''),
+        version: String(useRuntimeConfig().public.appVersion ?? ''),
       });
       return ok(id, result);
     }

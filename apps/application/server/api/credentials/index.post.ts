@@ -51,7 +51,7 @@ export default eventHandler(async (event) => {
     if (!can(access, 'credentials:manage')) {
       throw apiError({ statusCode: 403, message: 'A per-user credential takes the credentials:manage permission.' });
     }
-    if (!isAuthEnabled(event)) {
+    if (!isAuthEnabled()) {
       throw apiError({
         statusCode: 400,
         message: 'A per-user credential acts in the name of whoever starts it, which needs sign-in: turn it on first.',

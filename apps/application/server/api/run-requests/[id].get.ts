@@ -23,7 +23,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  requireSignInForRunRequests(event);
+  requireSignInForRunRequests();
   const user = await requireAuth(event);
   const id = requireRunRequestId(event);
   const db = await getDatabase();

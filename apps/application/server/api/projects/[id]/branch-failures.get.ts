@@ -46,7 +46,7 @@ export default eventHandler(async (event) => {
     apiError({ statusCode, message }),
   );
   // The server's version and what the answer is computed from, read without computing it.
-  const appVersion = (useRuntimeConfig(event).public as { appVersion?: string }).appVersion ?? null;
+  const appVersion = (useRuntimeConfig().public as { appVersion?: string }).appVersion ?? null;
   if (notModified(event, jsonEtag([appVersion, await read.version()]))) return null;
   return read.answer();
 });

@@ -11,6 +11,7 @@ import { parseRouteId } from '#shared/route-id';
 import { getDatabase } from '../../../database';
 import { projects, testRuns } from '../../../database/schema';
 import { openEventStream } from '../../../utils/event-stream';
+import { nodeHttp, responseClosed } from '../../../utils/node-http';
 import { liveAsks } from '../../../utils/live-asks';
 import { authorizeLiveViewKey, liveViewKeyOf, liveViewRelay } from '../../../utils/live-view';
 import { continueRun } from '../../../utils/run-continuation';
@@ -103,4 +104,5 @@ export default eventHandler(async (event) => {
       console.warn(`[live-view] Run #${id} could not continue run #${after}`, err),
     );
   }
+  return responseClosed(nodeHttp(event).res);
 });

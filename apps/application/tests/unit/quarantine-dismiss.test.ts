@@ -7,6 +7,8 @@ import type { McpContext } from '../../server/utils/mcp/tools';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary, type RoutePermission } from '#shared/permissions';
 import { recordRouteMeta, type RouteAccessState, type RouteCaller } from './route-access';
+import type { H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 /**
  * Dismissing a quarantine proposal or a proposed release: the REST route the
@@ -37,11 +39,14 @@ vi.mock('#shared/handlers/projects', async (importOriginal) => ({
   getProjectFlakyTests: async () => state.flaky,
 }));
 
-interface FakeEvent {
+/** What a test asks a route: its params, its body and its path, which the stubbed helpers and `getQuery` read. */
+interface FakeRequest {
   body?: unknown;
   params?: Record<string, string>;
   path?: string;
 }
+
+type FakeEvent = H3Event & Omit<FakeRequest, 'path'>;
 
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
@@ -49,17 +54,17 @@ vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
 vi.stubGlobal('apiError', apiError);
 
-type Handler<T> = (event: FakeEvent) => Promise<T>;
+type Handler<T> = (request: FakeRequest) => Promise<T>;
 
 /** A route's handler, called under the permission its meta declares. */
 async function loadRoute<T>(path: string): Promise<{ handler: Handler<T>; permission: RoutePermission[] }> {
-  const handler = (await import(path)).default as Handler<T>;
+  const handler = (await import(path)).default as (event: FakeEvent) => Promise<T>;
   const permission = state.routePermission;
   return {
     permission,
-    handler: async (event) => {
+    handler: async ({ path, ...fields }) => {
       state.routePermission = permission;
-      return handler(event);
+      return handler(Object.assign(testEvent({ url: path }), fields));
     },
   };
 }

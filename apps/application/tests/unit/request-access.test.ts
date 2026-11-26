@@ -3,6 +3,8 @@ import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import { ADMIN_ACCESS, InstanceRole, type AccessSummary, type RoutePermission } from '#shared/permissions';
 import type { User } from '../../server/database/schema';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 /**
  * How a request is authorized: `requireAuth` identifies the caller, loads their
@@ -34,11 +36,10 @@ vi.mock('#shared/handlers/role-bindings', async (importOriginal) => {
   };
 });
 
-interface FakeEvent {
-  headers: Record<string, string>;
-  context: { access?: AccessSummary; apiKeyId?: number };
+interface FakeEvent extends H3Event {
+  context: H3Event['context'] & { access?: AccessSummary; apiKeyId?: number };
 }
-vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.headers[name.toLowerCase()]);
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 // Authentication is on through PIWI_AUTH_ENABLED, which wins over the runtime config.
 vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
 
@@ -89,8 +90,13 @@ afterEach(async () => {
   await close();
 });
 
+/** A request carrying these headers. */
+function request(headers: Record<string, string> = {}): FakeEvent {
+  return testEvent({ headers, context: {} });
+}
+
 function as(userId: number): FakeEvent {
-  return { headers: { authorization: `Bearer ${keys.get(userId)}` }, context: {} };
+  return request({ authorization: `Bearer ${keys.get(userId)}` });
 }
 
 async function statusOf(promise: Promise<unknown>): Promise<{ statusCode: number; message: string } | 'ok'> {
@@ -103,25 +109,23 @@ async function statusOf(promise: Promise<unknown>): Promise<{ statusCode: number
   }
 }
 
-// The request as h3 reads it too: the bearer token is read through h3's own getRequestHeader.
-const event = (e: FakeEvent) => Object.assign(e, { node: { req: { headers: e.headers } } }) as never;
 const insufficient = { statusCode: 403, message: 'Insufficient permissions' };
 const noAccess = { statusCode: 403, message: 'No access to this project' };
 
 describe('requireAuth', () => {
   test('acts as an administrator holding every permission when authentication is off', async () => {
     delete process.env.PIWI_AUTH_ENABLED;
-    const e: FakeEvent = { headers: {}, context: {} };
+    const e: FakeEvent = request();
     state.route = ['users:manage'];
-    const user = await requireAuth(event(e));
+    const user = await requireAuth(e);
     expect(user.role).toBe(InstanceRole.ADMINISTRATOR);
     expect(e.context.access).toBe(ADMIN_ACCESS);
-    expect(await getRequestAccess(event(e))).toBe(ADMIN_ACCESS);
+    expect(await getRequestAccess(e)).toBe(ADMIN_ACCESS);
     expect(await getProjectScope(db as never, user, 'run:delete')).toBe('all');
   });
 
   test('refuses an unknown key (401)', async () => {
-    expect(await statusOf(requireAuth(event({ headers: { authorization: 'Bearer pd_nope' }, context: {} })))).toEqual({
+    expect(await statusOf(requireAuth(request({ authorization: 'Bearer pd_nope' })))).toEqual({
       statusCode: 401,
       message: 'Invalid or expired API key',
     });
@@ -129,7 +133,7 @@ describe('requireAuth', () => {
 
   test('loads the access into the event context and records the key', async () => {
     const e = as(2);
-    const user = await requireAuth(event(e));
+    const user = await requireAuth(e);
     expect(user.id).toBe(2);
     expect(e.context.apiKeyId).toEqual(expect.any(Number));
     expect(e.context.access).toEqual({
@@ -137,7 +141,7 @@ describe('requireAuth', () => {
       allProjects: [],
       projects: { 10: ['maintainer'], 11: ['viewer'] },
     });
-    expect(await getRequestAccess(event(e))).toBe(e.context.access);
+    expect(await getRequestAccess(e)).toBe(e.context.access);
   });
 
   test.each<[string, RoutePermission[], number, 'ok' | typeof insufficient]>([
@@ -152,14 +156,14 @@ describe('requireAuth', () => {
     ['nothing declared', [], 4, 'ok'],
   ])('early check of the route meta: %s', async (_case, route, userId, expected) => {
     state.route = route;
-    expect(await statusOf(requireAuth(event(as(userId))))).toEqual(expected);
+    expect(await statusOf(requireAuth(as(userId)))).toEqual(expected);
   });
 
   test('an explicit permission overrides the route meta', async () => {
     state.route = ['users:manage'];
-    expect(await statusOf(requireAuth(event(as(2)), 'signed-in'))).toBe('ok');
+    expect(await statusOf(requireAuth(as(2), 'signed-in'))).toBe('ok');
     state.route = [];
-    expect(await statusOf(requireAuth(event(as(2)), ['run:delete']))).toEqual(insufficient);
+    expect(await statusOf(requireAuth(as(2), ['run:delete']))).toEqual(insufficient);
   });
 });
 
@@ -171,18 +175,18 @@ describe('requireSessionAuth', () => {
 
   test("refuses an API key, even an administrator's", async () => {
     state.route = ['signed-in'];
-    expect(await statusOf(requireSessionAuth(event(as(2))))).toEqual(sessionRequired);
-    expect(await statusOf(requireSessionAuth(event(as(1))))).toEqual(sessionRequired);
+    expect(await statusOf(requireSessionAuth(as(2)))).toEqual(sessionRequired);
+    expect(await statusOf(requireSessionAuth(as(1)))).toEqual(sessionRequired);
   });
 
   test('refuses an API key after requireAuth accepted it', async () => {
     const e = as(2);
-    await requireAuth(event(e));
-    expect(() => refuseApiKey(event(e))).toThrow(expect.objectContaining(sessionRequired));
+    await requireAuth(e);
+    expect(() => refuseApiKey(e)).toThrow(expect.objectContaining(sessionRequired));
   });
 
   test('asks a caller without credentials to sign in (401)', async () => {
-    expect(await statusOf(requireSessionAuth(event({ headers: {}, context: {} })))).toEqual({
+    expect(await statusOf(requireSessionAuth(request()))).toEqual({
       statusCode: 401,
       message: 'Authentication required',
     });
@@ -190,7 +194,7 @@ describe('requireSessionAuth', () => {
 
   test('lets every caller through when authentication is off', async () => {
     delete process.env.PIWI_AUTH_ENABLED;
-    const user = await requireSessionAuth(event({ headers: {}, context: {} }));
+    const user = await requireSessionAuth(request());
     expect(user.role).toBe(InstanceRole.ADMINISTRATOR);
   });
 });
@@ -208,13 +212,13 @@ describe('requireProjectAccess', () => {
     ['an administrator holds everything everywhere', ['run:delete'], 1, 12, 'ok'],
   ])('%s', async (_case, route, userId, projectId, expected) => {
     state.route = route;
-    expect(await statusOf(requireProjectAccess(event(as(userId)), projectId))).toEqual(expected);
+    expect(await statusOf(requireProjectAccess(as(userId), projectId))).toEqual(expected);
   });
 
   test('an explicit permission overrides the route meta', async () => {
     state.route = ['project:read'];
-    expect(await statusOf(requireProjectAccess(event(as(2)), 11, 'triage:write'))).toEqual(insufficient);
-    expect(await statusOf(requireProjectAccess(event(as(2)), 10, 'triage:write'))).toBe('ok');
+    expect(await statusOf(requireProjectAccess(as(2), 11, 'triage:write'))).toEqual(insufficient);
+    expect(await statusOf(requireProjectAccess(as(2), 10, 'triage:write'))).toBe('ok');
   });
 });
 
@@ -225,8 +229,8 @@ describe('requireResolvedProjectAccess', () => {
     resolved.push(id);
     return id === 7 ? 12 : null;
   };
-  const access = (e: FakeEvent, id: number) => requireResolvedProjectAccess(event(e), id, resolve, 'Thing');
-  const anonymous = (): FakeEvent => ({ headers: {}, context: {} });
+  const access = (e: FakeEvent, id: number) => requireResolvedProjectAccess(e, id, resolve, 'Thing');
+  const anonymous = (): FakeEvent => request();
   const unauthenticated = { statusCode: 401, message: 'Authentication required' };
 
   beforeEach(() => {
@@ -240,7 +244,7 @@ describe('requireResolvedProjectAccess', () => {
   });
 
   test('answers 401 to an unknown key, whether the entity exists or not', async () => {
-    const badKey = (): FakeEvent => ({ headers: { authorization: 'Bearer pd_nope' }, context: {} });
+    const badKey = (): FakeEvent => request({ authorization: 'Bearer pd_nope' });
     const invalidKey = { statusCode: 401, message: 'Invalid or expired API key' };
     expect(await statusOf(access(badKey(), 7))).toEqual(invalidKey);
     expect(await statusOf(access(badKey(), 8))).toEqual(invalidKey);
@@ -276,7 +280,7 @@ describe('requireResolvedProjectAccess', () => {
 
 describe('getProjectScope', () => {
   async function user(id: number): Promise<User> {
-    return (await requireAuth(event(as(id)))) as User;
+    return (await requireAuth(as(id))) as User;
   }
 
   test('narrows to the projects where the permission is held', async () => {

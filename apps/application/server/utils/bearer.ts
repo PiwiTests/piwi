@@ -1,4 +1,4 @@
-import { getRequestHeader, type H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 
 /**
  * The token of an `Authorization: Bearer <token>` header, whatever kind of token

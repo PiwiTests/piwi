@@ -15,7 +15,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const user = await requireSessionAuth(event);
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     throw apiError({ statusCode: 400, message: 'Profile pictures need authentication turned on' });
   }
   return { removed: await removeProfilePicture(await getDatabase(), user.id) };

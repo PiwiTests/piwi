@@ -1,5 +1,6 @@
 import { describe, test, expect, vi } from 'vitest';
 import { apiError } from '../../server/utils/api-error';
+import { testEvent } from './h3-event';
 
 /**
  * The AI step-resolution route bounds every field of a request, and holds one
@@ -29,11 +30,10 @@ const route = (await import('../../server/api/ai/step-resolution.post')).default
   event: unknown,
 ) => Promise<unknown>;
 
-const event = (body: Record<string, unknown>) => ({
-  body: { kind: 'locator', template: 'the Save button', ...body },
-  context: {},
-  node: { req: { headers: {}, socket: { remoteAddress: '10.2.2.2' } }, res: { setHeader: () => {} } },
-});
+const event = (body: Record<string, unknown>) =>
+  Object.assign(testEvent({ method: 'POST', ip: '10.2.2.2' }), {
+    body: { kind: 'locator', template: 'the Save button', ...body },
+  });
 
 describe('POST /api/ai/step-resolution', () => {
   test.each([

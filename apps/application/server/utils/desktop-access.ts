@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { setResponseHeader, type H3Event } from 'h3';
+import { getRequestHeaders, setResponseHeader, type H3Event } from 'nitro/h3';
 import {
   challengeAnswer,
   cookiesOf,
@@ -12,6 +12,7 @@ import { DESKTOP_PICKS_PATH } from '#shared/desktop-runs';
 import { timingSafeEqualStr } from './timing-safe';
 import { bearerToken } from './bearer';
 import { isLoopbackRequest } from './assistant/turn-token';
+import { requestSocket } from './node-http';
 
 /**
  * Whether the request presents the desktop access token `token` (`presentsToken` of `@piwitests/editor/host-guard`,
@@ -68,8 +69,9 @@ export async function answerDesktopChallenge(
   event: H3Event,
   token: string | undefined = process.env.PIWI_DESKTOP_TOKEN,
 ): Promise<void> {
-  const headers = headersOf(event.node.req.headers);
-  for (const [name, value] of Object.entries(await challengeAnswer(headers, token, event.node.req.socket?.localPort))) {
+  const headers = headersOf(getRequestHeaders(event));
+  const port = requestSocket(event)?.localPort;
+  for (const [name, value] of Object.entries(await challengeAnswer(headers, token, port))) {
     setResponseHeader(event, name, value);
   }
 }
@@ -80,11 +82,11 @@ export async function answerDesktopChallenge(
  * `@piwitests/editor/host-guard`).
  */
 export function isBrowserRequest(event: H3Event): boolean {
-  return isHostBrowserRequest({ headers: headersOf(event.node.req.headers) });
+  return isHostBrowserRequest({ headers: headersOf(getRequestHeaders(event)) });
 }
 
 /** What the shared guard reads of a request: its headers and cookies. */
 export function hostRequestOf(event: H3Event): HostRequest {
-  const headers = headersOf(event.node.req.headers);
+  const headers = headersOf(getRequestHeaders(event));
   return { headers, cookies: cookiesOf(headers.cookie) };
 }

@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { testEvent } from './h3-event';
 
 /**
  * What the admin activity route answers: the runs of every project not ended yet, by their last activity, the requests
@@ -100,8 +101,9 @@ test('an answer counts while the assistant writes it', () => {
   expect(assistantAnswersInProgress()).toBe(before);
 });
 
-/** The request and response of an event whose client is still there. */
+/** An event whose client is still there, its Node response, and its client leaving. */
 function nodeEvent() {
+  const gone = new AbortController();
   const req = Object.assign(new EventEmitter(), { destroyed: false });
   const res = Object.assign(new EventEmitter(), {
     closed: false,
@@ -110,30 +112,28 @@ function nodeEvent() {
     write: vi.fn(() => true),
     end: vi.fn(),
   });
-  return { node: { req, res } } as never as Parameters<typeof createSSEEndpoint>[0] & {
-    node: { req: EventEmitter; res: EventEmitter };
-  };
+  return { event: testEvent({ signal: gone.signal, node: { req, res } }), res, leave: () => gone.abort() };
 }
 
 describe('open event streams', () => {
   test('a server-sent event stream counts from its subscription until its client leaves', async () => {
     const before = eventStreams.value;
-    const event = nodeEvent();
+    const { event, leave } = nodeEvent();
     createSSEEndpoint(event, () => () => {});
     expect(eventStreams.value).toBe(before + 1);
-    event.node.req.emit('close');
+    leave();
     expect(eventStreams.value).toBe(before);
   });
 
   test('a stream written to the response counts until it closes, from either side', () => {
     const before = eventStreams.value;
     const leaving = nodeEvent();
-    openEventStream(leaving);
+    openEventStream(leaving.event);
     expect(eventStreams.value).toBe(before + 1);
-    leaving.node.res.emit('close');
+    leaving.res.emit('close');
     expect(eventStreams.value).toBe(before);
 
-    const sink = openEventStream(nodeEvent());
+    const sink = openEventStream(nodeEvent().event);
     expect(eventStreams.value).toBe(before + 1);
     sink.close();
     sink.close();

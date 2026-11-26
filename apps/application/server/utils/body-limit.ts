@@ -1,4 +1,4 @@
-import { getRequestWebStream, type H3Event } from 'h3';
+import { getRequestWebStream, type H3Event } from 'nitro/h3';
 import { apiError } from './api-error';
 import { resolveMaxSubmitBytes } from './upload-limits';
 

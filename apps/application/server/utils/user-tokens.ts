@@ -6,7 +6,7 @@
  * is saved, at most {@link USER_TOKEN_TEST_LIMIT} times per person and
  * credential in a window, and the test says only whether it was taken.
  */
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { getDatabase, type DbClient } from '../database';
 import { getRequestAccess, requireSessionAuth } from './auth';
 import { checkRateLimit, rateLimitedError } from './rate-limit';

@@ -2,6 +2,7 @@ import { requireRouteId } from '../../../../utils/project-access';
 import { assistantTurnOfRequest } from '../../../../utils/assistant/turn-token';
 import { answerTurnMcp, serverInfo } from '../../../../utils/assistant/turn-mcp';
 import { openListenStream, readMcpHeaders } from '../../../../utils/mcp/protocol';
+import { nodeHttp, responseClosed } from '../../../../utils/node-http';
 import { streamHeaders } from '#shared/stream-headers';
 
 defineRouteMeta({
@@ -22,7 +23,7 @@ export default eventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => null);
   const reply = await answerTurnMcp(turn, body, {
-    version: String(useRuntimeConfig(event).public.appVersion ?? ''),
+    version: String(useRuntimeConfig().public.appVersion ?? ''),
     acceptsStream: (getRequestHeader(event, 'accept') ?? '').includes('text/event-stream'),
     headers: readMcpHeaders((name) => getRequestHeader(event, name)),
     toolsChanged: () => turn.listeners.toolsChanged(),
@@ -33,10 +34,11 @@ export default eventHandler(async (event) => {
     return '';
   }
   if (reply.kind === 'listen') {
-    const version = String(useRuntimeConfig(event).public.appVersion ?? '');
-    const stream = openListenStream(event.node.res, reply.id, reply.honored, serverInfo(version));
+    const version = String(useRuntimeConfig().public.appVersion ?? '');
+    const { res } = nodeHttp(event);
+    const stream = openListenStream(res, reply.id, reply.honored, serverInfo(version));
     stream.onClose(turn.listeners.add({ toolsChanged: () => stream.toolsChanged(), end: () => stream.end() }));
-    return;
+    return responseClosed(res);
   }
   if (reply.kind === 'stream') {
     setResponseHeaders(event, streamHeaders('text/event-stream'));

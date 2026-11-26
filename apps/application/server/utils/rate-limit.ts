@@ -1,6 +1,6 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiError } from './api-error';
-import { getRequestHeader, getRequestIP, setResponseHeader } from 'h3';
+import { getRequestHeader, getRequestIP, setResponseHeader } from 'nitro/h3';
 import { isIP } from 'node:net';
 import { ipv6Groups } from './safe-fetch';
 
@@ -129,7 +129,7 @@ export function rateLimitedError(
   message = 'Too many requests. Please wait before trying again.',
 ) {
   const retryAfter = Math.max(1, ...keys.map(rateLimitResetSeconds));
-  setResponseHeader(event, 'Retry-After', retryAfter);
+  setResponseHeader(event, 'Retry-After', String(retryAfter));
   return apiError({ statusCode: 429, message });
 }
 

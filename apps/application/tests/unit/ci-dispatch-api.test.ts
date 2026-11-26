@@ -12,6 +12,7 @@ import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
+import { testEvent } from './h3-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -85,8 +86,15 @@ const asRole = (role: ProjectRole, apiKey = false): RouteCaller => ({
   apiKey,
 });
 
+/** A request carrying the fake's query and context, with the fields the stubs above read. */
+function toEvent({ context, ...fields }: FakeEvent): FakeEvent {
+  const search = new URLSearchParams(fields.query as Record<string, string> | undefined);
+  return Object.assign(testEvent({ url: `/?${search}`, context }), fields);
+}
+
 /** The status and message a route call threw, or its answer. */
-async function call(handler: Route, event: FakeEvent) {
+async function call(handler: Route, fake: FakeEvent) {
+  const event = toEvent(fake);
   try {
     const body = await handler(event);
     return { status: event.status ?? 200, body, event };

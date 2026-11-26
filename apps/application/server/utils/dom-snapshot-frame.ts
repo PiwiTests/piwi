@@ -1,4 +1,4 @@
-import { setResponseHeader, type H3Event } from 'h3';
+import { setResponseHeader, type H3Event } from 'nitro/h3';
 import {
   snapshotFrameHeaders,
   snapshotFrameHtml,

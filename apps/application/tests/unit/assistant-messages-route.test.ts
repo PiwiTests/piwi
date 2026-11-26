@@ -13,6 +13,8 @@ import type { User } from '../../server/database/schema';
 import type { AssistantBlock } from '#shared/assistant';
 import { buildAccessSummary, InstanceRole } from '#shared/permissions';
 import { recordRouteMeta, type RouteAccessState } from './route-access';
+import type { H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 delete process.env.PIWI_DATABASE_URL;
 
@@ -55,11 +57,8 @@ vi.mock('../../server/utils/assistant/turn', () => ({
     }),
 }));
 
-interface FakeEvent {
-  body?: unknown;
-  params?: Record<string, string>;
-  node: { req: { socket: { localPort: number } }; res: { on: () => void } };
-}
+/** A request with the route params and parsed body that the stubbed `getRouterParam` and `readBody` read. */
+type FakeEvent = H3Event & { params?: Record<string, string>; body?: unknown };
 
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: true, app: { baseURL: '/' }, public: {} }));
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
@@ -114,15 +113,16 @@ afterEach(async () => {
 });
 afterAll(() => vi.unstubAllGlobals());
 
-const ask = (body: unknown) =>
-  route({
-    params: { id: String(conversationId) },
+/** A request to conversation `id`'s route, arrived on port 3000. */
+const request = (id: number, body?: unknown): FakeEvent =>
+  Object.assign(testEvent({ method: 'POST', node: { req: { socket: { localPort: 3000 } }, res: {} } }), {
+    params: { id: String(id) },
     body,
-    node: { req: { socket: { localPort: 3000 } }, res: { on: () => {} } },
   });
 
-const stop = (id = conversationId) =>
-  stopRoute({ params: { id: String(id) }, node: { req: { socket: { localPort: 3000 } }, res: { on: () => {} } } });
+const ask = (body: unknown) => route(request(conversationId, body));
+
+const stop = (id = conversationId) => stopRoute(request(id));
 
 /** Ends the answer being written and reads its stream to the end. */
 async function finish(stream: ReadableStream<Uint8Array>): Promise<void> {

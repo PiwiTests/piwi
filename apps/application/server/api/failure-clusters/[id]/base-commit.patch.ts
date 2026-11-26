@@ -15,7 +15,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event);
+  const body = await readBody<{ commit?: unknown }>(event);
   const commit = typeof body?.commit === 'string' ? body.commit.trim() : null;
 
   const result = await patchClusterBaseCommit(db, id, commit);

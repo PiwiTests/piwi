@@ -3,6 +3,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { REPORT_READY_EVENT } from '#shared/notification-events';
 import { openTempDb, type TempDb } from './temp-db';
+import { testEvent } from './h3-event';
 
 /**
  * `GET /api/notifications/stream`: every refresh re-checks the caller and
@@ -55,7 +56,7 @@ afterEach(async () => {
 
 /** Open the stream and collect the events it delivers. */
 async function open() {
-  const response = await stream({ node: { req: { on: () => {} } } });
+  const response = await stream(testEvent());
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   const received: unknown[] = [];

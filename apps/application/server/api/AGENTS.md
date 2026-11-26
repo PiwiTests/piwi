@@ -13,6 +13,10 @@ Rules for the Nitro routes (`server/api/`, `server/routes/`) and the authorizati
   and other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
   `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks the routes
   and the app's requests.
+- **The server runs on Nitro 3 and h3 v2**: a route reads its request from `event.req` (a web `Request`) and the
+  helpers of `nitro/h3`, never `event.node`. One that writes its answer to the Node response itself, a stream that
+  counts what its reader has not read, takes it from `nodeHttp(event)` and returns `responseClosed(res)`
+  (`server/utils/node-http.ts`): the server ends the response once the route settles.
 - **A numeric route param is read with `requireRouteId`** (`requireRouteIndex` for a 0-based position, `parseRouteId`
   of `#shared/route-id` for a route whose refusal is not a 400), never with `parseInt` or `Number`, which read `12abc`
   as 12 and pass an id above PostgreSQL's `serial` (`tests/unit/route-permission-raw-path.test.ts`). The demo router

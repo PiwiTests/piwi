@@ -53,6 +53,7 @@ import {
   subscribeAgentRuns,
   waitingAgentRuns,
 } from '../../server/utils/desktop-agent-runs';
+import { testEvent } from './h3-event';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 /** How long an agent follows a run after its last call, short for the test that waits it out. */
@@ -394,11 +395,12 @@ describe('the run channel the shell names in a run', () => {
         event: unknown,
       ) => Promise<Record<string, unknown>>;
       const ask = (headers: Record<string, string>) =>
-        route({
-          path: `/api/desktop/run-channel?folder=${encodeURIComponent(folder)}&attended=1`,
-          node: { req: { headers: { host: '127.0.0.1:3000', ...headers } }, res: {} },
-          context: {},
-        });
+        route(
+          testEvent({
+            url: `/api/desktop/run-channel?folder=${encodeURIComponent(folder)}&attended=1`,
+            headers: { host: '127.0.0.1:3000', ...headers },
+          }),
+        );
 
       // The shell hears the editor's channel.
       expect((await ask({ 'x-piwi-token': TOKEN })).editor).toEqual({
@@ -1781,8 +1783,7 @@ describe("the agents' tools for the desktop app's runs", () => {
 });
 
 describe('the routes', () => {
-  const event = (headers: Record<string, string>) =>
-    ({ node: { req: { headers } }, headers: new Headers(headers) }) as never;
+  const event = (headers: Record<string, string>) => testEvent({ headers });
 
   it('leave the guard’s open routes as they were: the hub’s routes need the desktop token', () => {
     for (const route of [
@@ -1799,7 +1800,7 @@ describe('the routes', () => {
   });
 
   it('open the picks route alone with the picks token, from this machine, and nothing else with it', async () => {
-    vi.stubGlobal('defineEventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('eventHandler', (handler: unknown) => handler);
     vi.stubGlobal('apiError', (opts: { statusCode: number; statusMessage?: string }) =>
       Object.assign(new Error(opts.statusMessage), opts),
     );
@@ -1808,15 +1809,12 @@ describe('the routes', () => {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     });
-    const guard = (await import('../../server/middleware/desktop-guard')).default as unknown as (e: never) => void;
+    const guard = (await import('../../server/middleware/desktop-guard')).default as unknown as (
+      e: ReturnType<typeof testEvent>,
+    ) => void;
     const picks = desktopPicksToken();
     const request = (method: string, path: string, headers: Record<string, string>, peer = '127.0.0.1') =>
-      ({
-        method,
-        path,
-        context: {},
-        node: { req: { headers: { host: '127.0.0.1:4318', ...headers }, socket: { remoteAddress: peer } }, res: {} },
-      }) as never;
+      testEvent({ method, url: path, headers: { host: '127.0.0.1:4318', ...headers }, ip: peer, node: {} });
     const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
     const refused = /Desktop access token required/;
     expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(picks)))).not.toThrow();

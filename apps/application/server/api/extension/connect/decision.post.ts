@@ -23,7 +23,7 @@ export default eventHandler(async (event) => {
   if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
 
   const db = await getDatabase();
-  const abilities = await targetAbilitiesOf(db, await getRequestAccess(event), isAuthEnabled(event));
+  const abilities = await targetAbilitiesOf(db, await getRequestAccess(event), isAuthEnabled());
   const result = await limitLookupMisses(
     event,
     missKey,
@@ -32,7 +32,7 @@ export default eventHandler(async (event) => {
       decideDeviceConnect(db, {
         userCode: parsed.data.userCode,
         // With authentication off there is no account to own a key.
-        userId: isAuthEnabled(event) ? user.id : null,
+        userId: isAuthEnabled() ? user.id : null,
         allow: parsed.data.allow,
         abilities,
       }),

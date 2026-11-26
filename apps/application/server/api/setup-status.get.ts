@@ -17,6 +17,6 @@ export default eventHandler(async (event) => {
   // this instance is configured.
   await requireAuth(event);
   const db = await getDatabase();
-  const appVersion = useRuntimeConfig(event).public.appVersion as string | undefined;
+  const appVersion = useRuntimeConfig().public.appVersion as string | undefined;
   return getSetupStatus(db, appVersion);
 });

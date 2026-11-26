@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 import { withStoredVerdicts } from './stored-verdicts';
+import { testEvent } from './h3-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -17,10 +18,7 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('#shared/handlers/capabilities', () => ({
   isOptInCapabilityOn: async (_db: unknown, projectId: number) => state.machineRuns.has(projectId),
 }));
-vi.stubGlobal(
-  'getRequestHeader',
-  (event: { node: { req: { headers: Record<string, string> } } }, name: string) => event.node.req.headers[name],
-);
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, name: string) => event.params?.[name]);
 
 const { generateApiKey, getUserByApiKey, requireAuth } = await import('../../server/utils/auth');
@@ -55,7 +53,7 @@ const T0 = new Date('2026-09-01T10:00:00Z');
 
 function eventWithKey(key: string | null): H3Event {
   const headers: Record<string, string> = key ? { authorization: `Bearer ${key}` } : {};
-  return { context: {}, node: { req: { headers }, res: {} } } as unknown as H3Event;
+  return testEvent({ headers });
 }
 
 async function key(owner: number, permissions: string[] | null) {

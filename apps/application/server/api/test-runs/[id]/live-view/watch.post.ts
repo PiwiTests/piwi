@@ -130,7 +130,7 @@ export default eventHandler(async (event) => {
       message: 'Say what the watch shows: focus, tiles, size, layers, text or inspect',
     });
   }
-  const person = isAuthEnabled(event) ? user.id : null;
+  const person = isAuthEnabled() ? user.id : null;
   // Whether the person may control the project's runs is read again at each change: a role taken away counts from here.
   ask.controller = await holdsProjectPermission(event, projectId, ['run:control']);
   const { refused, shown } = liveViewRelay.changeWatch(id, body.watch, person, ask);

@@ -3,7 +3,7 @@
  * instance, whose conversations a request reads, and one question answered
  * and stored with the asking user's access.
  */
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import {
   addAssistantMessage,
   assistantTokensSince,
@@ -46,7 +46,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Whose conversations a request reads: the signed-in user's, or the virtual administrator's (null) with authentication off. */
 export function assistantOwnerOf(event: H3Event, user: User): AssistantOwner {
-  return isAuthEnabled(event) ? user.id : null;
+  return isAuthEnabled() ? user.id : null;
 }
 
 /** Refuse with 403 when the assistant is declined on this instance: its routes answer as unavailable. */

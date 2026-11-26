@@ -8,6 +8,7 @@ import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
+import type { TestRunStartPayload } from '#shared/types';
 import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
 import { runEventBus } from '../../utils/run-events';
 import { pinProjectRepository } from '../../utils/scm/project-repository';
@@ -62,10 +63,10 @@ export default eventHandler(async (event) => {
   // and the project itself is checked below.
   const signedIn = presentsRequestToken(event) ? null : await requireAuth(event);
 
-  const body = await readBody(event);
+  const body = await readBody<TestRunStartPayload>(event);
 
   // Validate required fields
-  if (!body.projectName) {
+  if (!body?.projectName) {
     throw apiError({
       statusCode: 400,
       message: 'Missing required field: projectName',

@@ -77,15 +77,17 @@ const field = (name: string, value: unknown): MultipartPart => ({
 
 /** The reporter's upload of one screenshot for the execution `testCase` names. */
 function uploadScreenshot(testCase: Record<string, unknown>, name = 'screenshot.png') {
-  return route({
-    params: { id: String(runId) },
-    ...multipartEvent([
-      field('streamToken', STREAM_TOKEN),
-      field('testCase', testCase),
-      field('attach_meta', [{ name: 'screenshot', contentType: 'image/png', originalName: name }]),
-      { name: 'attach_file', filename: name, data: Buffer.from(name) },
-    ]),
-  });
+  return route(
+    Object.assign(
+      multipartEvent([
+        field('streamToken', STREAM_TOKEN),
+        field('testCase', testCase),
+        field('attach_meta', [{ name: 'screenshot', contentType: 'image/png', originalName: name }]),
+        { name: 'attach_file', filename: name, data: Buffer.from(name) },
+      ]),
+      { params: { id: String(runId) } },
+    ),
+  );
 }
 
 /** Store the executions of the run, as its streamed `complete` events do. */
@@ -110,19 +112,21 @@ describe('POST /api/test-runs/:id/case-files', () => {
       { title: 'pays', filePath: 'tests/pay.spec.ts', status: 'failed', line: 3, column: 1, retries: 0 },
     ]);
 
-    const answer = await route({
-      params: { id: String(runId) },
-      ...multipartEvent([
-        field('streamToken', STREAM_TOKEN),
-        field('testCase', { title: 'pays', location: 'tests/pay.spec.ts:3:1', retries: 0 }),
-        field('attach_meta', [
-          { name: '..', contentType: 'application/octet-stream', originalName: '..' },
-          { name: 'screenshot', contentType: 'image/png', originalName: 'shot.png' },
+    const answer = await route(
+      Object.assign(
+        multipartEvent([
+          field('streamToken', STREAM_TOKEN),
+          field('testCase', { title: 'pays', location: 'tests/pay.spec.ts:3:1', retries: 0 }),
+          field('attach_meta', [
+            { name: '..', contentType: 'application/octet-stream', originalName: '..' },
+            { name: 'screenshot', contentType: 'image/png', originalName: 'shot.png' },
+          ]),
+          { name: 'attach_file', filename: '..', data: Buffer.from('dots') },
+          { name: 'attach_file', filename: 'shot.png', data: Buffer.from('png') },
         ]),
-        { name: 'attach_file', filename: '..', data: Buffer.from('dots') },
-        { name: 'attach_file', filename: 'shot.png', data: Buffer.from('png') },
-      ]),
-    });
+        { params: { id: String(runId) } },
+      ),
+    );
 
     expect(answer).toMatchObject({ executionId: execution!.id, attachments: 2 });
     const stored = await db

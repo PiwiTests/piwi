@@ -49,7 +49,13 @@ export default eventHandler(async (event) => {
   }
   const user = await requireAuth(event);
 
-  const body = await readBody(event);
+  const body = await readBody<{
+    path?: unknown;
+    projectName?: unknown;
+    environment?: unknown;
+    label?: unknown;
+    importGroup?: unknown;
+  }>(event);
   const path = typeof body?.path === 'string' ? body.path : '';
   const projectName = typeof body?.projectName === 'string' ? body.projectName.trim() : '';
   const environment = typeof body?.environment === 'string' && body.environment.trim() ? body.environment.trim() : null;

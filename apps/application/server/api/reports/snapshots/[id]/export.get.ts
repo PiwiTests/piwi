@@ -37,7 +37,7 @@ export default eventHandler(async (event) => {
   );
   const built = await buildReport(snapshot.bundle, format);
   setResponseHeader(event, 'Content-Type', built.contentType);
-  setResponseHeader(event, 'Content-Length', built.bytes.length);
+  setResponseHeader(event, 'Content-Length', String(built.bytes.length));
   setResponseHeader(event, 'Content-Disposition', `attachment; filename="${sanitizeFilename(built.fileName)}"`);
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');

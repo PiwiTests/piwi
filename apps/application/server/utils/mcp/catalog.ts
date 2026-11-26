@@ -4,7 +4,7 @@
  * desktop-only ones on the desktop app), less the tools of a declined
  * capability and the ones whose permission the caller holds on no project.
  */
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import type { AccessSummary } from '#shared/permissions';
 import { getRequestAccess } from '../auth';
 import { getProjectScope } from '../project-access';

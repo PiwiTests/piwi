@@ -10,7 +10,7 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler(async (event) => {
-  const needsSetup = isAuthEnabled(event) && (await needsInitialSetup());
+export default eventHandler(async () => {
+  const needsSetup = isAuthEnabled() && (await needsInitialSetup());
   return { needsSetup, setupTokenRequired: needsSetup && setupTokenRequired() };
 });

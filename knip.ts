@@ -49,11 +49,10 @@ const config: KnipConfig = {
         // What `#components` resolves to under Vitest (vitest.config.ts): Nuxt resolves it everywhere else.
         'tests/unit/stubs/nuxt-components.ts',
       ],
-      // `nitropack` comes with Nuxt; Nuxt Icon loads the installed `@iconify-json/*` collections. `@emnapi/*` keeps
+      // Nuxt Icon loads the installed `@iconify-json/*` collections. `@emnapi/*` keeps
       // the runtime of the WASM fallback bindings (oxc, Tailwind's oxide) in the lockfile, which `npm ci` needs on
       // every platform. `nuxt.config.ts` serves `playwright-core`'s trace viewer, found through `createRequire`.
       ignoreDependencies: [
-        'nitropack',
         'playwright-core',
         '@iconify-json/lucide',
         '@iconify-json/simple-icons',
@@ -105,8 +104,8 @@ const config: KnipConfig = {
     'apps/runner': {
       // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
       entry: ['server/main.ts', 'app/**/*.{ts,vue}'],
-      // `nuxt typecheck` runs `vue-tsc`.
-      ignoreDependencies: ['vue-tsc'],
+      // `nuxt typecheck` runs `vue-tsc`; declaring `nitro` makes Nuxt build the window on Nitro 3.
+      ignoreDependencies: ['vue-tsc', 'nitro'],
     },
     'integrations/nitro': {
       // An optional peer: the plugin runs on Nitro 2 (`nitropack`, whose types the module reads) or Nitro 3 (`nitro`).

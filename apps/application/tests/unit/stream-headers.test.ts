@@ -7,6 +7,7 @@ import { ASSISTANT_STREAM_HEADERS } from '#shared/assistant';
 import { streamHeaders } from '#shared/stream-headers';
 import { openEventStream, openLiveStream } from '../../server/utils/event-stream';
 import { createSSEEndpoint } from '../../server/utils/sse';
+import { testEvent } from './h3-event';
 
 /** What every response read as it arrives carries, so a proxy in front passes it on unbuffered and untouched. */
 const UNBUFFERED = {
@@ -14,8 +15,9 @@ const UNBUFFERED = {
   'X-Accel-Buffering': 'no',
 };
 
-/** The request and response of an event whose client is still there. */
+/** An event whose client is still there, its Node response, and its client leaving. */
 function nodeEvent() {
+  const gone = new AbortController();
   const req = Object.assign(new EventEmitter(), { destroyed: false });
   const res = Object.assign(new EventEmitter(), {
     closed: false,
@@ -24,9 +26,7 @@ function nodeEvent() {
     write: vi.fn(() => true),
     end: vi.fn(),
   });
-  return { node: { req, res } } as never as Parameters<typeof openEventStream>[0] & {
-    node: { res: { writeHead: ReturnType<typeof vi.fn> } };
-  };
+  return { event: testEvent({ signal: gone.signal, node: { req, res } }), res, leave: () => gone.abort() };
 }
 
 describe('the headers of a streamed response', () => {
@@ -42,21 +42,21 @@ describe('the headers of a streamed response', () => {
     ['an event stream written to the response (a worker of the live view)', openEventStream, 'text/event-stream'],
     ['a live stream (a watch of the live view)', openLiveStream, LIVE_STREAM_TYPE],
   ])('%s opens with them', (_name, open, type) => {
-    const event = nodeEvent();
+    const { event, res } = nodeEvent();
     open(event).close();
 
-    expect(event.node.res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({ 'Content-Type': type }));
-    expect(event.node.res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining(UNBUFFERED));
+    expect(res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({ 'Content-Type': type }));
+    expect(res.writeHead).toHaveBeenCalledWith(200, expect.objectContaining(UNBUFFERED));
   });
 
   test('an event stream returned as a response (live runs, notifications, the desktop hubs) carries them', () => {
-    const event = nodeEvent();
+    const { event, leave } = nodeEvent();
     const response = createSSEEndpoint(event, () => undefined);
 
     expect(response.headers.get('content-type')).toBe('text/event-stream');
     expect(response.headers.get('cache-control')).toBe(UNBUFFERED['Cache-Control']);
     expect(response.headers.get('x-accel-buffering')).toBe('no');
-    event.node.req.emit('close');
+    leave();
   });
 
   test("the assistant's answer stream carries them", () => {

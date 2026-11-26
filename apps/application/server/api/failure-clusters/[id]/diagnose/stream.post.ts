@@ -110,9 +110,9 @@ export default eventHandler(async (event) => {
   setResponseHeaders(event, STREAM_HEADERS);
 
   const encoder = new TextEncoder();
-  let clientDisconnected = false;
+  let clientDisconnected = event.req.signal.aborted;
 
-  event.node.req.on('close', () => {
+  event.req.signal.addEventListener('abort', () => {
     clientDisconnected = true;
   });
 

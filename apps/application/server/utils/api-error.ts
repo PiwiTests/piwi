@@ -2,7 +2,7 @@
  * The HTTP error contract.
  *
  * Nuxt serializes a thrown h3 error as
- * `{ error, url, statusCode, statusMessage, message, data }`. `apiError` wraps
+ * `{ error, status, statusCode, message, data }`. `apiError` wraps
  * `createError` and guarantees `data` is always an object shaped
  * `{ errorCode, issues? }`, so a client branches on a stable code rather than
  * on the prose `message`:
@@ -20,7 +20,7 @@
  * clients that do not recognize a code fall back to the status.
  */
 
-import { createError } from 'h3';
+import { createError } from 'nitro/h3';
 import { type ErrorCode, errorCodeForStatus } from '#shared/utils/error-codes';
 
 export interface ApiErrorInput {

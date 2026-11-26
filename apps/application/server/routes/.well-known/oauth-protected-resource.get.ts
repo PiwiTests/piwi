@@ -13,6 +13,6 @@ defineRouteMeta({
 });
 
 export default eventHandler((event) => {
-  requireMcpOAuthEnabled(event);
+  requireMcpOAuthEnabled();
   return protectedResourceMetadata(publicBaseUrl(event));
 });

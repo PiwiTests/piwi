@@ -12,7 +12,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     return {
       authenticated: false,
       user: null,

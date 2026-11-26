@@ -44,7 +44,7 @@ import { listOutcomes, type OutcomeRecord } from './outcomes';
 
 // The payload shape lives in shared/ so the API handler, MCP tools, AI context
 // and the dashboard panel all agree on it; re-exported for existing importers.
-export type { LocatorHealingResult, LocatorHealingSource } from '#shared/locator-healing.types';
+export type { LocatorHealingResult } from '#shared/locator-healing.types';
 
 /**
  * Extract the call-site location (`file:line:col`) from a Playwright error's

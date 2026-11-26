@@ -1,5 +1,6 @@
 import { describe, test, expect, vi } from 'vitest';
 import { apiError } from '../../server/utils/api-error';
+import { testEvent } from './h3-event';
 
 /** The unsaved-channel test: a caller sends at most ten tests a minute. */
 
@@ -23,11 +24,10 @@ const route = (await import('../../server/api/channels/test.post')).default as u
   event: unknown,
 ) => Promise<{ success: boolean }>;
 
-const event = () => ({
-  body: { type: 'webhook', config: { url: 'https://ci.example.com/piwi' } },
-  context: {},
-  node: { req: { headers: {}, socket: { remoteAddress: '10.1.1.1' } }, res: { setHeader: () => {} } },
-});
+const event = () =>
+  Object.assign(testEvent({ method: 'POST', ip: '10.1.1.1' }), {
+    body: { type: 'webhook', config: { url: 'https://ci.example.com/piwi' } },
+  });
 
 describe('POST /api/channels/test', () => {
   test('refuses the eleventh test within a minute', async () => {

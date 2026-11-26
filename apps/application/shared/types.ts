@@ -376,6 +376,8 @@ export interface TestRunStartPayload {
   shardIndex?: number;
   shardTotal?: number;
   isFullRun?: boolean;
+  /** The tests the run plans, sent by `/start` (`/begin` sends its own). */
+  totalTests?: number;
   filterDetails?: FilterDetails | null;
   /** The runner's environment snapshot, sent by `/start` and `/begin`. */
   environments?: WireEnvironmentSnapshot[];

@@ -30,7 +30,7 @@ export default eventHandler(async (event) => {
     // Their OAuth tokens are opened while the account exists, and revoked at their hosts once it is gone.
     const revokeTokens = await prepareUserTokenRevocation(db, id);
     // The lockout guards are only meaningful when authentication is enabled.
-    const result = await deleteUserAccount(db, id, currentUser.id, { guard: isAuthEnabled(event) });
+    const result = await deleteUserAccount(db, id, currentUser.id, { guard: isAuthEnabled() });
     await revokeTokens();
     // Their connected apps' streams close as their keys go.
     for (const target of targets) publishToRunTarget(target.id, { type: 'revoked' });

@@ -16,7 +16,7 @@ export default eventHandler(async (event) => {
   if (!trend) throw apiError({ statusCode: 404, message: 'Not found' });
   const png = await chartPng(trend);
   setResponseHeader(event, 'Content-Type', 'image/png');
-  setResponseHeader(event, 'Content-Length', png.length);
+  setResponseHeader(event, 'Content-Length', String(png.length));
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Content-Security-Policy', "default-src 'none'");
   return png;

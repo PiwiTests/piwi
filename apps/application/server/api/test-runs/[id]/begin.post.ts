@@ -72,7 +72,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   await requireStreamingRun(db, id, 'begin', getRequestHeader(event, RUN_TOKEN_HEADER));
 
-  const body = await readBody(event);
+  const body = await readBody<Record<string, any>>(event);
 
   // Validate setup token
   if (!body.setupToken) {

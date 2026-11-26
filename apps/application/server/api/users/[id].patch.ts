@@ -49,7 +49,7 @@ export default eventHandler(async (event) => {
       parsed.data,
       { userId: currentUser.id, access: await getRequestAccess(event) },
       // Only meaningful when authentication is enabled.
-      { guardLastAdministrator: isAuthEnabled(event) },
+      { guardLastAdministrator: isAuthEnabled() },
     );
     // A new instance role takes effect immediately by revoking the user's sessions.
     if (instanceRoleChanged) await revokeUserSessions(id);

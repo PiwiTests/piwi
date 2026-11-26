@@ -6,6 +6,7 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { H3, toNodeHandler, type EventHandler } from 'nitro/h3';
 import type { DesktopRunEvent } from '#shared/desktop-runs';
 import type { DesktopRunSink } from '../../server/utils/desktop-runs';
 
@@ -45,15 +46,8 @@ beforeAll(async () => {
   vi.stubEnv('PIWI_DESKTOP_TOKEN', 'pd_token');
   vi.stubGlobal('defineRouteMeta', () => {});
   vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-  const route = (await import('../../server/api/desktop/runs/events.get')).default as unknown as (
-    event: unknown,
-  ) => Promise<void>;
-  server = http.createServer((req, res) => {
-    route({ node: { req, res } }).catch((error: { statusCode?: number }) => {
-      res.statusCode = error.statusCode ?? 500;
-      res.end();
-    });
-  });
+  const route = (await import('../../server/api/desktop/runs/events.get')).default as unknown as EventHandler;
+  server = http.createServer(toNodeHandler(new H3().get('/api/desktop/runs/events', route)));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });

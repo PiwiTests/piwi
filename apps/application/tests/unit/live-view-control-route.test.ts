@@ -6,6 +6,8 @@ import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
 import type { EventStreamSink } from '../../server/utils/event-stream';
+import type { H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 /**
  * Who pauses a CI test, resumes it and ends it, through the routes: a worker that says it can pause hears beside its
@@ -49,14 +51,8 @@ vi.mock('../../server/utils/event-stream', () => {
   return { openEventStream: open, openLiveStream: open };
 });
 
-interface FakeEvent {
-  context: Record<string, unknown>;
-  params: Record<string, string>;
-  query: Record<string, string>;
-  headers: Record<string, string>;
-  body?: unknown;
-  node: { req: { headers: Record<string, string> }; res: Record<string, unknown> };
-}
+/** A request, with the route params, query and parsed body that the stubbed globals read. */
+type FakeEvent = H3Event & { params: Record<string, string>; query: Record<string, string>; body?: unknown };
 
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
@@ -64,10 +60,6 @@ vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
-vi.mock('h3', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  getRequestHeader: (event: FakeEvent, name: string) => event.headers[name.toLowerCase()],
-}));
 
 type Route = (event: FakeEvent) => Promise<unknown>;
 const watchRoute = underRoutePermission(
@@ -85,8 +77,9 @@ const controlRoute = underRoutePermission(
 const { updateProject } = await import('#shared/handlers/projects');
 const { liveViewRelay } = await import('../../server/utils/live-view');
 
+/** A request to run 10's route over an HTTP connection, whose response the mocked streams leave unwritten. */
 function event(query: Record<string, string> = {}, headers: Record<string, string> = {}, body?: unknown): FakeEvent {
-  return { context: {}, params: { id: '10' }, query, headers, body, node: { req: { headers }, res: {} } };
+  return Object.assign(testEvent({ headers, node: { res: {} } }), { params: { id: '10' }, query, body });
 }
 
 async function refusal(route: Route, e: FakeEvent): Promise<number | null> {

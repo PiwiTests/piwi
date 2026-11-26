@@ -12,6 +12,8 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 import { apiError } from '../../server/utils/api-error';
+import type { H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -21,18 +23,13 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 
-interface FakeEvent {
-  context: Record<string, unknown>;
-  params: Record<string, string>;
-  query: Record<string, string>;
-  node: { req: { headers: Record<string, string> }; res: object };
-}
+/** A request with the route params and query that the stubbed `getRouterParam` and `getQuery` read. */
+type FakeEvent = H3Event & { params: Record<string, string>; query: Record<string, string> };
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params[name]);
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
-vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.node.req.headers[name]);
 vi.stubGlobal('readBody', async () => ({}));
 
 const { generateApiKey } = await import('../../server/utils/auth');
@@ -460,12 +457,11 @@ describe('the route', () => {
     return made.plaintext;
   }
 
-  const event = (plaintext: string, projectId: number, extra: Record<string, string> = {}): FakeEvent => ({
-    context: {},
-    params: { id: String(projectId) },
-    query: { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', ...extra },
-    node: { req: { headers: { authorization: `Bearer ${plaintext}` } }, res: {} },
-  });
+  const event = (plaintext: string, projectId: number, extra: Record<string, string> = {}): FakeEvent =>
+    Object.assign(testEvent({ headers: { authorization: `Bearer ${plaintext}` } }), {
+      params: { id: String(projectId) },
+      query: { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', ...extra },
+    });
   const call = (plaintext: string, projectId: number, extra: Record<string, string> = {}) =>
     route(event(plaintext, projectId, extra));
 

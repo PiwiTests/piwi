@@ -45,12 +45,12 @@ export default eventHandler(async (event) => {
         ? await collectClusterBundle(db, link.entityId, {
             maxCases: resolveExportMaxCases(),
             sourceUrl: exportSourceUrl(event, `/failure-clusters/${link.entityId}`),
-            piwiVersion: exportPiwiVersion(event),
+            piwiVersion: exportPiwiVersion(),
           })
         : await collectExecutionBundle(db, link.entityId, {
             maxCases: 1,
             sourceUrl: exportSourceUrl(event, `/test-run-cases/${link.entityId}`),
-            piwiVersion: exportPiwiVersion(event),
+            piwiVersion: exportPiwiVersion(),
           });
     // The entity was pruned (retention) or deleted — indistinguishable from an
     // unknown token by design.

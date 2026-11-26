@@ -20,7 +20,7 @@ defineRouteMeta({
 const bodySchema = z.object({ allow: z.boolean() });
 
 export default eventHandler(async (event) => {
-  requireMcpOAuthEnabled(event);
+  requireMcpOAuthEnabled();
   const user = await requireSessionAuth(event);
   const missKey = `mcp-oauth:miss:${user.id}:${rateLimitClientIp(event)}`;
   const parsed = bodySchema.safeParse(await readBody(event));

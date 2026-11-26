@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import type { H3Event } from 'h3';
+import { testEvent } from './h3-event';
 
 /**
  * Password hashes and checks run two at a time across the process, the next
@@ -37,15 +37,8 @@ let nextAddress = 0;
 
 /** A request from `remoteAddress` (by default an address no other request has) whose response headers the test reads. */
 function request(remoteAddress = `10.0.${nextAddress >> 8}.${nextAddress++ & 0xff}`) {
-  const headers: Record<string, unknown> = {};
-  const event = {
-    context: {},
-    node: {
-      req: { headers: {}, socket: { remoteAddress } },
-      res: { setHeader: (name: string, value: unknown) => (headers[name] = value) },
-    },
-  } as unknown as H3Event;
-  return { event, headers };
+  const event = testEvent({ ip: remoteAddress });
+  return { event, headers: event.res.headers };
 }
 
 /** A stored hash at the current cost, which no test password matches. */
@@ -74,7 +67,7 @@ describe('password hashing limit', () => {
       statusCode: 503,
       message: expect.stringContaining('Try again'),
     });
-    expect(refused.headers['Retry-After']).toBe(5);
+    expect(refused.headers.get('Retry-After')).toBe('5');
 
     scrypt.started[0]!.finish();
     await settle();
@@ -106,7 +99,7 @@ describe('password hashing limit', () => {
 
     const refused = request('203.0.113.7');
     await expect(hashPassword(refused.event, 'own-4')).rejects.toMatchObject({ statusCode: 503 });
-    expect(refused.headers['Retry-After']).toBe(5);
+    expect(refused.headers.get('Retry-After')).toBe('5');
     await expect(verifyPassword(request('203.0.113.7').event, 'own-5', STORED_HASH)).rejects.toMatchObject({
       statusCode: 503,
     });

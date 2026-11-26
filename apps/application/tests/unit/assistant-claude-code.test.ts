@@ -10,8 +10,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createServer, type AddressInfo } from 'node:net';
 import { createServer as createHttpServer } from 'node:http';
-import { getRequestHeader, type H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import { openTempDb, type TempDb } from './temp-db';
+import { testEvent } from './h3-event';
 import type { User } from '../../server/database/schema';
 import type { AssistantEvent } from '#shared/assistant';
 import type { ResolvedAiRole } from '../../types/api';
@@ -58,24 +59,27 @@ function request(opts: {
   body?: unknown;
   params?: Record<string, string>;
 }): H3Event {
-  return {
+  const headers = { host: '127.0.0.1:3000', ...opts.headers };
+  const peer = opts.peer ?? '127.0.0.1';
+  const event = testEvent({
     method: opts.method ?? 'POST',
-    path: opts.path,
+    url: `http://${headers.host}${opts.path}`,
+    headers,
+    ip: peer,
     context: { params: opts.params ?? {} },
-    body: opts.body,
     node: {
       req: {
-        headers: { host: '127.0.0.1:3000', ...opts.headers },
-        on: () => {},
+        headers,
         socket: {
-          remoteAddress: opts.peer ?? '127.0.0.1',
+          remoteAddress: peer,
           localPort: opts.localPort,
           localAddress: opts.localAddress ?? (opts.localPort ? '127.0.0.1' : undefined),
         },
       },
-      res: { setHeader: () => {}, getHeader: () => undefined },
     },
-  } as unknown as H3Event;
+  });
+  // The parsed body the stubbed `readBody` reads.
+  return Object.assign(event, { body: opts.body });
 }
 
 /** A port nothing listens on: one the system just handed out and took back. */
@@ -206,7 +210,7 @@ describe('the desktop guard', () => {
   let guard: (event: H3Event) => void;
 
   beforeAll(async () => {
-    vi.stubGlobal('defineEventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('eventHandler', (handler: unknown) => handler);
     vi.stubGlobal('apiError', (opts: { statusCode: number; statusMessage?: string; message?: string }) =>
       Object.assign(new Error(opts.statusMessage ?? opts.message), opts),
     );
@@ -601,7 +605,7 @@ describe('the route', () => {
 describe('the route on a real server', () => {
   /** The routes served by h3 on a local port, as Nitro serves them, Nitro's auto-imports being h3's own. */
   async function serve() {
-    const h3 = await import('h3');
+    const h3 = await import('nitro/h3');
     const real = {
       readBody: h3.readBody,
       setResponseStatus: h3.setResponseStatus,
@@ -615,12 +619,10 @@ describe('the route on a real server', () => {
     for (const [name, value] of Object.entries(real)) vi.stubGlobal(name, value);
     const post = (await import('../../server/api/assistant/conversations/[id]/mcp.post')).default;
     const get = (await import('../../server/api/assistant/conversations/[id]/mcp.get')).default;
-    const app = h3.createApp();
-    const router = h3.createRouter();
-    router.post('/api/assistant/conversations/:id/mcp', h3.eventHandler(post as never));
-    router.get('/api/assistant/conversations/:id/mcp', h3.eventHandler(get as never));
-    app.use(router);
-    const server = createHttpServer(h3.toNodeListener(app));
+    const app = new h3.H3()
+      .post('/api/assistant/conversations/:id/mcp', post as never)
+      .get('/api/assistant/conversations/:id/mcp', get as never);
+    const server = createHttpServer(h3.toNodeHandler(app));
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     return { server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}${ENDPOINT}` };
   }

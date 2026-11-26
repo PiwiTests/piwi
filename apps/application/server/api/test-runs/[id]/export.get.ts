@@ -41,7 +41,7 @@ export default eventHandler(async (event) => {
   const bundle = await collectRunBundle(db, id, {
     maxCases,
     sourceUrl: exportSourceUrl(event, `/test-runs/${id}`),
-    piwiVersion: exportPiwiVersion(event),
+    piwiVersion: exportPiwiVersion(),
   });
   if (!bundle) {
     throw apiError({ statusCode: 404, message: 'Test run not found' });

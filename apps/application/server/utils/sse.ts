@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { streamHeaders } from '#shared/stream-headers';
 import { eventStreams } from './instance-activity';
 
@@ -9,11 +9,14 @@ export function createSSEEndpoint(
   onSubscribe: (controller: ReadableStreamDefaultController, encoder: TextEncoder) => (() => void) | undefined,
 ): Response {
   const encoder = new TextEncoder();
+  // Aborted once the client is gone, the moment its connection closes or at once when it left before the stream opens.
+  const gone = event.req.signal;
+  let end: (() => void) | undefined;
   const stream = new ReadableStream({
     start(controller) {
-      // A client that left while the handler awaited its checks fired `close` before the listener below exists:
-      // subscribing it would keep its listener and heartbeat for the life of the process.
-      if (event.node.req.destroyed) {
+      // A client that left while the handler awaited its checks is gone before the stream starts: subscribing it would
+      // keep its listener and heartbeat for the life of the process.
+      if (gone.aborted) {
         controller.close();
         return;
       }
@@ -29,7 +32,10 @@ export function createSSEEndpoint(
         }
       }, HEARTBEAT_INTERVAL_MS);
 
-      event.node.req.on('close', () => {
+      let ended = false;
+      end = () => {
+        if (ended) return;
+        ended = true;
         uncount();
         clearInterval(heartbeatInterval);
         unsubscribe();
@@ -38,7 +44,11 @@ export function createSSEEndpoint(
         } catch {
           // Already closed
         }
-      });
+      };
+      gone.addEventListener('abort', end, { once: true });
+    },
+    cancel() {
+      end?.();
     },
   });
 

@@ -16,7 +16,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  requireMcpOAuthEnabled(event);
+  requireMcpOAuthEnabled();
   const user = await requireAuth(event);
   const missKey = `mcp-oauth:miss:${user.id}:${rateLimitClientIp(event)}`;
   const db = await getDatabase();

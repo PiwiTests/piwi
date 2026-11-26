@@ -1,5 +1,4 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { H3Event } from 'h3';
 import {
   checkRateLimit,
   limitLookupMisses,
@@ -11,22 +10,16 @@ import {
   rateLimitClientIp,
   clientNetwork,
 } from '../../server/utils/rate-limit';
+import { testEvent } from './h3-event';
 
 const WINDOW_MS = 15 * 60 * 1000;
 
-/** Minimal H3Event carrying just what the helpers under test read. */
+/** An event from this peer, carrying this X-Forwarded-For header. */
 function fakeEvent(opts: { remoteAddress?: string; forwardedFor?: string } = {}) {
   const headers: Record<string, string> = {};
   if (opts.forwardedFor) headers['x-forwarded-for'] = opts.forwardedFor;
-  const setHeader = vi.fn();
-  const event = {
-    context: {},
-    node: {
-      req: { headers, socket: { remoteAddress: opts.remoteAddress } },
-      res: { setHeader },
-    },
-  } as unknown as H3Event;
-  return { event, setHeader };
+  const event = testEvent({ headers, ip: opts.remoteAddress });
+  return { event, retryAfter: () => event.res.headers.get('retry-after') };
 }
 
 beforeEach(() => {
@@ -198,19 +191,19 @@ describe('rateLimitedError', () => {
   test('is a 429 with a Retry-After header from the longest-lived window', () => {
     checkRateLimit('err:short', 1, 60 * 1000);
     checkRateLimit('err:long', 1, 300 * 1000);
-    const { event, setHeader } = fakeEvent();
+    const { event, retryAfter } = fakeEvent();
     const error = rateLimitedError(event, ['err:short', 'err:long']);
     expect(error.statusCode).toBe(429);
     expect(error.message).toBe('Too many requests. Please wait before trying again.');
-    expect(setHeader).toHaveBeenCalledWith('Retry-After', 300);
+    expect(retryAfter()).toBe('300');
   });
 
   test('sends at least 1 second even when no window is active', () => {
-    const { event, setHeader } = fakeEvent();
+    const { event, retryAfter } = fakeEvent();
     const error = rateLimitedError(event, ['err:missing'], 'Too many failed attempts.');
     expect(error.statusCode).toBe(429);
     expect(error.message).toBe('Too many failed attempts.');
-    expect(setHeader).toHaveBeenCalledWith('Retry-After', 1);
+    expect(retryAfter()).toBe('1');
   });
 });
 

@@ -4,6 +4,7 @@ import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
+import type { TestRunFinishPayload } from '#shared/types';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
@@ -98,10 +99,10 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   await requireStreamingRun(db, id, 'finish', getRequestHeader(event, RUN_TOKEN_HEADER));
 
-  const body = await readBody(event);
+  const body = await readBody<TestRunFinishPayload>(event);
 
   // Validate stream token
-  if (!body.streamToken) {
+  if (!body?.streamToken) {
     throw apiError({
       statusCode: 401,
       message: 'Missing stream token',

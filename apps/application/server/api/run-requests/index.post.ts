@@ -37,7 +37,7 @@ defineRouteMeta({
 const CREATE_RATE_LIMIT = { limit: 20, windowMs: 60_000 };
 
 export default eventHandler(async (event) => {
-  requireSignInForRunRequests(event);
+  requireSignInForRunRequests();
   const user = await requireAuth(event);
   refuseApiKey(event);
   const rateKey = `run-requests:create:${user.id}`;

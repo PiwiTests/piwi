@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { H3Event } from 'h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import { testEvent } from './h3-event';
 
 delete process.env.PIWI_DATABASE_URL;
 
@@ -11,10 +11,7 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 const { findLoginAccount, hashPassword, verifyUser } = await import('../../server/utils/auth');
 
 /** The request a busy server's 503 would answer, from the client whose share its hashes count against. */
-const event = {
-  context: {},
-  node: { req: { headers: {}, socket: { remoteAddress: '192.0.2.20' } }, res: { setHeader: () => {} } },
-} as unknown as H3Event;
+const event = testEvent({ ip: '192.0.2.20' });
 
 /** The id of the account the typed text resolves to, null for none. */
 async function resolvedId(identifier: string): Promise<number | null> {

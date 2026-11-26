@@ -23,7 +23,7 @@ const loginSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     throw apiError({
       statusCode: 400,
       message: 'Authentication is not enabled',

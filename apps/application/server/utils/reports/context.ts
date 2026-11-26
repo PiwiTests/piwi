@@ -4,7 +4,7 @@
  * dashboard's public address and the Piwi version.
  */
 import { eq } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { users, type User } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { getProjectScope } from '../project-access';
@@ -44,7 +44,7 @@ export function reportPiwiVersion(): string | null {
 }
 
 export async function reportActor(event: H3Event, user: User): Promise<ReportActor> {
-  const authEnabled = isAuthEnabled(event);
+  const authEnabled = isAuthEnabled();
   return {
     id: authEnabled ? user.id : null,
     isAdmin: !authEnabled || isAdministrator(await getRequestAccess(event)),

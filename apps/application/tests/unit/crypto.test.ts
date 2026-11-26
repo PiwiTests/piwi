@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createApp, eventHandler, toWebHandler } from 'h3';
+import { H3 } from 'nitro/h3';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
@@ -48,11 +48,8 @@ describe('encryptSecret', () => {
 
   test('an endpoint storing a secret answers 409', async () => {
     vi.stubEnv('PIWI_SECRET_KEY', '');
-    const app = createApp().use(
-      '/',
-      eventHandler(() => ({ stored: encryptSecret('sk-live-token', getEncryptionKey()) })),
-    );
-    const res = await toWebHandler(app)(new Request('http://localhost/', { method: 'POST' }));
+    const app = new H3().post('/', () => ({ stored: encryptSecret('sk-live-token', getEncryptionKey()) }));
+    const res = await app.fetch(new Request('http://localhost/', { method: 'POST' }));
     expect(res.status).toBe(409);
     const body = (await res.json()) as { data: { errorCode: string } };
     expect(body.data.errorCode).toBe('SECRET_KEY_NOT_CONFIGURED');

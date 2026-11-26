@@ -55,7 +55,7 @@ export default eventHandler(async (event) => {
   if (typeof read === 'string') throw apiError({ statusCode: 400, message: read });
   const { worker, call, phase } = read;
   const watch = getRouterParam(event, 'watch') ?? '';
-  const person = isAuthEnabled(event) ? user.id : null;
+  const person = isAuthEnabled() ? user.id : null;
   const inspect = liveViewRelay.inspectOf(id, watch, person);
   if ('status' in inspect) throw apiError({ statusCode: inspect.status, message: inspect.message });
   const key = liveWorkerKey(worker);

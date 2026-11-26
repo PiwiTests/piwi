@@ -50,7 +50,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   let access: Awaited<ReturnType<typeof getProjectScope>> = 'all';
   let who = 'all';
-  if (isAuthEnabled(event)) {
+  if (isAuthEnabled()) {
     const key = extractApiKey(event);
     const user = key ? await getUserByApiKey(key) : null;
     if (!user) {

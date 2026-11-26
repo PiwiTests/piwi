@@ -17,7 +17,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event);
+  const body = await readBody<{ snooze?: unknown }>(event);
   const snooze = body?.snooze ?? null;
   if (snooze !== null && !isSnoozeOption(snooze)) {
     throw apiError({ statusCode: 400, message: 'snooze must be one of: 1-day, 1-week, until-recurs, or null' });

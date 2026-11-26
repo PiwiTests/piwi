@@ -3,7 +3,7 @@
  * their URL names (`/api/integrations/connections/:id/…`): the pickers of the
  * create-issue modal and of a project's Issue tracker settings.
  */
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import type { DbClient } from '../../database';

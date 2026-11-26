@@ -1,4 +1,4 @@
-import { getRequestWebStream } from 'h3';
+import { getRequestWebStream } from 'nitro/h3';
 import {
   LIVE_FRAME_TYPE,
   LIVE_WORKER_POST_LIMITS,

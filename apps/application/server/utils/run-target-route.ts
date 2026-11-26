@@ -1,4 +1,5 @@
-import type { H3Event } from 'h3';
+import { Readable } from 'node:stream';
+import { getRequestHeaders, type H3Event } from 'nitro/h3';
 import { cookiesOf, headersOf } from '@piwitests/editor/host-guard';
 import { readJsonBody } from '@piwitests/editor/run-target-http';
 import {
@@ -19,13 +20,15 @@ import { requireAuth } from './auth';
 export async function runTargetRoute(event: H3Event, name: RunTargetRouteName): Promise<unknown> {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
-  const headers = headersOf(event.node.req.headers);
+  const headers = headersOf(getRequestHeaders(event));
   const request = { headers, cookies: cookiesOf(headers.cookie), id: getRouterParam(event, 'id') };
   const answer =
     refuseRunTargetRequest(name, request) ??
     (await answerRunTargetRoute(name, {
       ...request,
-      body: sendsBody(RUN_TARGET_ROUTES[name].method) ? await readJsonBody(event.node.req, Infinity) : null,
+      body: sendsBody(RUN_TARGET_ROUTES[name].method)
+        ? await readJsonBody(Readable.from([Buffer.from(await event.req.arrayBuffer())]), Infinity)
+        : null,
     }));
   if (answer.noStore) setResponseHeader(event, 'cache-control', 'no-store');
   if (answer.status >= 400) {

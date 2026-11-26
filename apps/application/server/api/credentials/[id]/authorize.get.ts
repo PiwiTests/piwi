@@ -24,7 +24,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const credentialId = parseRouteId(getRouterParam(event, 'id'));
   const returnTo = safeReturnPath(getQuery(event).returnTo);
-  const base = useRuntimeConfig(event).app.baseURL;
+  const base = useRuntimeConfig().app.baseURL;
   // A browser opened this window: every refusal lands on the return page, which says why.
   const refuse = (reason: AuthorizationFailure) =>
     sendRedirect(event, authorizedPagePath(base, { ok: false, credentialId, returnTo, reason }), 302);

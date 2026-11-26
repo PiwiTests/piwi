@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { getRequestHeader, setResponseHeader, setResponseStatus, type H3Event } from 'h3';
+import { getRequestHeader, setResponseHeader, setResponseStatus, type H3Event } from 'nitro/h3';
 
 /** A strong `ETag` of a value: the SHA-1 of its JSON, in base64url. */
 export function jsonEtag(value: unknown): string {

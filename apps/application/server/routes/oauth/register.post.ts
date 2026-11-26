@@ -14,7 +14,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  requireMcpOAuthEnabled(event);
+  requireMcpOAuthEnabled();
   const rateKey = `mcp-oauth:register:${rateLimitClientIp(event)}`;
   const { limit, windowMs } = MCP_OAUTH_RATE_LIMITS.register;
   if (!checkRateLimit(rateKey, limit, windowMs)) throw rateLimitedError(event, [rateKey]);

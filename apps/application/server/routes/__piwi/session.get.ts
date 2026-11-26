@@ -13,7 +13,7 @@ import { answerSession } from '@piwitests/editor/run-target-session';
 // Responds 404 unless PIWI_DESKTOP_TOKEN is set, so it does not exist on the
 // normal server build. The answer comes from the editor service, which serves
 // the same route on its own host.
-export default defineEventHandler((event) => {
+export default eventHandler((event) => {
   const answer = answerSession(getQuery(event), process.env.PIWI_DESKTOP_TOKEN);
   if (answer.status !== 302) {
     throw apiError({ statusCode: answer.status, statusMessage: answer.message });

@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import {
   LIVE_HEARTBEAT,
   LIVE_STREAM_TYPE,
@@ -7,6 +7,7 @@ import {
 } from '@piwitests/core/live-view';
 import { streamHeaders } from '#shared/stream-headers';
 import { eventStreams } from './instance-activity';
+import { nodeHttp } from './node-http';
 
 /** Every how many milliseconds an open stream gets a comment, so a proxy keeps it and a gone client is noticed. */
 const HEARTBEAT_MS = 15_000;
@@ -37,10 +38,10 @@ interface StreamFormat {
 
 /**
  * Answer `event` with a stream the handler writes to as it pleases, with a heartbeat every `HEARTBEAT_MS`. The handler
- * returns nothing after it: the response is the stream's.
+ * returns `responseClosed` of the response after it (`node-http.ts`): the response is the stream's.
  */
 function openStream(event: H3Event, format: StreamFormat): EventStreamSink {
-  const { req, res } = event.node;
+  const { req, res } = nodeHttp(event);
   const closers: Array<() => void> = [];
   let closed = false;
   const uncount = eventStreams.open();

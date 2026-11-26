@@ -32,7 +32,7 @@ export default eventHandler(async (event) => {
   const bytes = await executionBugReportArchive(built, serverAssetReader);
 
   setResponseHeader(event, 'Content-Type', BUG_REPORT_MEDIA_TYPE);
-  setResponseHeader(event, 'Content-Length', bytes.length);
+  setResponseHeader(event, 'Content-Length', String(bytes.length));
   setResponseHeader(event, 'Content-Disposition', `attachment; filename="${sanitizeFilename(built.fileName)}"`);
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');

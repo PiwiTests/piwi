@@ -35,7 +35,7 @@ vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
 vi.stubGlobal('apiError', apiError);
 
-const deleteRun = (await import('../../server/api/test-runs/[id].delete')).default as (
+const deleteRun = (await import('../../server/api/test-runs/[id].delete')).default as unknown as (
   event: FakeEvent,
 ) => Promise<unknown>;
 

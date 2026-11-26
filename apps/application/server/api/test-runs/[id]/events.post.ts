@@ -71,7 +71,7 @@ export default eventHandler(async (event) => {
   // The body-limit middleware holds the batch to MAX_EVENT_BATCH_BYTES (server/utils/body-limit.ts).
   await requireStreamingRun(db, id, 'events', getRequestHeader(event, RUN_TOKEN_HEADER));
 
-  const body = await readBody(event);
+  const body = await readBody<Record<string, any>>(event);
 
   // Validate stream token
   if (!body.streamToken) {

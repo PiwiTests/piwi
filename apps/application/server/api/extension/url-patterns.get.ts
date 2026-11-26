@@ -22,7 +22,7 @@ export default eventHandler(async (event) => {
   const [items, menu] = await Promise.all([listVisibleUrlPatterns(db, scope), getProjectMenu(db, scope)]);
   const access = await getRequestAccess(event);
   return {
-    user: isAuthEnabled(event) ? { name: user.name || user.username } : null,
+    user: isAuthEnabled() ? { name: user.name || user.username } : null,
     items,
     projects: menu.map((p) => ({ id: p.id, label: p.label || p.name, canEdit: can(access, 'project:manage', p.id) })),
   };

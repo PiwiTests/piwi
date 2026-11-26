@@ -1,4 +1,4 @@
-import { getQuery, type H3Event } from 'h3';
+import { getQuery, type H3Event } from 'nitro/h3';
 import { apiError } from './api-error';
 
 /**

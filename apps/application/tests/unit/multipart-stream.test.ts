@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeAll, afterEach, vi } from 'vitest';
-import { PassThrough } from 'node:stream';
 import { readFileSync, existsSync, type WriteStream } from 'node:fs';
+import { H3Event } from 'nitro/h3';
 import { streamMultipart, type StreamedMultipart } from '../../server/utils/multipart-stream';
+import { testEvent } from './h3-event';
 
 // Every temp-file write stream the util opens, to check each one is closed when a request fails.
 const writeStreams = vi.hoisted(() => [] as WriteStream[]);
@@ -51,10 +52,44 @@ function buildMultipart(parts: Part[]): Buffer {
 }
 
 function makeEvent(body: Buffer, contentType = `multipart/form-data; boundary=${BOUNDARY}`) {
-  const req = new PassThrough() as PassThrough & { headers: Record<string, string> };
-  req.headers = { 'content-type': contentType };
-  req.end(body);
-  return { node: { req } } as never;
+  return testEvent({ method: 'POST', headers: { 'content-type': contentType }, body });
+}
+
+/**
+ * A multipart request whose body arrives as the test writes it: `pulled` resolves once the parser has read every chunk
+ * written so far, and `abort` cuts the request as a client leaving mid-upload does.
+ */
+function openEvent() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let written = 0;
+  let read = 0;
+  let onRead = () => {};
+  const body = new ReadableStream<Uint8Array>({
+    start: (c) => void (controller = c),
+    pull: () => {
+      read = written;
+      onRead();
+    },
+  });
+  const request = new Request('http://localhost/', {
+    method: 'POST',
+    headers: { 'content-type': `multipart/form-data; boundary=${BOUNDARY}` },
+    body,
+    duplex: 'half',
+  } as RequestInit);
+  return {
+    event: new H3Event(request),
+    write: (chunk: string | Buffer) => {
+      written++;
+      controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk));
+    },
+    pulled: () =>
+      new Promise<void>((resolve) => {
+        if (read === written) resolve();
+        else onRead = resolve;
+      }),
+    abort: () => controller.error(new Error('aborted')),
+  };
 }
 
 let last: StreamedMultipart | null = null;
@@ -196,14 +231,13 @@ describe('streamMultipart', () => {
 
   test('a request aborted mid-file closes the write stream of its file part and removes its temp file', async () => {
     writeStreams.length = 0;
-    const req = new PassThrough() as PassThrough & { headers: Record<string, string> };
-    req.headers = { 'content-type': `multipart/form-data; boundary=${BOUNDARY}` };
+    const req = openEvent();
     const head = `--${BOUNDARY}\r\nContent-Disposition: form-data; name="trace"; filename="trace.zip"\r\n\r\n`;
     req.write(Buffer.concat([Buffer.from(head), Buffer.alloc(64 * 1024, 1)]));
-    const parsing = streamMultipart({ node: { req } } as never, { maxTotalBytes: 1024 * 1024 });
+    const parsing = streamMultipart(req.event, { maxTotalBytes: 1024 * 1024 });
     await vi.waitFor(() => expect(writeStreams[0]?.bytesWritten).toBeGreaterThan(0));
 
-    req.emit('aborted');
+    req.abort();
 
     await expect(parsing).rejects.toMatchObject({ statusCode: 400 });
     const written = writeStreams[0]!;
@@ -222,12 +256,11 @@ describe('streamMultipart', () => {
     ).rejects.toMatchObject({ statusCode: 413 });
     await settle();
 
-    const req = new PassThrough() as PassThrough & { headers: Record<string, string> };
-    req.headers = { 'content-type': `multipart/form-data; boundary=${BOUNDARY}` };
+    const req = openEvent();
     req.write(`--${BOUNDARY}\r\nContent-Disposition: form-data; name="streamToken"\r\n\r\ntok\r\n`);
-    const parsing = streamMultipart({ node: { req } } as never, { maxTotalBytes: 1024, beforeFiles });
-    await vi.waitFor(() => expect(req.listenerCount('aborted')).toBe(1));
-    req.emit('aborted');
+    const parsing = streamMultipart(req.event, { maxTotalBytes: 1024, beforeFiles });
+    await req.pulled();
+    req.abort();
     await expect(parsing).rejects.toMatchObject({ statusCode: 400 });
     await settle();
 

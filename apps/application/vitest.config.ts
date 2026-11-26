@@ -41,7 +41,7 @@ export default defineConfig({
       '#components': `${rootDir}/tests/unit/stubs/nuxt-components.ts`,
       // Stub Nitro's compiled-route-metas virtual so server utils that read it
       // (route-required-permission.ts, via auth.ts) import cleanly under Vitest.
-      '#nitro-internal-virtual/server-handlers-meta': `${rootDir}/tests/unit/stubs/nitro-handlers-meta.ts`,
+      '#nitro/virtual/routing-meta': `${rootDir}/tests/unit/stubs/nitro-handlers-meta.ts`,
     },
   },
 });

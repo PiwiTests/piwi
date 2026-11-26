@@ -52,7 +52,7 @@ export default eventHandler(async (event) => {
   if (!project?.hold) {
     throw apiError({ statusCode: 409, message: LET_GO_SETTING_OFF });
   }
-  const auth = isAuthEnabled(event);
+  const auth = isAuthEnabled();
   const answer = liveViewRelay.letGo(id, body.watch, auth ? user.id : null, worker);
   if ('status' in answer) throw apiError({ statusCode: answer.status, message: answer.message });
   const who = auth ? `${user.name || user.username} (user #${user.id})` : 'a viewer (authentication off)';

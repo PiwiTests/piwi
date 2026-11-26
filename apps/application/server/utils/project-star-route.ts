@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../database';
 import { projects } from '../database/schema';
@@ -12,7 +12,7 @@ import type { DrizzleDB } from '#shared/handlers/db';
  * browser keeps the stars, and the project exists. Returns the database.
  */
 export async function requireStarrableProject(event: H3Event, projectId: number): Promise<DrizzleDB> {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     throw apiError({ statusCode: 409, message: 'Sign-in is off: stars are kept in this browser' });
   }
   const db = await getDatabase();

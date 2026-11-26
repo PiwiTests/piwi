@@ -46,8 +46,8 @@ export default eventHandler(async (event) => {
     setResponseHeaders(event, ASSISTANT_STREAM_HEADERS);
 
     // The answer runs to its end and is stored even when the browser leaves; only the sending stops. Stop ends it.
-    let clientGone = false;
-    event.node.res.on('close', () => {
+    let clientGone = event.req.signal.aborted;
+    event.req.signal.addEventListener('abort', () => {
       clientGone = true;
     });
     const encoder = new TextEncoder();

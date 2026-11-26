@@ -19,7 +19,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const base = useRuntimeConfig(event).app.baseURL;
+  const base = useRuntimeConfig().app.baseURL;
   const query = getQuery(event);
   const text = (value: unknown) => (typeof value === 'string' ? value : '');
   // A session that expired while the person was at the host lands on the return page, which asks them to sign in.

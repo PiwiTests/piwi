@@ -28,7 +28,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const access = await getRequestAccess(event);
   // The early check let in an administrator or someone holding project:members on a project.
-  if (can(access, 'users:manage')) return { items: await listUserItems(db), authEnabled: isAuthEnabled(event) };
+  if (can(access, 'users:manage')) return { items: await listUserItems(db), authEnabled: isAuthEnabled() };
   // A Project admin lists the users who share a project they can open.
   const { lookup } = getQuery(event);
   const items = await listUserSummaries(
@@ -36,5 +36,5 @@ export default eventHandler(async (event) => {
     await getProjectScope(db, user, 'project:read'),
     typeof lookup === 'string' ? lookup : null,
   );
-  return { items, authEnabled: isAuthEnabled(event) };
+  return { items, authEnabled: isAuthEnabled() };
 });

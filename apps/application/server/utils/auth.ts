@@ -1,6 +1,6 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiError } from './api-error';
-import { useSession, updateSession, clearSession as h3ClearSession, setResponseHeader } from 'h3';
+import { useSession, updateSession, clearSession as h3ClearSession, setResponseHeader } from 'nitro/h3';
 import { getDatabase } from '../database';
 import { users, apiKeys, appSettings } from '../database/schema';
 import { and, eq, ne, notExists, sql } from 'drizzle-orm';
@@ -135,7 +135,7 @@ async function deriveKey(
     clientNetwork(rateLimitClientIp(event)),
   );
   if (!derived) {
-    setResponseHeader(event, 'Retry-After', PASSWORD_HASHING_RETRY_AFTER_SEC);
+    setResponseHeader(event, 'Retry-After', String(PASSWORD_HASHING_RETRY_AFTER_SEC));
     throw apiError({
       statusCode: 503,
       message: 'The server is checking too many passwords at once. Try again in a few seconds.',
@@ -246,19 +246,20 @@ function sessionOptions(config: ReturnType<typeof useRuntimeConfig>) {
 
 // Get session from cookie
 export async function getUserSession(event: H3Event): Promise<SessionData | null> {
-  const config = useRuntimeConfig(event);
-  if (!isAuthEnabled(event)) {
+  const config = useRuntimeConfig();
+  if (!isAuthEnabled()) {
     return null;
   }
 
   try {
     const session = await useSession<SessionData>(event, sessionOptions(config));
 
-    if (!session.data || !session.data.userId) {
+    const { data } = session;
+    if (!data?.userId) {
       return null;
     }
 
-    return session.data;
+    return { ...data, userId: data.userId };
   } catch {
     // Invalid or expired session
     return null;
@@ -267,13 +268,13 @@ export async function getUserSession(event: H3Event): Promise<SessionData | null
 
 // Set session in cookie
 export async function setUserSession(event: H3Event, sessionData: SessionData): Promise<void> {
-  const config = useRuntimeConfig(event);
+  const config = useRuntimeConfig();
   await updateSession<SessionData>(event, sessionOptions(config), sessionData);
 }
 
 // Clear session cookie
 export async function clearUserSession(event: H3Event): Promise<void> {
-  const config = useRuntimeConfig(event);
+  const config = useRuntimeConfig();
   await h3ClearSession(event, sessionOptions(config));
 }
 
@@ -499,11 +500,11 @@ export async function releaseInitialSetup(db?: DrizzleDB): Promise<void> {
 // unset), so the env check is what lets an operator turn auth on at run time.
 // The baked `config.authEnabled` remains the fallback for source builds and for
 // the `NUXT_AUTH_ENABLED` runtime override.
-export function isAuthEnabled(event?: H3Event): boolean {
+export function isAuthEnabled(): boolean {
   if (process.env.PIWI_AUTH_ENABLED === 'true') {
     return true;
   }
-  const config = event ? useRuntimeConfig(event) : useRuntimeConfig();
+  const config = useRuntimeConfig();
   return String(config.authEnabled) === 'true';
 }
 
@@ -665,7 +666,7 @@ export function requiredPermissionsFor(
  * the project it acts on (`requireProjectAccess`).
  */
 export async function requireAuth(event: H3Event, permission?: RoutePermission | RoutePermission[]): Promise<User> {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     event.context.access = ADMIN_ACCESS;
     return virtualAdministrator();
   }
@@ -735,7 +736,7 @@ export function refuseApiKey(event: H3Event): void {
  * and no API key made it.
  */
 export function isSignedInPerson(event: H3Event): boolean {
-  return isAuthEnabled(event) && event.context.apiKeyId === undefined;
+  return isAuthEnabled() && event.context.apiKeyId === undefined;
 }
 
 /**
@@ -776,7 +777,7 @@ export async function authUserView(db: DrizzleDB, user: User) {
  * (401 when nobody is signed in). Every permission with authentication off.
  */
 export async function getRequestAccess(event: H3Event): Promise<AccessSummary> {
-  if (!isAuthEnabled(event)) return ADMIN_ACCESS;
+  if (!isAuthEnabled()) return ADMIN_ACCESS;
   if (event.context.access) return event.context.access;
   const user = await requireAuth(event, []);
   return getUserAccessCached(await getDatabase(), user);

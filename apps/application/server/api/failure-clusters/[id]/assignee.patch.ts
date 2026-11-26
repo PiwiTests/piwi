@@ -16,7 +16,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event);
+  const body = await readBody<{ assignee?: unknown }>(event);
   const assignee = body?.assignee;
   if (assignee != null && typeof assignee !== 'string') {
     throw apiError({ statusCode: 400, message: 'assignee must be a string or null' });

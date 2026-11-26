@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import type { H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import * as schema from '../../server/database/schema.sqlite';
 import type { User } from '../../server/database/schema';
 import { apiError } from '../../server/utils/api-error';
 import { InstanceRole, ProjectRole } from '#shared/permissions';
 import { migrateToLatest } from './temp-db';
 import { withStoredVerdicts } from './stored-verdicts';
+import { testEvent } from './h3-event';
 
 /**
  * The routes that create, stop or revoke what a connected app holds tell its stream: a new request, a stop, and the
@@ -38,9 +39,7 @@ vi.mock('../../server/utils/project-access', async (importOriginal) => ({
   requireProjectPermission: async () => {},
 }));
 vi.mock('../../server/utils/profile-picture', () => ({ deleteUserProfilePictures: async () => {} }));
-vi.stubGlobal('getRequestHeader', (event: { node: { req: { headers: Record<string, string> } } }, name: string) => {
-  return event.node.req.headers[name];
-});
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, name: string) => event.params?.[name]);
 vi.stubGlobal('readBody', async (event: { body?: unknown }) => event.body);
 vi.stubGlobal('defineRouteMeta', () => {});
@@ -74,8 +73,7 @@ function call(
   headers: Record<string, string> = {},
 ) {
   state.caller = caller;
-  const req = { headers, destroyed: false };
-  return handler({ context: {}, params, body, node: { req, res: {} } } as unknown as H3Event);
+  return handler(Object.assign(testEvent({ headers }), { params, body }));
 }
 
 /** A connected app of `owner`, with every event its stream would hear. */

@@ -14,10 +14,11 @@
  */
 import { randomBytes } from 'node:crypto';
 import { connect } from 'node:net';
-import { getRequestHeader, type H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import type { AiToolCall, AiToolDef, AiToolResult } from '../ai-tool-calls';
 import { bearerToken } from '../bearer';
 import { hashToken } from '../token-hash';
+import { requestSocket } from '../node-http';
 
 const TURN_TOKEN_PREFIX = 'pwt_';
 
@@ -149,7 +150,7 @@ export function isLoopbackRequest(event: H3Event): boolean {
     }
     if (!LOOPBACK_HOST.test(originHost)) return false;
   }
-  const peer = event.node.req.socket?.remoteAddress;
+  const peer = requestSocket(event)?.remoteAddress;
   return peer === undefined || LOOPBACK_ADDRESS.test(peer);
 }
 
@@ -215,15 +216,19 @@ function loopbackHostOf(address: string | undefined): string | null {
 /**
  * Where the CLI calls a turn's endpoint: this server on a loopback address, at
  * the port the request arrived on, under the app's base path (`app.baseURL`).
- * Never a host a request named. A request on a loopback socket names both; a
- * socket with no port (a dev server's worker) takes the port the environment
- * names, as `nuxt dev` does, and either needs the loopback address that
- * answers on that port, IPv4 or IPv6.
+ * Never a host a request named. A request on a loopback socket names both. In
+ * development, the dev server hands each request to a worker listening on a
+ * port of its own, which changes as the worker restarts: there the port the
+ * environment names comes first, as `nuxt dev` reads it. A socket with no port
+ * takes it too, and either needs the loopback address that answers on that
+ * port, IPv4 or IPv6.
  */
 export async function assistantLoopbackBaseUrl(event: H3Event): Promise<string> {
-  const socket = event.node.req.socket;
-  const port = Number(socket?.localPort || process.env.NUXT_PORT || process.env.NITRO_PORT || process.env.PORT || 3000);
-  const host = (socket?.localPort ? loopbackHostOf(socket.localAddress) : null) ?? (await answeringLoopbackHost(port));
-  const base = (useRuntimeConfig(event).app?.baseURL || '/').replace(/\/+$/, '');
+  const socket = requestSocket(event);
+  const named = Number(process.env.NUXT_PORT || process.env.NITRO_PORT || process.env.PORT) || undefined;
+  const port = (import.meta.dev && named) || socket?.localPort || named || 3000;
+  const host =
+    (port === socket?.localPort ? loopbackHostOf(socket.localAddress) : null) ?? (await answeringLoopbackHost(port));
+  const base = (useRuntimeConfig().app?.baseURL || '/').replace(/\/+$/, '');
   return `http://${host.includes(':') ? `[${host}]` : host}:${port}${base}`;
 }

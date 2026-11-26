@@ -16,7 +16,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db, user } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event).catch(() => ({}));
+  const body = await readBody<{ reason?: unknown }>(event).catch(() => undefined);
   const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 500) : undefined;
 
   const result = await quarantineClusterTests(db, id, { createdBy: user?.id ?? null, reason });

@@ -1,10 +1,10 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import type { RouterContext } from 'rou3';
 import type { RoutePermission } from '#shared/permissions';
 import { buildPermissionRouter, matchRequiredPermissions } from './route-permission-match';
 // Nitro compiles each route's extracted meta into this internal virtual module;
 // its types are declared ambiently in shared/nitro-virtual.d.ts.
-import { handlersMeta } from '#nitro-internal-virtual/server-handlers-meta';
+import { handlersMeta } from '#nitro/virtual/routing-meta';
 
 // Built once from the compiled route metas; the set of routes is fixed per build.
 let router: RouterContext<RoutePermission[]> | undefined;

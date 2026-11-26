@@ -16,5 +16,5 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
 
   const grid = await getProjectAccessGrid(await getDatabase());
-  return { ...grid, authEnabled: isAuthEnabled(event) };
+  return { ...grid, authEnabled: isAuthEnabled() };
 });

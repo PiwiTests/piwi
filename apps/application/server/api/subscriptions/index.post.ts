@@ -53,7 +53,7 @@ export default eventHandler(async (event) => {
   }
 
   // Without auth there is no user row to own a subscription — everything is global.
-  const isGlobal = requestedGlobal || !isAuthEnabled(event);
+  const isGlobal = requestedGlobal || !isAuthEnabled();
 
   // A global subscription delivers with no per-user access check, so it must
   // target a channel that is itself global — a personal channel would leak

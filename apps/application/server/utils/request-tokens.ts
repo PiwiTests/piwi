@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNotNull, isNull, type SQL } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { projects, runRequests, testRuns, users, type Project, type User } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
 import { apiError } from './api-error';
@@ -76,7 +76,7 @@ export async function checkRequestToken(
 ): Promise<RequestTokenGrant | null> {
   const token = presentedRequestToken(event);
   if (!token) return null;
-  if (!isAuthEnabled(event)) throw apiError({ statusCode: 403, message: 'Run on my machine needs sign-in turned on' });
+  if (!isAuthEnabled()) throw apiError({ statusCode: 403, message: 'Run on my machine needs sign-in turned on' });
   if (Number(body.shardTotal) > 1) throw apiError({ statusCode: 422, message: 'A requested run is not sharded' });
   const db = await getDatabase();
   const digest = hashToken(token);

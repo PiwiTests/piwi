@@ -32,7 +32,7 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
   const query = getQuery(event);
   return changelogPage(await bundledChangelog(), {
-    runningVersion: String(useRuntimeConfig(event).public.appVersion ?? ''),
+    runningVersion: String(useRuntimeConfig().public.appVersion ?? ''),
     cursor: query.cursor,
     limit: query.limit,
   });

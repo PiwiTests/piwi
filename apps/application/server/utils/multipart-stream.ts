@@ -1,11 +1,13 @@
 import busboy from 'busboy';
-import type { H3Event } from 'h3';
+import { getRequestHeaders, getRequestWebStream, type H3Event } from 'nitro/h3';
 import { randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 /**
  * A file part of a multipart request, streamed straight to a temp file on disk
@@ -81,8 +83,8 @@ const DEFAULT_MAX_FILES = 500;
  * caller removes them on success via the returned `cleanup`.
  */
 export async function streamMultipart(event: H3Event, options: StreamMultipartOptions): Promise<StreamedMultipart> {
-  const req = event.node.req;
-  const contentType = req.headers['content-type'] ?? '';
+  const headers = getRequestHeaders(event);
+  const contentType = headers['content-type'] ?? '';
   if (!contentType.toLowerCase().includes('multipart/form-data')) {
     throw apiError({ statusCode: 400, message: 'Expected multipart/form-data' });
   }
@@ -106,6 +108,9 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
     settled ? Promise.resolve() : (gate ??= (async () => options.beforeFiles?.(new Map(fields)))());
   // One per file part, settled once its temp file is written and closed, or given up.
   const fileWrites: Promise<void>[] = [];
+  // The request body as a Node stream, which busboy reads as it arrives.
+  const body = getRequestWebStream(event);
+  const req = body ? Readable.fromWeb(body as NodeReadableStream) : Readable.from([]);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -127,7 +132,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
 
       try {
         bb = busboy({
-          headers: req.headers,
+          headers,
           limits: {
             fileSize: options.maxTotalBytes,
             fieldSize: maxFieldBytes,
@@ -212,8 +217,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         Promise.all([...fileWrites, passGate()]).then(succeed, fail);
       });
 
-      req.on('aborted', () => fail(apiError({ statusCode: 400, message: 'Request aborted' })));
-      req.on('error', fail);
+      req.on('error', () => fail(apiError({ statusCode: 400, message: 'Request aborted' })));
       req.pipe(bb);
     });
   } catch (error) {

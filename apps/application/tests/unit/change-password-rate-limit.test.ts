@@ -1,7 +1,8 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiError } from '../../server/utils/api-error';
 import { rateLimitKeyCount } from '../../server/utils/rate-limit';
+import { testEvent } from './h3-event';
 
 /**
  * The password change's throttle: every attempt takes its slots before the
@@ -58,13 +59,11 @@ const changePassword = (await import('../../server/api/auth/change-password.post
 let round = 0;
 
 /** A password change by user `userId` from `remoteAddress`. */
-function request(remoteAddress: string, userId: number, currentPassword: string) {
-  return {
+function request(remoteAddress: string, userId: number, currentPassword: string): H3Event {
+  return Object.assign(testEvent({ method: 'POST', ip: remoteAddress }), {
     userId,
     body: { currentPassword, newPassword: 'a-new-password' },
-    context: {},
-    node: { req: { headers: {}, socket: { remoteAddress } }, res: { setHeader: () => {} } },
-  } as unknown as H3Event;
+  });
 }
 
 /** Send every request together, then let the password checks finish, and collect each status. */

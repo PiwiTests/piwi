@@ -4,11 +4,11 @@
  * shows a job's steps as progress alone and finds its own processes' runs, and how many runs the hub of the runs the
  * desktop shell starts has live, so a window that reloads takes its stream again.
  */
-import { EventEmitter } from 'node:events';
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import { testEvent } from './h3-event';
 import { desktopRunFacts, desktopRunFactsReader } from '../../server/utils/desktop-run-facts';
 import { resetDesktopRunTarget, runTargetConnection } from '@piwitests/editor/run-target';
 
@@ -54,8 +54,8 @@ let runEventBus: typeof import('../../server/utils/run-events').runEventBus;
 
 /** An open stream: the messages it sent so far, and how to end it. */
 async function openStream() {
-  const req = Object.assign(new EventEmitter(), { destroyed: false });
-  const response = await route({ node: { req } });
+  const gone = new AbortController();
+  const response = await route(testEvent({ signal: gone.signal }));
   const reader = response.body!.getReader();
   const messages: Array<Record<string, unknown>> = [];
   let text = '';
@@ -69,7 +69,7 @@ async function openStream() {
       for (const frame of frames) if (frame.startsWith('data: ')) messages.push(JSON.parse(frame.slice(6)));
     }
   })();
-  return { messages, end: () => req.emit('close') };
+  return { messages, end: () => gone.abort() };
 }
 
 beforeAll(async () => {

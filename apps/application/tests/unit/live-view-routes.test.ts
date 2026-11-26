@@ -16,6 +16,8 @@ import {
 import type { LiveSnapshot } from '@piwitests/core/live-inspect';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
 import type { EventStreamSink } from '../../server/utils/event-stream';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 /**
  * Who reaches a run's live view: watching it needs what opening the run needs, in a project with the live view on and
@@ -37,31 +39,16 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
   (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
 );
 
-interface FakeEvent {
-  context: Record<string, unknown>;
-  params: Record<string, string>;
-  query: Record<string, string>;
-  headers: Record<string, string>;
-  body?: unknown;
-  stream?: ReadableStream<Uint8Array>;
-  node: { req: { headers: Record<string, string> }; res: Record<string, unknown> };
-}
+/** A request, with the route params, query and parsed body that the stubbed globals read. */
+type FakeEvent = H3Event & { params: Record<string, string>; query: Record<string, string>; body?: unknown };
 
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params[name]);
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
-vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.headers[name.toLowerCase()]);
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
-vi.mock('h3', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  getRequestHeader: (event: FakeEvent, name: string) => event.headers[name.toLowerCase()],
-  getRequestWebStream: (event: FakeEvent) => event.stream,
-  setResponseHeader: (event: FakeEvent, name: string, value: string) => {
-    (event.node.res as Record<string, string>)[name.toLowerCase()] = value;
-  },
-}));
 
 type Route = (event: FakeEvent) => Promise<unknown>;
 const watch = underRoutePermission(
@@ -91,8 +78,14 @@ const page = underRoutePermission(
 const { liveViewRelay, storeLiveViewKey } = await import('../../server/utils/live-view');
 const { SNAPSHOT_MASKED } = await import('../../server/utils/live-inspect');
 
-function event(runId: number, query: Record<string, string> = {}, headers: Record<string, string> = {}): FakeEvent {
-  return { context: {}, params: { id: String(runId) }, query, headers, node: { req: { headers }, res: {} } };
+/** A request to run `runId`'s route, with this query and these headers, and the body a worker posts. */
+function event(
+  runId: number,
+  query: Record<string, string> = {},
+  headers: Record<string, string> = {},
+  body?: Uint8Array,
+): FakeEvent {
+  return Object.assign(testEvent({ headers, body }), { params: { id: String(runId) }, query });
 }
 
 /** The status a route refuses with; null when it answers. */
@@ -203,7 +196,7 @@ describe('watching a worker', () => {
   });
 
   test('changes what a watch shows for the person who holds it alone, saying what it shows', async () => {
-    const at = (runId: number, body: unknown) => ({ ...event(runId), body });
+    const at = (runId: number, body: unknown) => Object.assign(event(runId), { body });
     expect(await refusal(change, at(20, { watch: 'w'.repeat(22), tiles: true }))).toBe(403);
     expect(await refusal(change, at(10, null))).toBe(400);
     expect(await refusal(change, at(10, { tiles: true }))).toBe(400);
@@ -222,7 +215,7 @@ describe('watching a worker', () => {
     const sink = heldStream();
     expect(liveViewRelay.openWatch(10, 1, { focus: null, tiles: true }, () => sink, 3)).toBeNull();
     const id = (sink.sent[0] as { watch: string }).watch;
-    const at = (body: unknown) => ({ ...event(10), body });
+    const at = (body: unknown) => Object.assign(event(10), { body });
     expect(await change(at({ watch: id, width: 900, height: 600 }))).toEqual({
       success: true,
       watch: { focus: null, tiles: true, width: 900, height: 600, layers: [], inspect: false },
@@ -248,7 +241,7 @@ describe('watching a worker', () => {
     const sink = heldStream();
     expect(liveViewRelay.openWatch(10, 1, { focus: null, tiles: true }, () => sink, 3)).toBeNull();
     const id = (sink.sent[0] as { watch: string }).watch;
-    const at = (body: unknown) => ({ ...event(10), body });
+    const at = (body: unknown) => Object.assign(event(10), { body });
     expect(await change(at({ watch: id, layers: ['text', 'calls', 'events'], text: true }))).toMatchObject({
       success: true,
       watch: { layers: ['events', 'text'] },
@@ -299,10 +292,8 @@ describe("a worker's stream and posts", () => {
   test('read a frame as one live message, or as JSON from an older reporter', async () => {
     const key = liveViewRelay.mintKey(10, 1)!;
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
-    const posting = (body: Uint8Array, type: string) => ({
-      ...event(10, {}, { ...bearer(key), 'content-type': type, 'content-length': String(body.length) }),
-      stream: new Blob([body as Uint8Array<ArrayBuffer>]).stream(),
-    });
+    const posting = (body: Uint8Array, type: string, length = body.length) =>
+      event(10, {}, { ...bearer(key), 'content-type': type, 'content-length': String(length) }, body);
     const frame = encodeLiveMessage(liveFrameHeader({ shard: null, worker: 0 }, { call: null, test: 'pays' }), jpeg);
     // Read whole: the worker holds no stream yet (409).
     expect(await refusal(post, posting(frame, LIVE_FRAME_TYPE))).toBe(409);
@@ -323,9 +314,7 @@ describe("a worker's stream and posts", () => {
     const notJpeg = encodeLiveMessage(liveFrameHeader({ shard: null, worker: 0 }, { call: null, test: null }), png);
     expect(await refusal(post, posting(notJpeg, LIVE_FRAME_TYPE))).toBe(400);
     // Bounded: a frame's message by its own size, larger than a JSON message's.
-    const over = { ...posting(frame, LIVE_FRAME_TYPE) };
-    over.headers['content-length'] = String(MAX_LIVE_INSPECT_MESSAGE + 1);
-    expect(await refusal(post, over)).toBe(413);
+    expect(await refusal(post, posting(frame, LIVE_FRAME_TYPE, MAX_LIVE_INSPECT_MESSAGE + 1))).toBe(413);
   });
 
   test('are refused for a while as the run is interrupted, its key kept for when it goes on', async () => {
@@ -448,15 +437,10 @@ describe('Inspect’s page of a call', () => {
     const send = (head: Record<string, unknown>, data: Uint8Array) => {
       const body = encodeLiveMessage(head, data);
       const headers = { ...bearer(key), 'content-type': LIVE_FRAME_TYPE, 'content-length': String(body.length) };
-      return refusal(post, {
-        ...event(runId, {}, headers),
-        stream: new Blob([body as Uint8Array<ArrayBuffer>]).stream(),
-      });
+      return refusal(post, event(runId, {}, headers, body));
     };
-    const ask = (query: Record<string, string>, id = watchId) => ({
-      ...event(runId, { worker: '0', ...query }),
-      params: { id: String(runId), watch: id },
-    });
+    const ask = (query: Record<string, string>, id = watchId) =>
+      Object.assign(event(runId, { worker: '0', ...query }), { params: { id: String(runId), watch: id } });
     return { sink, send, ask, watchId };
   }
 
@@ -486,10 +470,10 @@ describe('Inspect’s page of a call', () => {
     });
     const e = ask({ call: 'call@4', phase: 'action', mode: 'readonly' });
     const doc = (await page(e)) as string;
-    const headers = e.node.res as Record<string, string>;
-    expect(headers['content-security-policy']).toContain('sandbox allow-scripts');
-    expect(headers['content-security-policy']).toContain("default-src 'none'");
-    expect(headers['cache-control']).toBe('no-store');
+    const headers = e.res.headers;
+    expect(headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+    expect(headers.get('content-security-policy')).toContain("default-src 'none'");
+    expect(headers.get('cache-control')).toBe('no-store');
     expect(doc).toContain('.pay{background:none}');
     expect(doc).not.toMatch(/steal|document\.cookie|evil\.test|javascript:|hunter2|<svg|logo\.svg|<link/);
     expect(doc).toContain('<a>Pay</a>');

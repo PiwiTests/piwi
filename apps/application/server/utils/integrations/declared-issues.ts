@@ -19,12 +19,7 @@ import { readProjectIntegration } from './binding';
 import { createTracker, nullWhenRefused } from './connections';
 import { loadTrackerRun, runDrivesWrites } from './tracker-run';
 
-export {
-  MAX_DECLARED_KEYS_PER_RUN,
-  MAX_DECLARED_LINKS_PER_CLUSTER,
-  declaredIssueKey,
-  type DeclaredLinksResult,
-} from '#shared/handlers/declared-issues';
+export { MAX_DECLARED_KEYS_PER_RUN, type DeclaredLinksResult } from '#shared/handlers/declared-issues';
 
 /** How long the whole step may take, from its start, before it is aborted, writing nothing more. */
 export const DECLARED_LINKS_TIMEOUT_MS = 10_000;

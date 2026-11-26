@@ -3,12 +3,12 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Readable } from 'node:stream';
-import type { H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
 import type { RunTargetMessage } from '@piwitests/editor/run-target-view';
 import { apiError } from '../../server/utils/api-error';
+import { testEvent } from './h3-event';
 import {
   answerRunRequest,
   compareWithTeam,
@@ -47,10 +47,7 @@ vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('setResponseHeader', () => {});
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, name: string) => event.params?.[name]);
-vi.stubGlobal(
-  'getRequestHeader',
-  (event: { node: { req: { headers: Record<string, string> } } }, name: string) => event.node.req.headers[name],
-);
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 
 const KEY = `pd_${'a'.repeat(64)}`;
 const TOKEN = `pdq_${'b'.repeat(64)}`;
@@ -534,11 +531,7 @@ describe('the host stopping', () => {
 describe('the shell’s routes', () => {
   type Route = (event: H3Event) => Promise<unknown>;
   const asked = (headers: Record<string, string>, params: Record<string, string> = {}, body?: string) =>
-    ({
-      context: {},
-      params,
-      node: { req: Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(body)]), { headers }), res: {} },
-    }) as unknown as H3Event;
+    Object.assign(testEvent({ method: 'POST', headers, body }), { params });
 
   test('refuse a request a browser sends, and answer the shell', async () => {
     const getKey = (await import('../../server/api/desktop/run-target/key.post')).default as Route;
@@ -588,7 +581,7 @@ describe('the shell’s routes', () => {
     });
     const body = asked({ 'content-type': 'text/plain' }, params, '{}');
     await expect(plan(body)).rejects.toMatchObject({ statusCode: 415 });
-    expect(body.node.req.readableDidRead).toBe(false);
+    expect(body.req.bodyUsed).toBe(false);
   });
 
   test('give a session code to the shell only, and answer 404 on the server build', async () => {
@@ -604,6 +597,6 @@ describe('the shell’s routes', () => {
   test('answer 404 on the server build', async () => {
     delete process.env.PIWI_DESKTOP_TOKEN;
     const status = (await import('../../server/api/desktop/run-target/index.get')).default as Route;
-    await expect(status(asked({}))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(status(testEvent())).rejects.toMatchObject({ statusCode: 404 });
   });
 });

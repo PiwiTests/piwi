@@ -1,12 +1,12 @@
-import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { migrateToLatest } from './temp-db';
+import { testEvent } from './h3-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -18,10 +18,7 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('#shared/handlers/capabilities', () => ({
   isOptInCapabilityOn: async (_db: unknown, projectId: number) => state.machineRuns.has(projectId),
 }));
-vi.stubGlobal(
-  'getRequestHeader',
-  (event: { node: { req: { headers: Record<string, string> } } }, name: string) => event.node.req.headers[name],
-);
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('apiError', apiError);
@@ -49,9 +46,9 @@ let otherUserId: number;
 let projectId: number;
 let sourceRunId: number;
 
-function eventWithKey(key: string): H3Event {
-  const req = Object.assign(new EventEmitter(), { headers: { authorization: `Bearer ${key}` }, destroyed: false });
-  return { context: {}, node: { req, res: {} } } as unknown as H3Event;
+/** A request with this key, from a client still there until `signal` aborts. */
+function eventWithKey(key: string, signal?: AbortSignal): H3Event {
+  return testEvent({ headers: { authorization: `Bearer ${key}` }, signal });
 }
 
 async function target(owner = userId) {
@@ -100,8 +97,8 @@ async function request(values: Partial<typeof schema.runRequests.$inferInsert> =
 
 /** Open a target's stream and collect its events as they come; `whileLoading` runs before its snapshot is read. */
 async function open(key: string, whileLoading?: () => void) {
-  const event = eventWithKey(key);
-  const response = await stream(event);
+  const gone = new AbortController();
+  const response = await stream(eventWithKey(key, gone.signal));
   whileLoading?.();
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
@@ -129,7 +126,7 @@ async function open(key: string, whileLoading?: () => void) {
     settle,
     isDone: () => done,
     leave: async () => {
-      (event.node.req as unknown as EventEmitter).emit('close');
+      gone.abort();
       await settle();
     },
     pump,

@@ -67,7 +67,7 @@ export default eventHandler(async (event) => {
   const credentialId = type === 'slack' ? channelCredentialId(config) : null;
   if (credentialId != null) {
     // A saved credential goes only with a channel of the instance, which only an administrator creates.
-    if (isAuthEnabled(event) && !isAdministrator(await getRequestAccess(event))) {
+    if (isAuthEnabled() && !isAdministrator(await getRequestAccess(event))) {
       throw apiError({ statusCode: 403, message: 'Only administrators can send with a saved credential' });
     }
     const refused = await slackChannelCredentialProblem(await getDatabase(), credentialId);

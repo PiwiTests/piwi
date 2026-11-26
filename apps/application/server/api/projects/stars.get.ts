@@ -15,7 +15,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
-  if (!isAuthEnabled(event)) return { projectIds: [] as number[] };
+  if (!isAuthEnabled()) return { projectIds: [] as number[] };
   const db = await getDatabase();
   return listProjectStars(db, user.id, await getProjectScope(db, user));
 });

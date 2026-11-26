@@ -18,7 +18,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   await requireAuth(event);
-  const version = String(useRuntimeConfig(event).public.appVersion ?? '');
+  const version = String(useRuntimeConfig().public.appVersion ?? '');
   const items = [];
   for (const [prompt, slug] of SKILL_PROMPTS) {
     const markdown = await bundledSkill(slug);

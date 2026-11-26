@@ -4,10 +4,10 @@
  * lifecycle event, to a caller who may read the run's project and see the run, while its lifecycle events go out as
  * they did.
  */
-import { EventEmitter } from 'node:events';
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import { testEvent } from './h3-event';
 import type { RunProgressBroadcast } from '../../server/utils/run-events';
 
 const state = vi.hoisted(() => ({ db: null as unknown, scope: 'all' as 'all' | Set<number> }));
@@ -32,8 +32,8 @@ async function settled() {
 
 /** An open stream: the messages it sent so far, and how to end it. */
 async function openStream() {
-  const req = Object.assign(new EventEmitter(), { destroyed: false });
-  const response = await route({ node: { req } });
+  const gone = new AbortController();
+  const response = await route(testEvent({ signal: gone.signal }));
   const reader = response.body!.getReader();
   const messages: Array<Record<string, unknown>> = [];
   let text = '';
@@ -48,7 +48,7 @@ async function openStream() {
     }
   })();
   await settled();
-  return { messages, end: () => req.emit('close') };
+  return { messages, end: () => gone.abort() };
 }
 
 /** A tally of run `runId` with `passed` results passed of 10. */

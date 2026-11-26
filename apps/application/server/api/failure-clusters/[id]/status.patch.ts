@@ -17,7 +17,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event);
+  const body = await readBody<{ status?: unknown; triageNote?: unknown; appendTriageNote?: unknown }>(event);
   const status = body?.status;
 
   if (status !== undefined && !isClusterStatus(status)) {

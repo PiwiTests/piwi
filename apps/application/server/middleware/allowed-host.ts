@@ -8,9 +8,9 @@ import { HOST_REFUSED_MESSAGE, isAllowedHostWithoutAuth } from '../utils/allowed
 import { isAuthEnabled } from '../utils/auth';
 import { configuredSiteUrl } from '../utils/public-base-url';
 
-export default defineEventHandler((event) => {
-  if (isAuthEnabled(event)) return;
-  const allowance = { siteUrl: configuredSiteUrl(event), allowedHosts: process.env.PIWI_ALLOWED_HOSTS };
+export default eventHandler((event) => {
+  if (isAuthEnabled()) return;
+  const allowance = { siteUrl: configuredSiteUrl(), allowedHosts: process.env.PIWI_ALLOWED_HOSTS };
   if (isAllowedHostWithoutAuth(getRequestHeader(event, 'host'), allowance)) return;
   setResponseStatus(event, 403);
   setResponseHeaders(event, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });

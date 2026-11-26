@@ -20,7 +20,13 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
 
-  const body = await readBody(event);
+  const body = await readBody<{
+    ids?: unknown;
+    action?: unknown;
+    status?: unknown;
+    assignee?: string | null;
+    snooze?: unknown;
+  }>(event);
   const ids = parseBulkIds(body?.ids);
   if (!ids) {
     throw apiError({ statusCode: 400, message: 'ids must be a non-empty array of positive integers (max 200)' });

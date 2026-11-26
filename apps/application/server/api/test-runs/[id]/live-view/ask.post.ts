@@ -20,7 +20,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const { db, projectId, user } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     throw apiError({ statusCode: 403, message: 'Asking to watch names who asks: it needs sign-in, which is off here' });
   }
   if (!isSignedInPerson(event)) {
@@ -57,7 +57,7 @@ export default eventHandler(async (event) => {
   const outcome = liveAsks.ask(id, projectId, user.id, user.name || user.username);
   if (!outcome.ok) {
     const minutes = Math.ceil(outcome.waitMs / 60_000);
-    setResponseHeader(event, 'Retry-After', Math.ceil(outcome.waitMs / 1000));
+    setResponseHeader(event, 'Retry-After', String(Math.ceil(outcome.waitMs / 1000)));
     throw apiError({
       statusCode: 429,
       message: `You asked to watch this run less than ${ASK_TO_WATCH_MS / 60_000} minutes ago: ask again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,

@@ -1,6 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import { apiError } from '../../server/utils/api-error';
 import { CROSS_SITE_REFUSED_WITHOUT_AUTH_MESSAGE, isCrossSiteWrite } from '../../server/utils/cross-site';
+import { testEvent } from './h3-event';
 
 const auth = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../server/utils/auth', () => ({ isAuthEnabled: () => auth.enabled }));
@@ -146,16 +148,11 @@ describe('isCrossSiteWrite', () => {
 });
 
 describe('the cross-site middleware', () => {
-  interface FakeEvent {
-    method: string;
-    node: { req: { headers: Record<string, string> } };
-  }
-
   beforeEach(() => {
     auth.enabled = false;
-    vi.stubGlobal('defineEventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('eventHandler', (handler: unknown) => handler);
     vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: '' } }));
-    vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.node.req.headers[name]);
+    vi.stubGlobal('getRequestHeader', getRequestHeader);
     vi.stubGlobal('apiError', apiError);
     vi.stubEnv('PIWI_SITE_URL', '');
     vi.stubEnv('PIWI_ALLOWED_HOSTS', '');
@@ -168,10 +165,10 @@ describe('the cross-site middleware', () => {
 
   const call = async (headers: Record<string, string>) => {
     const middleware = (await import('../../server/middleware/cross-site')).default as unknown as (
-      event: FakeEvent,
+      event: H3Event,
     ) => unknown;
     try {
-      middleware({ method: 'POST', node: { req: { headers } } });
+      middleware(testEvent({ method: 'POST', headers }));
       return null;
     } catch (error) {
       return error as { statusCode: number; message: string };

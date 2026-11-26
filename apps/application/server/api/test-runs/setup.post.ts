@@ -61,7 +61,7 @@ export default eventHandler(async (event) => {
   // and the project itself is checked below.
   const signedIn = presentsRequestToken(event) ? null : await requireAuth(event);
 
-  const body = await readBody(event);
+  const body = await readBody<Record<string, any>>(event);
 
   // Validate required fields
   if (!body.projectName) {

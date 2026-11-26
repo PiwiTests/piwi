@@ -32,7 +32,7 @@ import { clusterTrailerLine } from '#shared/commit-trailers';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type { BrowserConfig } from '#shared/types';
 
-export type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
+export type { FixPlan } from '#shared/fix-plan.types';
 
 /** Executions inspected for locator suggestions — enough to cover a cluster. */
 const MAX_HEALED_CASES = 5;

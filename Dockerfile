@@ -104,8 +104,7 @@ RUN addgroup -g 1001 -S nodejs && \
     chown nodejs:nodejs /app
 
 # Copy workspace files for native module install (sharp, libsql, sql.js)
-# Pure-JS deps ship in .output/server/node_modules (traced by Nitro) — only native
-# binaries needed here.
+# Nitro bundles the pure-JS deps into the server — only native binaries needed here.
 # --chown is required: `npm install` below runs as nodejs and rewrites package.json
 # to record the added deps, which fails with EACCES on a root-owned copy.
 COPY --chown=nodejs:nodejs package.json package-lock.json ./
@@ -115,8 +114,8 @@ RUN printf "import{readFileSync,writeFileSync}from'node:fs';const p=JSON.parse(r
 
 # Install only the native packages needed at runtime (sharp + libsql + sql.js), at
 # the exact versions package-lock.json resolved: the ones the server was built and
-# traced with (`packages/server/package.json` pins the same). All pure-JS deps ship
-# in .output/server/node_modules, traced by Nitro.
+# traced with (`packages/server/package.json` pins the same). Nitro bundles every
+# pure-JS dep into the server.
 # Run as nodejs to avoid a duplicate chown layer
 USER nodejs
 
@@ -150,7 +149,7 @@ RUN --mount=type=cache,target=/home/nodejs/.npm,uid=1001,gid=1001 \
     find node_modules -type d \( -name "test" -o -name "tests" -o -name ".devcontainer" \) -exec rm -rf {} + 2>/dev/null || true; \
     node -e "require('sharp'); require.resolve('@libsql/client'); require('@libsql/linux-${NODE_ARCH}-musl')"
 
-# Copy built application — pure-JS deps travel in .output/server/node_modules
+# Copy built application — the pure-JS deps are bundled into it
 COPY --chown=nodejs:nodejs --from=builder /app/apps/application/.output ./apps/application/.output
 
 # Mirrors the operator-facing PIWI_* env the prebuilt server reads through its baked

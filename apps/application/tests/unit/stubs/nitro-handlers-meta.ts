@@ -1,5 +1,5 @@
 /**
- * Test stub for Nitro's `#nitro-internal-virtual/server-handlers-meta` virtual
+ * Test stub for Nitro's `#nitro/virtual/routing-meta` virtual
  * module so unit tests can import server utils that reach it (via
  * `server/utils/route-required-permission.ts`). Aliased in `vitest.config.ts`.
  * The route-permission matching logic itself is unit-tested directly in

@@ -52,7 +52,7 @@ export default eventHandler(async (event): Promise<WireLiveResourcesAnswer & { a
   const db = await getDatabase();
   await requireStreamingRun(db, id, 'live-resources', getRequestHeader(event, RUN_TOKEN_HEADER));
 
-  const body = await readBody(event);
+  const body = await readBody<{ streamToken?: string }>(event);
   if (!body?.streamToken) throw apiError({ statusCode: 401, message: 'Missing stream token' });
 
   const { projectId } = await authorizeStreamToken(db, id, body.streamToken);

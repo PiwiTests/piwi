@@ -1,7 +1,7 @@
 // Refuses request bodies no route should buffer: see bodyLimitError.
 import { bodyLimitError } from '../utils/body-limit';
 
-export default defineEventHandler((event) => {
+export default eventHandler((event) => {
   const error = bodyLimitError({
     method: event.method,
     path: event.path,

@@ -101,8 +101,8 @@ vi.mock('../../server/utils/profile-picture', () => ({
     return true;
   },
 }));
-vi.mock('h3', async (original) => ({
-  ...(await original<typeof import('h3')>()),
+vi.mock('nitro/h3', async (original) => ({
+  ...(await original<typeof import('nitro/h3')>()),
   getRequestWebStream: () => undefined,
 }));
 

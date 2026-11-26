@@ -1,3 +1,4 @@
+import type { H3Event } from 'nitro/h3';
 import { readFile } from 'node:fs/promises';
 import { parseBugReport } from '@piwitests/core/bug-report';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
@@ -33,7 +34,7 @@ interface Incoming {
   stepShots: Map<string, Buffer>;
 }
 
-async function readIncoming(event: Parameters<typeof getRequestHeader>[0]): Promise<Incoming> {
+async function readIncoming(event: H3Event): Promise<Incoming> {
   const type = getRequestHeader(event, 'content-type') ?? '';
   const length = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   const screenshotsBytes = BUG_REPORT_LIMITS.screenshots * BUG_REPORT_LIMITS.screenshotBytes;

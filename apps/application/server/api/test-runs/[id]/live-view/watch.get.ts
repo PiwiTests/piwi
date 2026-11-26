@@ -3,6 +3,7 @@ import { readLiveViewSize, readLiveWorkerId } from '@piwitests/core/live-view';
 import { readLaneLayers } from '@piwitests/core/live-layers';
 import { projects, testRuns } from '../../../../database/schema';
 import { openLiveStream } from '../../../../utils/event-stream';
+import { nodeHttp, responseClosed } from '../../../../utils/node-http';
 import { isAuthEnabled } from '../../../../utils/auth';
 import { liveViewRelay } from '../../../../utils/live-view';
 import {
@@ -75,7 +76,7 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 410, message: 'The run is no longer live' });
   // The person watching, when the instance knows people apart, and whether they may control the project's runs: with
   // authentication off, everyone may, as every permission is everyone's.
-  const auth = isAuthEnabled(event);
+  const auth = isAuthEnabled();
   const person = auth ? user.id : null;
   const controller = await holdsProjectPermission(event, projectId, ['run:control']);
   const refused = liveViewRelay.openWatch(
@@ -87,4 +88,5 @@ export default eventHandler(async (event) => {
     { controller, name: auth ? user.name || user.username : null },
   );
   if (refused) throw apiError({ statusCode: refused.status, message: refused.message });
+  return responseClosed(nodeHttp(event).res);
 });

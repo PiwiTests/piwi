@@ -18,7 +18,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
 
-  const body = await readBody(event);
+  const body = await readBody<{ projectName?: unknown; hashes?: unknown }>(event);
   const projectName = body?.projectName as string | undefined;
   const hashes = body?.hashes as unknown[] | undefined;
 

@@ -37,7 +37,7 @@ export default eventHandler(async (event) => {
         timeZone: request.scope.timeZone ?? (await reportScheduleTimeZone(db)),
         baseUrl: reportBaseUrl(),
         piwiVersion: reportPiwiVersion(),
-        createdBy: isAuthEnabled(event) ? user.id : null,
+        createdBy: isAuthEnabled() ? user.id : null,
       },
     ),
   );

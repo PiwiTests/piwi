@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 import { withStoredVerdicts } from './stored-verdicts';
+import { testEvent } from './h3-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -22,10 +23,8 @@ vi.mock('../../server/utils/graph-ingest', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../server/utils/graph-ingest')>();
   return { ...mod, ingestRunGraph: async () => {}, ingestRequestGraph: async () => {} };
 });
-vi.stubGlobal(
-  'getRequestHeader',
-  (event: { node: { req: { headers: Record<string, string> } } }, name: string) => event.node.req.headers[name],
-);
+// Nitro auto-imports h3's helper.
+vi.stubGlobal('getRequestHeader', getRequestHeader);
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, name: string) => event.params?.[name]);
 
 const { generateApiKey } = await import('../../server/utils/auth');
@@ -63,7 +62,7 @@ let sourceRunId: number;
 const T0 = new Date('2026-09-01T10:00:00Z');
 
 function eventWith(headers: Record<string, string>): H3Event {
-  return { context: {}, node: { req: { headers }, res: {} } } as unknown as H3Event;
+  return testEvent({ headers });
 }
 
 function bearer(token: string | null): H3Event {

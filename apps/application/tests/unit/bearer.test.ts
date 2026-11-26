@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { bearerToken } from '../../server/utils/bearer';
+import { testEvent } from './h3-event';
 
 /** A request carrying just this Authorization header. */
 function withAuthorization(value?: string): H3Event {
-  const headers = value === undefined ? {} : { authorization: value };
-  return { context: {}, node: { req: { headers }, res: {} } } as unknown as H3Event;
+  return testEvent({ headers: value === undefined ? {} : { authorization: value } });
 }
 
 describe('bearerToken', () => {

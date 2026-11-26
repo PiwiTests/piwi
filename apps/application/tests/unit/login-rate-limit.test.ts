@@ -1,7 +1,8 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiError } from '../../server/utils/api-error';
 import { rateLimitKeyCount } from '../../server/utils/rate-limit';
+import { testEvent } from './h3-event';
 
 /**
  * The login route's throttle: attempts sent together each take a slot before
@@ -59,12 +60,8 @@ const login = (await import('../../server/api/auth/login.post')).default as unkn
 let address = 0;
 
 /** A login request from `remoteAddress`. */
-function request(remoteAddress: string, username: string, password: string) {
-  return {
-    body: { username, password },
-    context: {},
-    node: { req: { headers: {}, socket: { remoteAddress } }, res: { setHeader: () => {} } },
-  } as unknown as H3Event;
+function request(remoteAddress: string, username: string, password: string): H3Event {
+  return Object.assign(testEvent({ method: 'POST', ip: remoteAddress }), { body: { username, password } });
 }
 
 /** Send every request together, then let the password checks finish, and collect each status. */

@@ -7,6 +7,8 @@ import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { accountPictureVersion } from '../../shared/user-avatar';
 import { migrateToLatest } from './temp-db';
+import type { H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -58,15 +60,9 @@ vi.mock('../../server/utils/auth', () => {
 vi.mock('../../server/utils/user-avatar', () => ({
   oauthAvatar: async () => ({ bytes: new Uint8Array([1, 2, 3]), mime: 'image/png' }),
 }));
-vi.mock('h3', async (original) => ({
-  ...(await original<typeof import('h3')>()),
-  getRequestWebStream: (event: FakeEvent) => event.stream,
-}));
-
 interface FakeEvent {
   query?: Record<string, string>;
   params?: Record<string, string>;
-  stream?: ReadableStream<Uint8Array>;
   headers?: Record<string, string>;
 }
 
@@ -82,7 +78,9 @@ vi.stubGlobal('apiError', apiError);
 const { hasAcceptedSignature, normalizeProfilePicture, removeProfilePicture, saveProfilePicture } =
   await import('../../server/utils/profile-picture');
 type Handler = (event: FakeEvent) => Promise<unknown>;
-const uploadRoute = (await import('../../server/api/auth/avatar.put')).default as unknown as Handler;
+const uploadRoute = (await import('../../server/api/auth/avatar.put')).default as unknown as (
+  event: H3Event,
+) => Promise<unknown>;
 const removeRoute = (await import('../../server/api/auth/avatar.delete')).default as unknown as Handler;
 const avatarRoute = (await import('../../server/api/auth/avatar.get')).default as unknown as Handler;
 const adminRemoveRoute = (await import('../../server/api/users/[id]/avatar.delete')).default as unknown as Handler;
@@ -102,13 +100,9 @@ function image(width: number, height: number, format: 'png' | 'jpeg' | 'webp' | 
     .toBuffer();
 }
 
-function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
+/** `PUT /api/auth/avatar` with these bytes as its body. */
+function upload(bytes: Uint8Array) {
+  return uploadRoute(testEvent({ method: 'PUT', body: bytes }));
 }
 
 /** `db` with `beforeSwap` run before each update an upload sends, as another request would between its read and its swap. */
@@ -277,7 +271,7 @@ describe('saveProfilePicture and removeProfilePicture', () => {
 
 describe('the profile picture routes', () => {
   test("an upload answers the version GET /api/auth/me then names, and the picture is served in the provider's place", async () => {
-    const answer = (await uploadRoute({ stream: streamOf(await image(120, 120)) })) as { avatarVersion: string };
+    const answer = (await upload(await image(120, 120))) as { avatarVersion: string };
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, 1));
     expect(answer.avatarVersion).toBe(accountPictureVersion(user!));
     expect(answer.avatarVersion).not.toBe(accountPictureVersion({ avatarKey: null, avatarUrl: GITHUB }));
@@ -292,14 +286,14 @@ describe('the profile picture routes', () => {
   });
 
   test('a picture asked for under another version is served but never cached', async () => {
-    await uploadRoute({ stream: streamOf(await image(120, 120)) });
+    await upload(await image(120, 120));
     const event: FakeEvent = { query: { v: 'stale' } };
     await avatarRoute(event);
     expect(event.headers?.['Cache-Control']).toBe('no-store');
   });
 
   test('an upload of 1 MB or more is refused while it is read', async () => {
-    await expect(uploadRoute({ stream: streamOf(new Uint8Array(1_000_000)) })).rejects.toMatchObject({
+    await expect(upload(new Uint8Array(1_000_000))).rejects.toMatchObject({
       statusCode: 413,
     });
     expect(await avatarKeyOf(1)).toBeNull();
@@ -307,16 +301,16 @@ describe('the profile picture routes', () => {
 
   test('an upload is refused with authentication off and for an API key', async () => {
     state.authEnabled = false;
-    await expect(uploadRoute({ stream: streamOf(await image(10, 10)) })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(upload(await image(10, 10))).rejects.toMatchObject({ statusCode: 400 });
     state.authEnabled = true;
     state.apiKey = true;
-    await expect(uploadRoute({ stream: streamOf(await image(10, 10)) })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(upload(await image(10, 10))).rejects.toMatchObject({ statusCode: 403 });
     expect(state.files.size).toBe(0);
   });
 
   test('removing your picture deletes it, and a user with no picture gets a 404', async () => {
     state.caller = { id: 2 };
-    await uploadRoute({ stream: streamOf(await image(50, 50)) });
+    await upload(await image(50, 50));
     expect(await removeRoute({})).toEqual({ removed: true });
     expect(state.files.size).toBe(0);
     await expect(avatarRoute({})).rejects.toMatchObject({ statusCode: 404 });

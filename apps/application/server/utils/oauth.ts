@@ -1,5 +1,5 @@
 import { publicBaseUrl } from './public-base-url';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
@@ -57,7 +57,7 @@ interface OAuthProviderConfig {
 }
 
 function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfig | null {
-  const config = useRuntimeConfig(event).oauth as unknown as
+  const config = useRuntimeConfig().oauth as unknown as
     | Record<string, { clientId?: string; clientSecret?: string } | string | undefined>
     | undefined;
   const providerConfig = config?.[provider];
@@ -118,12 +118,12 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
 // Access-control allowlists (optional, from runtime config)
 // ---------------------------------------------------------------------------
 
-function getAllowedEmailDomains(event: H3Event): string[] {
-  return parseAllowList((useRuntimeConfig(event).oauth as { allowedDomains?: string })?.allowedDomains);
+function getAllowedEmailDomains(): string[] {
+  return parseAllowList((useRuntimeConfig().oauth as { allowedDomains?: string })?.allowedDomains);
 }
 
-function getGithubAllowedOrgs(event: H3Event): string[] {
-  return parseAllowList((useRuntimeConfig(event).oauth as { githubAllowedOrgs?: string })?.githubAllowedOrgs);
+function getGithubAllowedOrgs(): string[] {
+  return parseAllowList((useRuntimeConfig().oauth as { githubAllowedOrgs?: string })?.githubAllowedOrgs);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ export function initiateOAuth(
   provider: string,
   opts: { link?: boolean; returnTo?: string | null } = {},
 ): string | null {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     return null;
   }
 
@@ -193,7 +193,7 @@ export function initiateOAuth(
 
   // Request org scope only when a GitHub org allowlist is configured.
   const scopes = [...providerCfg.scopes];
-  if (provider === 'github' && getGithubAllowedOrgs(event).length > 0 && !scopes.includes('read:org')) {
+  if (provider === 'github' && getGithubAllowedOrgs().length > 0 && !scopes.includes('read:org')) {
     scopes.push('read:org');
   }
 
@@ -362,7 +362,7 @@ async function enforceAllowlists(
   providerUser: { email: string; emailVerified: boolean },
   accessToken: string,
 ): Promise<void> {
-  const allowedDomains = getAllowedEmailDomains(event);
+  const allowedDomains = getAllowedEmailDomains();
   if (!isEmailDomainAllowed(providerUser.email, providerUser.emailVerified, allowedDomains)) {
     throw apiError({
       statusCode: 403,
@@ -372,7 +372,7 @@ async function enforceAllowlists(
   }
 
   if (provider === 'github') {
-    const allowedOrgs = getGithubAllowedOrgs(event);
+    const allowedOrgs = getGithubAllowedOrgs();
     if (allowedOrgs.length > 0) {
       const memberOf = await fetchGithubOrgLogins(accessToken);
       if (!isOrgAllowed(memberOf, allowedOrgs)) {
@@ -541,7 +541,7 @@ export async function unlinkProvider(userId: number, provider: string): Promise<
 // ---------------------------------------------------------------------------
 
 export async function handleOAuthCallback(event: H3Event, provider: string): Promise<string> {
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     return '/login?error=auth-disabled';
   }
 

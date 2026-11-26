@@ -5,6 +5,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { migrateToLatest } from './temp-db';
+import { testEvent } from './h3-event';
 
 /**
  * First-admin setup through its routes: it stays open while no administrator
@@ -37,11 +38,10 @@ const setup = (await import('../../server/api/auth/setup.post')).default as unkn
 const setupStatus = (await import('../../server/api/auth/setup.get')).default as unknown as Handler;
 
 let address = 0;
-const request = (body: Record<string, unknown> = {}) => ({
-  body: { username: 'admin', password: 'correct-horse', ...body },
-  context: {},
-  node: { req: { headers: {}, socket: { remoteAddress: `10.3.3.${address}` } }, res: { setHeader: () => {} } },
-});
+const request = (body: Record<string, unknown> = {}) =>
+  Object.assign(testEvent({ method: 'POST', ip: `10.3.3.${address}` }), {
+    body: { username: 'admin', password: 'correct-horse', ...body },
+  });
 
 beforeEach(async () => {
   address += 1;
@@ -109,14 +109,15 @@ describe('first-admin setup without a token', () => {
     const sent = new Promise<void>((resolve) => (sendBody = resolve));
     const slow = request();
     const slowBody = slow.body;
-    const slowRequest = setup({
-      ...slow,
-      body: async () => {
-        bodyRequested();
-        await sent;
-        return { ...slowBody, username: 'second' };
-      },
-    });
+    const slowRequest = setup(
+      Object.assign(slow, {
+        body: async () => {
+          bodyRequested();
+          await sent;
+          return { ...slowBody, username: 'second' };
+        },
+      }),
+    );
 
     await requested;
     address += 1;

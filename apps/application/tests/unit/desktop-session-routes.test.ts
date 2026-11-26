@@ -4,12 +4,11 @@
  * (`packages/editor/tests/run-target-routes.test.ts`), the stream passes the run target's stops on, and it ends them
  * when the shell leaves.
  */
-import { EventEmitter } from 'node:events';
-import { Readable } from 'node:stream';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { TOKEN_COOKIE } from '@piwitests/editor/host-guard';
 import { mintSessionCode, SESSION_CODE_TTL_MS } from '@piwitests/editor/run-target-session';
 import { apiError } from '../../server/utils/api-error';
+import { testEvent } from './h3-event';
 
 const TOKEN = `pd_${'d'.repeat(64)}`;
 
@@ -79,15 +78,13 @@ afterEach(() => {
 const visit = (query: Record<string, unknown>) => session({ query });
 
 /** The shell's `POST` for a session code, as the Nitro route reads it. */
-const shellAsks = (headers: Record<string, string> = {}) => ({
-  context: {},
-  node: {
-    req: Object.assign(Readable.from([Buffer.from('{}')]), {
-      headers: { 'content-type': 'application/json', ...headers },
-    }),
-    res: {},
-  },
-});
+const shellAsks = (headers: Record<string, string> = {}) =>
+  testEvent({
+    method: 'POST',
+    url: '/api/desktop/run-target/session-code',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: '{}',
+  });
 
 describe('the window session', () => {
   test('answers 404 on the server build, which has no token', async () => {
@@ -171,13 +168,13 @@ describe('the window session', () => {
 describe('the shell stream', () => {
   test('answers 404 on the server build', async () => {
     delete process.env.PIWI_DESKTOP_TOKEN;
-    await expect(notifications({ node: { req: new EventEmitter() } })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(notifications(testEvent())).rejects.toMatchObject({ statusCode: 404 });
     expect(shell.send).toBeNull();
   });
 
   test('passes on the run target’s stop, and ends the run target’s part when the shell leaves', async () => {
-    const req = Object.assign(new EventEmitter(), { destroyed: false });
-    const response = await notifications({ node: { req } });
+    const gone = new AbortController();
+    const response = await notifications(testEvent({ signal: gone.signal }));
     expect(response.headers.get('content-type')).toBe('text/event-stream');
     const reader = response.body!.getReader();
 
@@ -188,7 +185,7 @@ describe('the shell stream', () => {
     );
 
     expect(shell.ended).toBe(0);
-    req.emit('close');
+    gone.abort();
     expect(shell.ended).toBe(1);
   });
 });

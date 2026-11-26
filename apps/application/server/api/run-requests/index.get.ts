@@ -20,7 +20,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  requireSignInForRunRequests(event);
+  requireSignInForRunRequests();
   const user = await requireAuth(event);
   const raw = getQuery(event).projectId;
   let projectId: number | undefined;

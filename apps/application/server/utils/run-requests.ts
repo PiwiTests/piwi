@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import {
   FINAL_RUN_REQUEST_STATES,
   RUN_REQUEST_ID,
@@ -35,7 +35,6 @@ export {
   countWaitingRequests,
   effectiveState,
   findOwnRequest,
-  MAX_WAITING_REQUESTS,
   resolveRequestTests,
   runRequestView,
   stopOwnRequest,
@@ -61,8 +60,8 @@ export function requireRunRequestId(event: H3Event): string {
 }
 
 /** A request belongs to the person who made it, so the routes need sign-in turned on. */
-export function requireSignInForRunRequests(event: H3Event): void {
-  if (!isAuthEnabled(event)) {
+export function requireSignInForRunRequests(): void {
+  if (!isAuthEnabled()) {
     throw apiError({
       statusCode: 403,
       message: 'Run on my machine needs sign-in turned on: a request belongs to the person who made it',
@@ -103,7 +102,7 @@ export async function requireRunTarget(
   event: H3Event,
   { seen = true, permission = 'run:receive' }: { seen?: boolean; permission?: RunTargetPermission } = {},
 ): Promise<RunTargetCaller> {
-  requireSignInForRunRequests(event);
+  requireSignInForRunRequests();
   const value = extractApiKey(event);
   if (!value) throw apiError({ statusCode: 401, message: 'A connected app’s key is required' });
   const resolved = await resolveApiKey(value);

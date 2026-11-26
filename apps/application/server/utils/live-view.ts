@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { getRequestHeader, type H3Event } from 'h3';
+import { getRequestHeader, type H3Event } from 'nitro/h3';
 import {
   LIVE_CALL_LOGS_PER_SECOND,
   LIVE_FRAME_FPS,

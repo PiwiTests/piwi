@@ -11,6 +11,7 @@ import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
 import { serveRunEvents } from '@piwitests/editor/shell-runs-http';
 import { desktopRuns } from '../../../utils/desktop-runs';
+import { nodeHttp, responseClosed } from '../../../utils/node-http';
 
 defineRouteMeta({
   openAPI: {
@@ -25,5 +26,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
-  await serveRunEvents(event.node.req, event.node.res, await desktopRuns());
+  const { req, res } = nodeHttp(event);
+  await serveRunEvents(req, res, await desktopRuns());
+  return responseClosed(res);
 });

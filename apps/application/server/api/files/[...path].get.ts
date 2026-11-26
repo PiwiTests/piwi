@@ -220,7 +220,7 @@ export default eventHandler(async (event) => {
     const prepared = prepareHtmlReport(content);
     applyHtmlCsp();
     applyInlineDisposition('text/html');
-    setResponseHeader(event, 'Content-Length', prepared.length);
+    setResponseHeader(event, 'Content-Length', String(prepared.length));
     return prepared;
   }
 
@@ -251,11 +251,10 @@ export default eventHandler(async (event) => {
       setResponseStatus(event, 206);
       setResponseHeader(event, 'Content-Range', `bytes ${range.start}-${range.end}/${size}`);
     }
-    setResponseHeader(event, 'Content-Length', range ? range.end - range.start + 1 : size);
-    const stream = await storage.readStream(storedPath, range ?? undefined);
-    // A client that goes away (a video player seeking elsewhere) releases the file at once.
-    event.node.res.once('close', () => stream.destroy());
-    return sendStream(event, stream);
+    setResponseHeader(event, 'Content-Length', String(range ? range.end - range.start + 1 : size));
+    // The server pipes the file to the response, and releases it at once when the client goes away (a video player
+    // seeking elsewhere).
+    return storage.readStream(storedPath, range ?? undefined);
   }
 
   // 1. Try exact path
@@ -290,7 +289,7 @@ export default eventHandler(async (event) => {
         setResponseHeader(event, 'Cache-Control', 'no-store');
       }
       setResponseHeader(event, 'Content-Type', 'application/zip');
-      setResponseHeader(event, 'Content-Length', fullZip.length);
+      setResponseHeader(event, 'Content-Length', String(fullZip.length));
       return fullZip;
     }
 
@@ -305,7 +304,7 @@ export default eventHandler(async (event) => {
           .webp({ quality: 90 })
           .toBuffer();
         setResponseHeader(event, 'Content-Type', 'image/webp');
-        setResponseHeader(event, 'Content-Length', compressed.length);
+        setResponseHeader(event, 'Content-Length', String(compressed.length));
         applyInlineDisposition('image/webp');
         return compressed;
       } catch {

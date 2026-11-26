@@ -6,6 +6,8 @@ import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { recordRouteMeta, type RouteAccessState, type RouteCaller } from './route-access';
+import { getResponseStatus, type H3Event } from 'nitro/h3';
+import { testEvent } from './h3-event';
 
 /**
  * `GET /api/projects/:id/branch-failures` with its `ETag`: the same data is a 304 without a body, and a run, a result,
@@ -25,12 +27,8 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
   (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
 );
 
-interface FakeEvent {
-  context: Record<string, unknown>;
-  params: Record<string, string>;
-  query: Record<string, string>;
-  node: { req: { headers: Record<string, string> }; res: Record<string, unknown> };
-}
+/** A request with the route params and query that the stubbed `getRouterParam` and `getQuery` read. */
+type FakeEvent = H3Event & { params: Record<string, string>; query: Record<string, string> };
 
 let appVersion = '1.0.0';
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
@@ -47,22 +45,18 @@ const { getBranchFailures } = await import('../../server/utils/branch-failures')
 
 /** The route's answer to a request for project `projectId` with this query, naming `etag` in `If-None-Match`. */
 async function ask(query: Record<string, string>, etag?: string, projectId = 1) {
-  const written: Record<string, string> = {};
-  const res = {
-    statusCode: 200,
-    statusMessage: '',
-    headersSent: false,
-    setHeader: (name: string, value: string) => (written[name.toLowerCase()] = value),
-    getHeader: (name: string) => written[name.toLowerCase()],
-  };
-  const event: FakeEvent = {
-    context: {},
+  const event: FakeEvent = Object.assign(testEvent({ headers: etag ? { 'if-none-match': etag } : {} }), {
     params: { id: String(projectId) },
     query,
-    node: { req: { headers: etag ? { 'if-none-match': etag } : {} }, res },
-  };
+  });
   const body = await route(event);
-  return { status: res.statusCode, etag: written['etag']!, cacheControl: written['cache-control'], body };
+  const headers = event.res.headers;
+  return {
+    status: getResponseStatus(event),
+    etag: headers.get('etag')!,
+    cacheControl: headers.get('cache-control'),
+    body,
+  };
 }
 
 const onProject = (projectId: number): RouteCaller => ({

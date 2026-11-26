@@ -2,7 +2,7 @@
  * What the project's test management endpoints share: loading the connection a request names and turning a provider's
  * refusal into the API's error shape. A provider's message never holds the token (the clients scrub it).
  */
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import type { DbClient } from '../../../database';
 import { apiError } from '../../api-error';
 import { IntegrationHttpError } from '../http-error';
@@ -22,7 +22,7 @@ import { CredentialRefusedError, type CredentialActor } from '../../credentials'
 
 /** Answer 429 with a `Retry-After` of `waitMs`, in whole seconds. */
 export function refuseRateLimited(event: H3Event, waitMs: number, message: string): never {
-  setResponseHeader(event, 'Retry-After', Math.max(1, Math.ceil(waitMs / 1000)));
+  setResponseHeader(event, 'Retry-After', String(Math.max(1, Math.ceil(waitMs / 1000))));
   throw apiError({ statusCode: 429, message });
 }
 

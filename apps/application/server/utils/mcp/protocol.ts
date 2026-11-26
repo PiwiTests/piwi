@@ -1,12 +1,9 @@
-import { setResponseHeaders, setResponseStatus, type H3Event } from 'h3';
+import { setResponseHeaders, setResponseStatus, type H3Event } from 'nitro/h3';
 import { RPC } from '@piwitests/editor/mcp-protocol';
 // The JSON-RPC pieces of MCP, and how each request's era is decided, are shared with the editor service's MCP server
 // for the runs it started.
 export {
-  MCP_META,
-  MCP_PROTOCOL_VERSION,
   RPC,
-  SUPPORTED_PROTOCOL_VERSIONS,
   checkMcpRequest,
   discoverResult,
   emptyBatchAnswer,

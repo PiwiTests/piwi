@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, inArray, lt, ne, notExists, or } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiKeys, oauthAuthorizationRequests, oauthClients, oauthGrants, users } from '../database/schema';
 import type { OAuthClient, OAuthGrant, User } from '../database/schema';
 import type { DbClient } from '../database';
@@ -712,7 +712,7 @@ export async function resolveOAuthAccessToken(
  * metadata, which is how a client finds out it can sign in.
  */
 export async function requireMcpAuth(event: H3Event): Promise<User> {
-  if (!isAuthEnabled(event)) return requireAuth(event);
+  if (!isAuthEnabled()) return requireAuth(event);
   const token = bearerToken(event);
   if (isOAuthAccessToken(token)) {
     const db = await getDatabase();
@@ -740,8 +740,8 @@ export async function requireMcpAuth(event: H3Event): Promise<User> {
 }
 
 /** 404 when authentication is off: every MCP request is then accepted without a token, so there is nothing to sign in to. */
-export function requireMcpOAuthEnabled(event: H3Event): void {
-  if (!isAuthEnabled(event)) {
+export function requireMcpOAuthEnabled(): void {
+  if (!isAuthEnabled()) {
     throw apiError({
       statusCode: 404,
       message: 'Authentication is off on this instance; the MCP server needs no token',

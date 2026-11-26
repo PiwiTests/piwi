@@ -36,7 +36,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
 
-  const body = await readBody(event);
+  const body = await readBody<Record<string, any>>(event);
 
   if (!body.streamToken) {
     throw apiError({ statusCode: 401, message: 'Missing stream token' });

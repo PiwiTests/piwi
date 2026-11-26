@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { apiError } from './api-error';
 import { buildExport } from '#shared/export/build';
 import { EXPORT_FORMATS, type ExportBundle, type ExportFormat } from '#shared/export/types';
@@ -25,8 +25,8 @@ export function exportSourceUrl(event: H3Event, path: string): string {
   return `${publicBaseUrl(event)}${path}`;
 }
 
-export function exportPiwiVersion(event: H3Event): string | null {
-  return ((useRuntimeConfig(event).public as { appVersion?: string })?.appVersion as string) || null;
+export function exportPiwiVersion(): string | null {
+  return ((useRuntimeConfig().public as { appVersion?: string })?.appVersion as string) || null;
 }
 
 /** Build the file and write it to the response. */
@@ -37,7 +37,7 @@ export async function sendExport(event: H3Event, bundle: ExportBundle, format: E
   });
 
   setResponseHeader(event, 'Content-Type', built.contentType);
-  setResponseHeader(event, 'Content-Length', built.bytes.length);
+  setResponseHeader(event, 'Content-Length', String(built.bytes.length));
   setResponseHeader(event, 'Content-Disposition', `attachment; filename="${sanitizeFilename(built.fileName)}"`);
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');

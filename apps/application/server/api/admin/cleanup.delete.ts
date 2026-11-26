@@ -32,9 +32,9 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   await requireAuth(event);
 
-  const body = await readBody(event);
+  const body = await readBody<{ olderThanDays?: string | number; vacuum?: boolean }>(event);
 
-  const olderThanDays = parseInt(body?.olderThanDays ?? '0', 10);
+  const olderThanDays = parseInt(String(body?.olderThanDays ?? '0'), 10);
 
   if (!olderThanDays || olderThanDays < 1) {
     throw apiError({

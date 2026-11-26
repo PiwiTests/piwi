@@ -7,15 +7,15 @@ import { isAuthEnabled } from '../utils/auth';
 import { CROSS_SITE_REFUSED_WITHOUT_AUTH_MESSAGE, isCrossSiteWrite } from '../utils/cross-site';
 import { configuredSiteUrl } from '../utils/public-base-url';
 
-export default defineEventHandler((event) => {
-  const authEnabled = isAuthEnabled(event);
+export default eventHandler((event) => {
+  const authEnabled = isAuthEnabled();
   const crossSite = isCrossSiteWrite({
     method: event.method,
     secFetchSite: getRequestHeader(event, 'sec-fetch-site'),
     origin: getRequestHeader(event, 'origin'),
     authEnabled,
     host: getRequestHeader(event, 'host'),
-    siteUrl: configuredSiteUrl(event),
+    siteUrl: configuredSiteUrl(),
     allowedHosts: process.env.PIWI_ALLOWED_HOSTS,
   });
   if (!crossSite) return;

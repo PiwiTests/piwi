@@ -131,7 +131,7 @@ describe('the allowed-host middleware', () => {
 
   beforeEach(() => {
     auth.enabled = false;
-    vi.stubGlobal('defineEventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('eventHandler', (handler: unknown) => handler);
     vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: '' } }));
     vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.node.req.headers[name]);
     vi.stubGlobal('setResponseStatus', (event: FakeEvent, status: number) => void (event.status = status));

@@ -1,5 +1,5 @@
 import { apiError } from '../../utils/api-error';
-import { getRequestWebStream } from 'h3';
+import { getRequestWebStream } from 'nitro/h3';
 import { getDatabase } from '../../database';
 import { isAuthEnabled, requireSessionAuth } from '../../utils/auth';
 import { readStreamWithin } from '../../utils/body-limit';
@@ -27,7 +27,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const user = await requireSessionAuth(event);
-  if (!isAuthEnabled(event)) {
+  if (!isAuthEnabled()) {
     throw apiError({ statusCode: 400, message: 'Profile pictures need authentication turned on' });
   }
   const bytes = await readStreamWithin(getRequestWebStream(event), PROFILE_PICTURE_MAX_BYTES);

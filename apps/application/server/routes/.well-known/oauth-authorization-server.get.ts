@@ -14,7 +14,7 @@ defineRouteMeta({
 });
 
 export default eventHandler((event) => {
-  requireMcpOAuthEnabled(event);
+  requireMcpOAuthEnabled();
   return authorizationServerMetadata(publicBaseUrl(event), {
     clientMetadataDocuments: clientMetadataDocumentsEnabled(),
   });

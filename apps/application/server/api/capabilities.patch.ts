@@ -40,7 +40,7 @@ export default eventHandler(async (event) => {
   const needsSignIn = Object.entries(validation.data.decisions)
     .filter(([id, value]) => value === 'enabled' && CAPABILITY_BY_ID[id as CapabilityId].needsSignIn)
     .map(([id]) => id);
-  if (needsSignIn.length && !isAuthEnabled(event)) {
+  if (needsSignIn.length && !isAuthEnabled()) {
     throw apiError({
       statusCode: 409,
       message: `Turn sign-in on (PIWI_AUTH_ENABLED) before turning on: ${needsSignIn.join(', ')}`,

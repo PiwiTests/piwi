@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { scryptSync } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import type { H3Event } from 'h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import { testEvent } from './h3-event';
 
 /**
  * A password is checked only against a stored hash within the cost Piwi writes
@@ -39,10 +39,7 @@ async function loadAuth() {
   return import('../../server/utils/auth');
 }
 
-const event = {
-  context: {},
-  node: { req: { headers: {}, socket: { remoteAddress: '192.0.2.20' } }, res: { setHeader: () => {} } },
-} as unknown as H3Event;
+const event = testEvent({ ip: '192.0.2.20' });
 
 const SALT = 'c3'.repeat(16);
 

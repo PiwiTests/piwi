@@ -25,7 +25,7 @@
 import { presentsAssistantTurnToken } from '../utils/assistant/turn-token';
 import { isOpenDesktopRoute, presentsDesktopPicksToken, presentsDesktopToken } from '../utils/desktop-access';
 
-export default defineEventHandler((event) => {
+export default eventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
   if (!token) return; // not the desktop build — no-op
 

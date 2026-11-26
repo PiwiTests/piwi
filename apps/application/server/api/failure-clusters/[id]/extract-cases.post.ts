@@ -17,7 +17,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event);
+  const body = await readBody<{ testCaseIds?: number[]; triageNote?: unknown }>(event);
   const testCaseIds: number[] | undefined = body?.testCaseIds;
   if (!testCaseIds || !Array.isArray(testCaseIds) || testCaseIds.length === 0) {
     throw apiError({ statusCode: 400, message: 'testCaseIds must be a non-empty array' });

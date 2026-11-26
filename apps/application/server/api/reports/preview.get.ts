@@ -76,13 +76,13 @@ export default eventHandler(async (event) => {
     locale: request.scope.locale,
     timeZone: request.scope.timeZone,
     baseUrl: exportSourceUrl(event, ''),
-    piwiVersion: exportPiwiVersion(event),
+    piwiVersion: exportPiwiVersion(),
   });
   if (request.format === 'json') return bundle;
 
   const built = await buildReport(bundle, request.format);
   setResponseHeader(event, 'Content-Type', built.contentType);
-  setResponseHeader(event, 'Content-Length', built.bytes.length);
+  setResponseHeader(event, 'Content-Length', String(built.bytes.length));
   setResponseHeader(event, 'Content-Disposition', `attachment; filename="${sanitizeFilename(built.fileName)}"`);
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');

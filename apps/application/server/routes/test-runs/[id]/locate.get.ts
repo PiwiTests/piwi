@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import { isVisibleRun } from '#shared/run-eligibility';
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
@@ -40,7 +40,7 @@ export default eventHandler(async (event) => {
     return notFoundPage(event, 'This link is missing the run, spec file or test title it should point at.', null);
   }
 
-  if (isAuthEnabled(event) && !(await getCurrentUser(event))) {
+  if (isAuthEnabled() && !(await getCurrentUser(event))) {
     const url = getRequestURL(event);
     return sendRedirect(event, `/login?redirect=${encodeURIComponent(url.pathname + url.search)}`);
   }
@@ -50,7 +50,7 @@ export default eventHandler(async (event) => {
     .select({ projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
-  const user = isAuthEnabled(event) ? await getCurrentUser(event) : null;
+  const user = isAuthEnabled() ? await getCurrentUser(event) : null;
   if (!run || !isVisibleRun(run, user?.id ?? null) || !(await canAccessProject(db, user, run.projectId))) {
     return notFoundPage(event, `Run #${runId} does not exist, or it was deleted.`, null);
   }

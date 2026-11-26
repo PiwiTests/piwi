@@ -47,7 +47,7 @@ const MAX_FILES_PER_CHECK = 500;
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
-  const body = await readBody(event);
+  const body = await readBody<{ projectName?: unknown; files?: unknown }>(event);
 
   const projectName = typeof body?.projectName === 'string' ? body.projectName.trim() : '';
   if (!projectName) throw apiError({ statusCode: 400, message: 'Missing required field: projectName' });

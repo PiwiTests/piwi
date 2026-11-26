@@ -15,7 +15,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  requireMcpOAuthEnabled(event);
+  requireMcpOAuthEnabled();
   // An IPv6 client counts by its /64, which one host holds whole.
   const rateKey = `mcp-oauth:authorize:${clientNetwork(rateLimitClientIp(event))}`;
   const { limit, windowMs } = MCP_OAUTH_RATE_LIMITS.authorize;

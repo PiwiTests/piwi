@@ -35,7 +35,7 @@ export default eventHandler(async (event) => {
   const bundle = await collectClusterBundle(db, id, {
     maxCases,
     sourceUrl: exportSourceUrl(event, `/failure-clusters/${id}`),
-    piwiVersion: exportPiwiVersion(event),
+    piwiVersion: exportPiwiVersion(),
   });
   if (!bundle) {
     throw apiError({ statusCode: 404, message: 'Failure cluster not found' });

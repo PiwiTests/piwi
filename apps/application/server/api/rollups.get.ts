@@ -88,5 +88,5 @@ export default eventHandler(async (event) => {
       }
     },
   });
-  return sendStream(event, stream);
+  return stream;
 });

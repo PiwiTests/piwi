@@ -16,7 +16,7 @@ import {
   requestDesktopOpen,
 } from '../utils/desktop-handoff';
 
-export default defineEventHandler((event) => {
+export default eventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
   if (!token) return;
 

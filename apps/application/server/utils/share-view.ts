@@ -7,7 +7,7 @@
  * access, with the dashboard, or with its own expiry or revocation.
  */
 import { eq } from 'drizzle-orm';
-import { readBody, type H3Event } from 'h3';
+import { readBody, type H3Event } from 'nitro/h3';
 import { z } from 'zod';
 import { reportSnapshots, users, type ShareLink } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
@@ -110,7 +110,7 @@ export async function openShareLink(
 /** The headers of a rendered share document: its own opaque origin, like a print export. */
 export function setShareDocumentHeaders(event: H3Event, contentType: string, length: number): void {
   setResponseHeader(event, 'Content-Type', contentType);
-  setResponseHeader(event, 'Content-Length', length);
+  setResponseHeader(event, 'Content-Length', String(length));
   setResponseHeader(event, 'Content-Disposition', 'inline');
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Referrer-Policy', 'no-referrer');

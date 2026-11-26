@@ -49,7 +49,7 @@ export default eventHandler(async (event) => {
   if (problem) throw apiError({ statusCode: 400, message: problem });
 
   // Without auth there is no user row to own a channel — everything is global.
-  const isGlobal = requestedGlobal || !isAuthEnabled(event);
+  const isGlobal = requestedGlobal || !isAuthEnabled();
   const db = await getDatabase();
   const picked = type === 'slack' ? channelCredentialId(config) : null;
   if (picked != null) {

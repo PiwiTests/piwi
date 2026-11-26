@@ -43,8 +43,8 @@ vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('apiError', apiError);
 /** The headers the route set on its answer. */
-const headers: Record<string, string | number> = {};
-vi.stubGlobal('setResponseHeader', (_event: FakeEvent, name: string, value: string | number) => {
+const headers: Record<string, string> = {};
+vi.stubGlobal('setResponseHeader', (_event: FakeEvent, name: string, value: string) => {
   headers[name] = value;
 });
 
@@ -350,7 +350,7 @@ describe('GET options', () => {
     rateLimited = '30';
     const query = { connectionId: String(zephyrId) };
     expect(await refusal(getOptions(at(10, undefined, query)))).toMatchObject({ statusCode: 429 });
-    expect(headers['Retry-After']).toBe(30);
+    expect(headers['Retry-After']).toBe('30');
     const until = connectionPausedUntil(zephyrId, new Date());
     expect(until!.getTime() - Date.now()).toBeGreaterThan(25_000);
     expect(until!.getTime() - Date.now()).toBeLessThanOrEqual(30_000);
@@ -359,7 +359,7 @@ describe('GET options', () => {
   test('a 429 that names no wait pauses the connection for a minute', async () => {
     rateLimited = '';
     await refusal(getOptions(at(10, undefined, { connectionId: String(zephyrId) })));
-    expect(headers['Retry-After']).toBe(60);
+    expect(headers['Retry-After']).toBe('60');
     const until = connectionPausedUntil(zephyrId, new Date());
     expect(until!.getTime() - Date.now()).toBeGreaterThan(55_000);
   });

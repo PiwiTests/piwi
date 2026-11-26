@@ -8,8 +8,8 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler((event) => {
-  const config = useRuntimeConfig(event);
+export default eventHandler(() => {
+  const config = useRuntimeConfig();
 
   return {
     appVersion: config.public.appVersion as string,

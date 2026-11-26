@@ -27,7 +27,7 @@ export default eventHandler(async (event) => {
         db,
         getQuery(event).code,
         new Date(),
-        await targetAbilitiesOf(db, await getRequestAccess(event), isAuthEnabled(event)),
+        await targetAbilitiesOf(db, await getRequestAccess(event), isAuthEnabled()),
       ),
     (found) => !found,
   );

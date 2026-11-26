@@ -109,10 +109,10 @@ the offline export are written once in `shared/` and differ only in the port eac
 
 - **API endpoint**: a file under `server/api/` with its `defineRouteMeta` block and access helper. The checklist:
   [`server/api/AGENTS.md`](server/api/AGENTS.md).
-- **Calling an endpoint from the app**: every call site names its response type, since `$fetch` and `useFetch` carry no
-  typed route map (the `types:extend` hook in `nuxt.config.ts` empties Nitro's `InternalApi`). Write
+- **Calling an endpoint from the app**: every call site names its response type. Nuxt types `$fetch` and `useFetch`
+  from the server routes for a literal path only: a path built at run time (`/api/projects/${id}`) is not typed. Write
   `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or use a
-  type of that file or of the shared handler. A call without one returns `unknown`.
+  type of that file or of the shared handler.
 - **Page**: a Vue file in `app/pages/` built on `<UDashboardPanel>`, added to the nav links of `app/layouts/default.vue`
   when it belongs in the sidebar. A page showing one entity (`[id].vue`) calls
   `showPageLoadError(error.value, '<entity>')` (`app/utils/page-error.ts`) right after fetching it, so a missing or

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { H3Event } from 'h3';
+import type { H3Event } from 'nitro/h3';
 import {
   DESKTOP_CHALLENGE_HEADER,
   DESKTOP_PROOF_HEADER,
@@ -7,12 +7,19 @@ import {
   newDesktopChallenge,
 } from '@piwitests/core/desktop-proof';
 import { answerDesktopChallenge, presentsDesktopToken } from '../../server/utils/desktop-access';
+import { testEvent } from './h3-event';
 
 const TOKEN = 'pd_desktop_token';
 
 /** A request carrying just these headers. */
 function withHeaders(headers: Record<string, string>): H3Event {
-  return { context: {}, node: { req: { headers }, res: {} } } as unknown as H3Event;
+  return testEvent({ headers });
+}
+
+/** A request to `/api/health` on loopback port `port`, and the response headers it gets. */
+function healthRequest(headers: Record<string, string>, port = 3000) {
+  const event = testEvent({ url: '/api/health', headers, node: { req: { headers, socket: { localPort: port } } } });
+  return { event, sent: () => new Map(event.res.headers) };
 }
 
 describe('the desktop access token', () => {
@@ -32,33 +39,20 @@ describe('the desktop access token', () => {
 });
 
 describe("the shell's and Piwi Picker's challenge", () => {
-  /** A request to `/api/health` on loopback port `port`, and the response headers it gets. */
-  function healthRequest(headers: Record<string, string>, port = 3000) {
-    const sent = new Map<string, string>();
-    const event = {
-      context: {},
-      node: {
-        req: { headers, socket: { localPort: port } },
-        res: { setHeader: (name: string, value: string) => sent.set(name.toLowerCase(), value) },
-      },
-    } as unknown as H3Event;
-    return { event, sent };
-  }
-
   it('is answered with the proof of the token, for the port the request reached', async () => {
     const challenge = newDesktopChallenge();
     const { event, sent } = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: challenge }, 4318);
     await answerDesktopChallenge(event, TOKEN);
-    expect(sent.get(DESKTOP_PROOF_HEADER)).toBe(await desktopTokenProof(TOKEN, 4318, challenge));
+    expect(sent().get(DESKTOP_PROOF_HEADER)).toBe(await desktopTokenProof(TOKEN, 4318, challenge));
   });
 
   it('is left unanswered outside the desktop app, and when it is not a challenge', async () => {
     const outside = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: newDesktopChallenge() });
     await answerDesktopChallenge(outside.event, '');
-    expect(outside.sent.size).toBe(0);
+    expect(outside.sent().size).toBe(0);
     const malformed = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' });
     await answerDesktopChallenge(malformed.event, TOKEN);
-    expect(malformed.sent.size).toBe(0);
+    expect(malformed.sent().size).toBe(0);
   });
 });
 
@@ -69,7 +63,6 @@ describe('/api/health in the desktop app', () => {
     vi.doMock('../../server/database', () => ({
       getDatabase: async () => ({ select: () => ({ from: () => ({ limit: async () => [] }) }) }),
     }));
-    const sent = new Map<string, string>();
     const statuses: number[] = [];
     vi.stubGlobal('defineRouteMeta', () => {});
     vi.stubGlobal('eventHandler', (handler: unknown) => handler);
@@ -79,14 +72,8 @@ describe('/api/health in the desktop app', () => {
       const health = (await import('../../server/api/health.get')).default as unknown as (
         e: H3Event,
       ) => Promise<unknown>;
-      const event = {
-        context: {},
-        node: {
-          req: { headers, socket: { localPort: port } },
-          res: { setHeader: (name: string, value: string) => sent.set(name.toLowerCase(), value) },
-        },
-      } as unknown as H3Event;
-      return { body: await health(event), sent, statuses };
+      const { event, sent } = healthRequest(headers, port);
+      return { body: await health(event), sent: sent(), statuses };
     } finally {
       vi.unstubAllEnvs();
       vi.unstubAllGlobals();
