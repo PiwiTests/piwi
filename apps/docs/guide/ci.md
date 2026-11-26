@@ -129,7 +129,7 @@ How the merge works:
 
 Playwright counts a sharded run's tests before it splits them, so a shard left with none passes. From Playwright 1.65,
 a sharded run fails with `No tests found` when its whole selection is empty, as an unsharded one does, unless it passes
-`--pass-with-no-tests`: `piwi run --plan` passes it to every shard.
+`--pass-with-no-tests`, which `piwi run --plan` adds unless its arguments filter tests.
 
 Jobs sharded with `piwi run --shard`, or [balanced by duration](/features/test-selection#balanced-playwright-shards), merge the same way.
 
