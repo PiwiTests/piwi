@@ -55,7 +55,14 @@ beforeEach(async () => {
     { id: 999, path: '/nowhere' },
   ];
   answer = {
-    projects: [{ id: 7, name: 'Checkout' }, { id: 0, name: 'zero' }, { id: 8 }, { id: 9, name: 'Admin' }, 'nonsense'],
+    projects: [
+      { id: 7, name: 'Checkout' },
+      { id: 0, name: 'zero' },
+      { id: 8 },
+      { id: 9, name: 'Admin' },
+      { id: 7, name: 'Checkout again' },
+      'nonsense',
+    ],
   };
   refusal = null;
   server = http.createServer((req, res) => {
@@ -82,7 +89,14 @@ beforeEach(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   instanceUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  void useKeptKey(instanceUrl, KEY, new Map([[7, folders[0]!]]));
+  void useKeptKey(
+    instanceUrl,
+    KEY,
+    new Map([
+      [7, folders[0]!],
+      [11, path.join(folders[0]!, '.')],
+    ]),
+  );
   await until(() => runTargetConnection().compares === true);
 });
 
@@ -94,7 +108,7 @@ afterEach(async () => {
 });
 
 describe('the team projects a folder can be linked to', () => {
-  test('lists the instance’s projects, and each project of this app with a folder and its team project', async () => {
+  test('lists the instance’s projects once each, and each project of this app with a folder and its team projects', async () => {
     expect(await desktopTeamProjects(db as never)).toEqual({
       status: 'ok',
       instance: instanceUrl,
@@ -103,8 +117,8 @@ describe('the team projects a folder can be linked to', () => {
         { id: 9, name: 'Admin' },
       ],
       folders: [
-        { projectId: admin, projectName: 'Back office', folder: folders[1], teamProjectId: null },
-        { projectId: checkout, projectName: 'checkout', folder: folders[0], teamProjectId: 7 },
+        { projectId: admin, projectName: 'Back office', folder: folders[1], teamProjectId: null, teamProjectIds: [] },
+        { projectId: checkout, projectName: 'checkout', folder: folders[0], teamProjectId: 7, teamProjectIds: [7, 11] },
       ],
     });
   });

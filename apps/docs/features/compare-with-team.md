@@ -27,7 +27,8 @@ On a failing execution, the situation block gets a **Team CI** line:
 
 The test's own page shows the same strips in a **Team CI** card, without the conclusion. Neither shows while the app
 is connected to no team instance. Connected, a project whose folder is linked to no team project says so, with a link
-to **Settings → Team instance**, where you pick it.
+to **Settings → Team instance**, where you pick it; a project with no folder on this machine says to link one first,
+under **Project → Settings → Local folder**.
 
 The results are the team's CI runs. Your teammates' runs show apart and never count in the conclusion: their machines
 are not the reference. A run someone asked for with [Run on my machine](./run-on-my-machine) is theirs alone and never
@@ -72,7 +73,8 @@ check, never the verdict: the side panel says which run it compared with, and op
   comparison works either way.
 - **Link each project's folder to its team project**: on the same page, **Projects and team projects** lists the
   projects of the app that have a folder on this machine; pick the team project of each. The comparison reads the CI
-  of the team project the folder is linked to. A Run on my machine request links the folder of its project too.
+  of the team project the folder is linked to. A Run on my machine request links the folder of its project too. A team
+  project has one folder: picking it for another project moves its link there.
 - A connection made before the comparison existed cannot compare: the page says so, and connecting again replaces it.
 
 It is on for every project. An administrator declines it for the instance on **Settings → Capabilities**, and a

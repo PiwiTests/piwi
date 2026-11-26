@@ -4,7 +4,7 @@
  * folder through the shell, which keeps the links; this server only reads them.
  */
 import { inArray } from 'drizzle-orm';
-import { teamProjectOfFolder, teamProjects, type TeamProject } from '@piwitests/editor/run-target';
+import { teamProjectsOfFolder, teamProjects, type TeamProject } from '@piwitests/editor/run-target';
 import { projects } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { desktopLinkedFolders } from './desktop-links';
@@ -14,8 +14,10 @@ export interface DesktopProjectFolder {
   projectId: number;
   projectName: string;
   folder: string;
-  /** The team project the folder is linked to; null while it is linked to none. */
+  /** The team project the folder is linked to, the lowest when several are; null while it is linked to none. */
   teamProjectId: number | null;
+  /** Every team project the folder is linked to, lowest first: requests may have linked it to several. */
+  teamProjectIds: number[];
 }
 
 export type DesktopTeamProjects =
@@ -44,11 +46,13 @@ export async function desktopTeamProjects(db: DrizzleDB): Promise<DesktopTeamPro
   for (const link of links) {
     const projectName = names.get(link.id);
     if (projectName === undefined) continue;
+    const teamProjectIds = await teamProjectsOfFolder(link.path);
     folders.push({
       projectId: link.id,
       projectName,
       folder: link.path,
-      teamProjectId: await teamProjectOfFolder(link.path),
+      teamProjectId: teamProjectIds[0] ?? null,
+      teamProjectIds,
     });
   }
   folders.sort((a, b) => a.projectName.localeCompare(b.projectName) || a.projectId - b.projectId);

@@ -565,11 +565,17 @@ async function realFolder(folder: string): Promise<string> {
  * several are. Null without a connected instance or such a link.
  */
 export async function teamProjectOfFolder(folder: string): Promise<number | null> {
-  if (state.instance === null) return null;
+  const ids = await teamProjectsOfFolder(folder);
+  return ids.length ? ids[0]! : null;
+}
+
+/** Every project of the connected instance the shell links `folder` to, compared by real path, lowest id first. */
+export async function teamProjectsOfFolder(folder: string): Promise<number[]> {
+  if (state.instance === null) return [];
   const own = await realFolder(folder);
   const ids: number[] = [];
   for (const [id, linked] of linksHere()) if ((await realFolder(linked)) === own) ids.push(id);
-  return ids.length ? Math.min(...ids) : null;
+  return ids.sort((a, b) => a - b);
 }
 
 /**
@@ -640,11 +646,13 @@ export async function teamProjects(): Promise<
   try {
     const answer = (await host.projects()) as { projects?: unknown } | null;
     const listed = Array.isArray(answer?.projects) ? answer.projects.slice(0, TEAM_PROJECTS_MAX) : [];
+    const seen = new Set<number>();
     const projects = listed.flatMap((entry: unknown) => {
       const { id, name } = (entry ?? {}) as { id?: unknown; name?: unknown };
-      return Number.isSafeInteger(id) && (id as number) > 0 && typeof name === 'string' && name.trim() !== ''
-        ? [{ id: id as number, name: name.slice(0, TEAM_PROJECT_NAME_MAX) }]
-        : [];
+      if (!Number.isSafeInteger(id) || (id as number) < 1 || typeof name !== 'string' || name.trim() === '') return [];
+      if (seen.has(id as number)) return [];
+      seen.add(id as number);
+      return [{ id: id as number, name: name.slice(0, TEAM_PROJECT_NAME_MAX) }];
     });
     return { ok: true, instance, projects };
   } catch (error) {

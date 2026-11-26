@@ -140,7 +140,7 @@ const passFacts = computed(() => {
     <p v-else class="text-xs text-muted" data-testid="team-ci-problem">
       {{ problem }}
       <NuxtLink v-if="needsLink" to="/settings/team-instance" :class="SENTENCE_LINK_CLASS"
-        >Link it on Settings → Team instance</NuxtLink
+        >Link it on Settings → Team instance.</NuxtLink
       >
     </p>
 

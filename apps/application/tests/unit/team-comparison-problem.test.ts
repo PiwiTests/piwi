@@ -21,10 +21,11 @@ describe('teamComparisonProblem', () => {
   test('says when the project’s folder still needs linking to a team project, and links the page that does it', () => {
     expect(teamComparisonProblem(unavailable('no-team-project'))).toMatch(/linked to no project of the team instance/);
     expect(teamComparisonProblem(unavailable('no-folder'))).toMatch(/no folder on this machine/);
-    for (const problem of ['no-folder', 'no-team-project'] as const) {
+    for (const problem of ['no-folder', 'no-team-project'] as const)
       expect(teamComparisonShown(unavailable(problem))).toBe(true);
-      expect(teamComparisonNeedsLink(unavailable(problem))).toBe(true);
-    }
+    expect(teamComparisonNeedsLink(unavailable('no-team-project'))).toBe(true);
+    // A project with no folder is linked on its own settings, which the sentence names: no link to Team instance.
+    expect(teamComparisonNeedsLink(unavailable('no-folder'))).toBe(false);
     expect(teamComparisonNeedsLink(unavailable('reconnect'))).toBe(false);
   });
 

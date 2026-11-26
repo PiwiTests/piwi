@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Run requests'],
     summary: 'The projects a connected app may link a folder to',
     description:
-      'The projects the owner of a connected desktop app can read, each `{ id, name }` (its label, else its name), sorted by name: the app offers them to link a folder of its machine to, so it can compare a test that fails there with that project’s CI (Compare with team instance). Authenticated with the key of a connected desktop app that holds `project:read`; refused (403) when the key lacks it (`RUN_TARGET_KEY_CANNOT_COMPARE`).',
+      'The projects the owner of a connected desktop app can read, each `{ id, name }` (its label, else its name), sorted by name: the app offers them to link a folder of its machine to, which both Compare with team instance and Run on my machine read. Each comparison is still refused where the instance or the project declines Compare with team instance. Authenticated with the key of a connected desktop app that holds `project:read`; refused (403) when the key lacks it (`RUN_TARGET_KEY_CANNOT_COMPARE`).',
     'x-required-permission': 'project:read',
     security: [{ bearerAuth: [] }],
     responses: {

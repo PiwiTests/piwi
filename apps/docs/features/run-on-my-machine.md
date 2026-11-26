@@ -131,6 +131,6 @@ does, so you can show a teammate what happened on your machine. It appears in th
 
 ## Related
 
-- [Desktop app](./desktop): the app that takes requests, and its Settings page
+- [Desktop app](./desktop): the app that takes requests
 - [Desktop app runs](./desktop-runs): the runs the desktop app starts and how you follow them
 - [Share links](./share-links): showing one execution to someone without an account

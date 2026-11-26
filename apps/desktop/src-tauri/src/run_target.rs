@@ -970,14 +970,39 @@ pub async fn desktop_link_team_project(
     if !Path::new(&folder).is_dir() {
         return Err("this project's folder is no longer on this machine".into());
     }
-    let mut links = links_of(&app, &instance);
-    links.insert(team_project_id, folder.clone());
+    let links = linked_to_one_team_project(links_of(&app, &instance), &team_project_id, &folder)?;
     write_links(&app, &instance, links)?;
     let handed = app.clone();
     tauri::async_runtime::spawn_blocking(move || hand_links(&handed, &instance))
         .await
         .map_err(|e| e.to_string())??;
     Ok(folder)
+}
+
+/// The most folders the server takes for an instance's projects (`linksOf` in the editor service).
+const TEAM_LINKS_MAX: usize = 200;
+/// The largest project id the server reads (`Number.MAX_SAFE_INTEGER`).
+const TEAM_PROJECT_ID_MAX: u64 = 9_007_199_254_740_991;
+
+/// `links` with `folder` linked to team project `team_project_id` alone: a folder is one team project's, so the
+/// other projects linked to it, compared by real path, lose it. Refuses an id the server would not read, and a link
+/// past the number of folders the server takes.
+fn linked_to_one_team_project(
+    mut links: HashMap<String, String>,
+    team_project_id: &str,
+    folder: &str,
+) -> Result<HashMap<String, String>, String> {
+    let id = team_project_id.parse::<u64>().ok().filter(|id| (1..=TEAM_PROJECT_ID_MAX).contains(id));
+    let Some(id) = id else {
+        return Err("invalid project id".into());
+    };
+    let own = crate::runner::real_path(Path::new(folder));
+    links.retain(|_, linked| crate::runner::real_path(Path::new(linked.as_str())) != own);
+    links.insert(id.to_string(), folder.to_string());
+    if links.len() > TEAM_LINKS_MAX {
+        return Err(format!("at most {TEAM_LINKS_MAX} folders can be linked to a team instance's projects"));
+    }
+    Ok(links)
 }
 
 /// What the server answers the shell for a request after **Run**.
@@ -1723,6 +1748,32 @@ mod tests {
         assert_eq!(team_project_in(&links, &admin), Some(2));
         assert_eq!(team_project_in(&links, &root.0.join("blog")), None);
         assert_eq!(team_project_in(&HashMap::new(), &shop), None);
+    }
+
+    #[test]
+    fn a_folder_linked_to_a_team_project_is_that_project_s_alone() {
+        let root = TempRoot::new("team-link");
+        let shop = root.0.join("shop");
+        let admin = root.0.join("admin");
+        std::fs::create_dir_all(&shop).unwrap();
+        std::fs::create_dir_all(&admin).unwrap();
+        let path = |p: &Path| p.to_string_lossy().to_string();
+        let links = HashMap::from([
+            ("7".to_string(), path(&shop)),
+            ("4".to_string(), path(&shop.join("."))),
+            ("2".to_string(), path(&admin)),
+        ]);
+        let linked = linked_to_one_team_project(links.clone(), "9", &path(&shop)).unwrap();
+        assert_eq!(linked.len(), 2);
+        assert_eq!(team_project_in(&linked, &shop), Some(9));
+        assert_eq!(team_project_in(&linked, &admin), Some(2));
+        for id in ["0", "00", "9007199254740992", "18446744073709551616", "x"] {
+            assert!(linked_to_one_team_project(links.clone(), id, &path(&shop)).is_err(), "{id}");
+        }
+        let full: HashMap<String, String> =
+            (1..=TEAM_LINKS_MAX).map(|id| (id.to_string(), path(&root.0.join(id.to_string())))).collect();
+        assert!(linked_to_one_team_project(full.clone(), "1", &path(&shop)).is_ok());
+        assert!(linked_to_one_team_project(full, "999", &path(&shop)).is_err());
     }
 
     #[test]

@@ -551,7 +551,7 @@ The files of `app/pages/`:
 - `/settings/*`: the settings pages, from `SETTINGS_PAGES`. Its Setup section holds `/settings/connect` (the connect
   wizard), `/settings/capabilities` (the optional capabilities), `/settings/mcp` (the MCP server and its tools),
   `/settings/api` (the in-app API reference) and `/settings/companion-tools`; `/settings/desktop` is the desktop
-  build's own wiring. `/setup`, `/mcp` and `/docs` redirect to them (`pages:extend` in `nuxt.config.ts`).
+  build's own wiring, and `/settings/team-instance` its connection to a team instance. `/setup`, `/mcp` and `/docs` redirect to them (`pages:extend` in `nuxt.config.ts`).
 - `/extension/connect` and `/oauth/consent`: where a signed-in user answers a connection request.
 - `/login`, `/forgot-password`, `/reset-password`: public pages with no layout.
 

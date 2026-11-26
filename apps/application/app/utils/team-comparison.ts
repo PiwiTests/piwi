@@ -13,7 +13,7 @@ export function teamComparisonProblem(comparison: DesktopTeamComparison | null):
     case 'not-connected':
       return null;
     case 'no-folder':
-      return 'This project has no folder on this machine: link it on the project’s page, then pick its team project.';
+      return 'This project has no folder on this machine: link it under Project → Settings → Local folder, then pick its team project on Settings → Team instance.';
     case 'no-team-project':
       return 'This project’s folder is linked to no project of the team instance.';
     case 'reconnect':
@@ -36,8 +36,5 @@ export function teamComparisonShown(comparison: DesktopTeamComparison | null): b
 
 /** Whether the app is connected and the project's folder still needs linking to a team project, on Settings → Team instance. */
 export function teamComparisonNeedsLink(comparison: DesktopTeamComparison | null): boolean {
-  return (
-    comparison?.status === 'unavailable' &&
-    (comparison.problem === 'no-folder' || comparison.problem === 'no-team-project')
-  );
+  return comparison?.status === 'unavailable' && comparison.problem === 'no-team-project';
 }

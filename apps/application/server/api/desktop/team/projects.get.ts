@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Compare with team instance: the team projects a folder can be linked to (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. `{ status: "ok", instance, teamProjects, folders }`: the projects of the connected team instance its owner can read (`{ id, name }`), and each project of this app with a folder on this machine (`{ projectId, projectName, folder, teamProjectId }`, the team project its folder is linked to, else null). `{ status: "unavailable", problem, message, folders }` when the instance does not list its projects (`not-connected`, `reconnect`, `refused`, `not-supported`, `unreachable`).',
+      'Desktop build only — 404 on the server build. `{ status: "ok", instance, teamProjects, folders }`: the projects of the connected team instance its owner can read (`{ id, name }`), and each project of this app with a folder on this machine (`{ projectId, projectName, folder, teamProjectId, teamProjectIds }`: the team project its folder is linked to, else null, and every one when requests linked it to several). `{ status: "unavailable", problem, message, folders }` when the instance does not list its projects (`not-connected`, `reconnect`, `refused`, `not-supported`, `unreachable`).',
     'x-required-permission': 'settings:manage',
   },
 });

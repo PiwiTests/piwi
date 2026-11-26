@@ -17,28 +17,43 @@ const { data, status, refresh } = useFetch<DesktopTeamProjects>('/api/desktop/te
   lazy: true,
   immediate: false,
 });
-// The links change as a request links a folder, an Unlink, or a connection to another instance.
+// The links change as a request links a folder, an Unlink, or a connection to another instance; the projects list
+// as the connection comes online.
 watch(
-  () => [connected.value, connection.value.instance, connection.value.linkedProjectIds.join(',')],
+  () => [
+    connected.value,
+    connection.value.state,
+    connection.value.instance,
+    connection.value.linkedProjectIds.join(','),
+  ],
   () => {
     if (connected.value) void refresh();
   },
   { immediate: true },
 );
 
-const items = computed(() =>
-  data.value?.status === 'ok'
-    ? data.value.teamProjects.map((project) => ({ label: project.name, value: project.id }))
-    : [],
-);
-const teamName = (id: number) =>
-  items.value.find((item) => item.value === id)?.label ?? connection.value.projectNames[id] ?? `Project ${id}`;
+const listedName = (id: number) =>
+  data.value?.status === 'ok' ? data.value.teamProjects.find((project) => project.id === id)?.name : undefined;
+const teamName = (id: number) => listedName(id) ?? connection.value.projectNames[id] ?? `Project ${id}`;
+
+/** The team projects to pick from: the listed ones, and a linked one the list leaves out, so it still shows. */
+const items = computed(() => {
+  if (data.value?.status !== 'ok') return [];
+  const listed = data.value.teamProjects.map((project) => ({ label: project.name, value: project.id }));
+  const known = new Set(listed.map((item) => item.value));
+  const linked = data.value.folders.flatMap((folder) =>
+    folder.teamProjectId !== null && !known.has(folder.teamProjectId)
+      ? [{ label: teamName(folder.teamProjectId), value: folder.teamProjectId }]
+      : [],
+  );
+  return [...listed, ...linked];
+});
 
 /** The folders a request linked that are no project's folder of this app, by the team project they are linked to. */
 const otherFolders = computed(() => {
-  const own = new Set((data.value?.folders ?? []).map((folder) => folder.folder));
+  const own = new Set((data.value?.folders ?? []).flatMap((folder) => folder.teamProjectIds));
   return Object.entries(teamFolders.value)
-    .filter(([, folder]) => !own.has(folder))
+    .filter(([teamProjectId]) => !own.has(Number(teamProjectId)))
     .map(([teamProjectId, folder]) => ({ teamProjectId: Number(teamProjectId), folder }))
     .sort((a, b) => teamName(a.teamProjectId).localeCompare(teamName(b.teamProjectId)));
 });
@@ -52,11 +67,18 @@ async function change(row: string, action: () => Promise<unknown>) {
   try {
     await action();
   } catch (error) {
-    toast.add({ title: 'The folder was not linked', description: String(error), color: 'error' });
+    toast.add({ title: 'The link was not changed', description: errorMessage(error), color: 'error' });
   } finally {
     await Promise.all([refresh(), loadFolders()]);
     busy.value = null;
   }
+}
+
+/** Unlink every team project a project's folder is linked to: requests may have linked it to several. */
+function unlinkAll(projectId: number, teamProjectIds: number[]) {
+  void change(`project-${projectId}`, async () => {
+    for (const id of teamProjectIds) await unlink(String(id));
+  });
 }
 
 function link(projectId: number, teamProjectId: number) {
@@ -94,6 +116,7 @@ const problem = computed(() => {
       project's CI. Run on my machine runs that project's requests in the same folder.
     </template>
     <LoadingState v-if="!data && (status === 'idle' || status === 'pending')" />
+    <ErrorState v-else-if="!data && status === 'error'" text="The projects linked to the team instance did not load." />
     <div v-else-if="data" class="space-y-3">
       <p v-if="problem" class="text-xs text-muted">{{ problem }}</p>
       <p v-if="!data.folders.length" class="text-sm text-highlighted leading-relaxed">
@@ -132,7 +155,7 @@ const problem = computed(() => {
               size="xs"
               icon="i-lucide-unlink"
               :disabled="busy !== null"
-              @click="change(`project-${folder.projectId}`, () => unlink(String(folder.teamProjectId)))"
+              @click="unlinkAll(folder.projectId, folder.teamProjectIds)"
               >Unlink</UButton
             >
           </div>
