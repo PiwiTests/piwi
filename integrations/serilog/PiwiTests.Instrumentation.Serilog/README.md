@@ -1,6 +1,6 @@
 # PiwiTests.Instrumentation.Serilog
 
-A [Serilog](https://serilog.net) sink for [Piwi Dashboard](https://piwitests.dev). `WriteTo.PiwiTestLogs()` feeds Warning, Error and Fatal events into the per-request capture that [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore) sends back to your Playwright tests on the `X-Piwi-Logs` response header.
+A [Serilog](https://serilog.net) sink for [Piwi](https://piwitests.dev). `WriteTo.PiwiTestLogs()` feeds Warning, Error and Fatal events into the per-request capture that [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore) sends back to your Playwright tests on the `X-Piwi-Logs` response header.
 
 Use it when your app logs through Serilog. With Serilog's default `writeToProviders: false`, Microsoft.Extensions.Logging providers are never called, so the provider `AddPiwiTestLogs()` registers captures nothing on its own.
 

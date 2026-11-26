@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Launcher for the Piwi Dashboard server. Resolves the bundled Nitro node-server
+// Launcher for the Piwi server. Resolves the bundled Nitro node-server
 // output relative to this package (so hoisted native deps resolve) and imports it.
 // The working directory is left untouched — the server creates its `.data/` (SQLite
 // database + file storage) relative to wherever you run this command.
@@ -26,7 +26,7 @@ if (!existsSync(entry)) {
 if (!process.env.HOST && !process.env.NITRO_HOST) process.env.HOST = '127.0.0.1'
 const host = process.env.NITRO_HOST || process.env.HOST
 const port = process.env.PORT || process.env.NITRO_PORT || '3000'
-console.log(`Starting Piwi Dashboard on http://${host === '127.0.0.1' ? 'localhost' : host}:${port}`)
+console.log(`Starting Piwi on http://${host === '127.0.0.1' ? 'localhost' : host}:${port}`)
 console.log(`Data (SQLite database + file storage) will be stored in ${resolve(process.cwd(), '.data')}`)
 
 // import() takes a URL, not a path: a Windows path (C:\...) reads as a `c:` scheme.

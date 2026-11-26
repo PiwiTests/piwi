@@ -1,7 +1,7 @@
 {
   "name": "@piwitests/instrumentation-nitro",
   "version": "0.78.0",
-  "description": "Nitro/Nuxt server plugin for Piwi Dashboard: backend logs (X-Piwi-Logs), server spans, probes, the route manifest and per-test server coverage",
+  "description": "Nitro/Nuxt server plugin for Piwi: backend logs (X-Piwi-Logs), server spans, probes, the route manifest and per-test server coverage",
   "homepage": "https://piwitests.dev",
   "repository": {
     "type": "git",

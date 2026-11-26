@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: "Piwi Dashboard is a self-hosted server plus a Playwright reporter that keeps every test run. Run the dashboard, connect your suite with one command, and open your first run in three steps."
+description: "Piwi is a self-hosted server plus a Playwright reporter that keeps every test run. Run the dashboard, connect your suite with one command, and open your first run in three steps."
 lang: en-US
 ---
 

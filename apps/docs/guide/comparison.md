@@ -7,7 +7,7 @@ lang: en-US
 
 # Why Piwi?
 
-Piwi Dashboard gives your Playwright results a permanent, self-hosted home — with live streaming, failure clustering, flaky-test analytics, and optional AI diagnosis on top. This page explains how it relates to tools you may already use, and answers the questions we hear most.
+Piwi gives your Playwright results a permanent, self-hosted home — with live streaming, failure clustering, flaky-test analytics, and optional AI diagnosis on top. This page explains how it relates to tools you may already use, and answers the questions we hear most.
 
 ## The landscape
 
@@ -89,4 +89,4 @@ Modest; see [resource requirements](/operate/deployment#resource-requirements). 
 
 ---
 
-<sub>Product names are used for identification only. Piwi Dashboard is an independent project, not affiliated with, endorsed by, or connected to Microsoft Corporation (Playwright), Qameta Software (Allure), EPAM Systems (ReportPortal), Currents Software, or Fault0. Details about third-party products reflect their publicly documented open-source/free tiers and may change — corrections welcome.</sub>
+<sub>Product names are used for identification only. Piwi is an independent project, not affiliated with, endorsed by, or connected to Microsoft Corporation (Playwright), Qameta Software (Allure), EPAM Systems (ReportPortal), Currents Software, or Fault0. Details about third-party products reflect their publicly documented open-source/free tiers and may change — corrections welcome.</sub>

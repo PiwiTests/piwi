@@ -202,7 +202,7 @@ const output = computed(() => {
   return activeFormat.value.emit(entries.value, {
     image: imageForVersion(serverVersion.value),
     header: [
-      'Piwi Dashboard configuration — built with the offline generator',
+      'Piwi configuration — built with the offline generator',
       `Server ${serverVersion.value} · https://piwitests.dev/configuration`,
     ],
   })

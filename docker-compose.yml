@@ -1,4 +1,4 @@
-# Piwi Dashboard — minimal Docker Compose setup.
+# Piwi — minimal Docker Compose setup.
 #   docker compose up -d        → dashboard at http://localhost:3000
 # SQLite + local file storage by default; everything persists in ./.data.
 # Full options: https://piwitests.dev/operate/deployment

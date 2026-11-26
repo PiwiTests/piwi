@@ -5,7 +5,7 @@ description: Use when the user asks to update a plan, check a plan's progress, a
 
 # Plan Management
 
-This skill covers the end-to-end workflow for managing implementation plans in the Piwi Dashboard project. Plans live
+This skill covers the end-to-end workflow for managing implementation plans in the Piwi project. Plans live
 in `plans/` (local, gitignored). `plans/README.md` describes the layout; `plans/roadmap.md` is the single source of
 truth for internal priorities; the committed `ROADMAP.md` is the public direction, the committed `proposals/` hold
 design records that often ship without touching `plans/`, and the committed `adr/` holds the ones that have shipped.

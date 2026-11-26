@@ -1,6 +1,6 @@
 /**
  * `@piwitests/core` — pure, dependency-free cross-cutting logic shared by the
- * Piwi Dashboard app and the Playwright reporter.
+ * Piwi app and the Playwright reporter.
  *
  * The package ships TypeScript source; each consumer transpiles it (the app via
  * Vite, the reporter by bundling it into `dist/` at build time). It must stay

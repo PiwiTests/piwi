@@ -1,6 +1,6 @@
 # PiwiTests.Instrumentation.Coverage
 
-Per-test server code coverage for [Piwi Dashboard](https://piwitests.dev): which files, functions and lines of your ASP.NET Core backend each Playwright test executed, even when the tests run in parallel against one shared backend. It has no ASP.NET Core dependency; the middleware that serves the coverage comes from [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore), which depends on this package.
+Per-test server code coverage for [Piwi](https://piwitests.dev): which files, functions and lines of your ASP.NET Core backend each Playwright test executed, even when the tests run in parallel against one shared backend. It has no ASP.NET Core dependency; the middleware that serves the coverage comes from [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore), which depends on this package.
 
 **Only in a coverage build.** Nothing is recorded unless the code was compiled with `-p:PiwiCoverage=true`. Without that property, no code calls into the package.
 

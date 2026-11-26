@@ -1,8 +1,8 @@
 # @piwitests/instrumentation-nitro
 
-Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header, and, in a coverage build, the server code each test ran.
+Nitro / Nuxt server plugin for [Piwi](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi reporter via the `X-Piwi-Logs` response header, and, in a coverage build, the server code each test ran.
 
-During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in the Piwi Dashboard, and are included in the AI diagnosis context.
+During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in Piwi, and are included in the AI diagnosis context.
 
 **Active in development and test only, by default.** Capture and probe verification run only when `NODE_ENV` is `development` or `test`, the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
