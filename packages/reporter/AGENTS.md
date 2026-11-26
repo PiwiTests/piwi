@@ -179,10 +179,12 @@ responsibilities.
   its path checked before it is opened, never written through a link nor waited on as a named pipe, read back only
   when this user owns it; on Windows the owner and mode checks are no-ops and only that path check refuses a link
   (`tests/private-file.spec.ts`).
-- **The resource ledger counts the contexts the worker opens, and no other**: it learns of them from the
-  instrumentation's `runAfterCreateBrowserContext` (`internal/capture/resource-ledger.ts`), never from
-  `browser.on('context')`, which also reports those another client opens on a browser the worker shares (`browser.bind`,
-  as a stop shares it with Playwright's tools). `tests/resource-ledger.spec.ts` checks it.
+- **The resource ledger counts the contexts and pages the worker opens, and no other**: a context from the
+  instrumentation's `runAfterCreateBrowserContext`, never `browser.on('context')`, which also reports those another
+  client opens on a browser the worker shares (`browser.bind`, as a stop shares it with Playwright's tools); a page from
+  `context.on('page')` only when a `newPage` call of the worker opened it, it is a popup of a page the ledger counts, or,
+  with no opener, a call of the worker runs, and none while a debugger holds the test at a stop (`onPage`,
+  `internal/capture/resource-ledger.ts`). `tests/resource-ledger.spec.ts` checks both.
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor

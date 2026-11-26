@@ -97,8 +97,13 @@ function fakePlaywright() {
     pages() {
       return this.all.filter((p) => !p.closed);
     }
-    /** A page this context opens on its own, as a popup does. */
-    popup(opener: FakePage) {
+    /** What `context.debugger.pausedDetails()` answers: the call a stop holds, or null. */
+    readonly debugger = { held: null as object | null, pausedDetails: () => this.debugger.held };
+    /**
+     * A page this context opens on its own: a popup of `opener`, or with no opener, as the tab a modifier click opens
+     * and a page another client opens in the context arrive.
+     */
+    popup(opener: FakePage | null) {
       const page = new FakePage(this);
       page._opener = opener;
       this.all.push(page);
@@ -255,6 +260,35 @@ describe('ResourceLedger', () => {
     expect(census.born.find((b) => b.id === 3)).not.toHaveProperty('opener');
   });
 
+  it('counts the pages the worker opens, never one another client opens in its context', async () => {
+    const fake = fakePlaywright();
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    // The tab a modifier click opens has no opener, and arrives while the click runs.
+    await fake.apiCall('locator.click', () => context.popup(null), 'tests/cart.spec.ts', 30);
+    // Another client's page has no opener, and arrives while no call of the worker runs; so does its popup.
+    const elsewhere = context.popup(null);
+    context.popup(elsewhere);
+    // While a debugger holds the test at a stop, no page that arrives is the worker's, its popups included.
+    context.debugger.held = {};
+    await fake.apiCall('locator.click', () => context.popup(page), 'tests/cart.spec.ts', 31);
+    await fake.apiCall('locator.click', () => context.popup(null), 'tests/cart.spec.ts', 32);
+    context.debugger.held = null;
+    await fake.apiCall('locator.click', () => context.popup(page), 'tests/cart.spec.ts', 33);
+
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(census.born.filter((b) => b.kind === 'page').map((b) => [b.id, b.site, b.opener, b.trigger])).toEqual([
+      [3, 'tests/cart.spec.ts:7', undefined, undefined],
+      [4, 'tests/cart.spec.ts:30', undefined, 'locator.click'],
+      [5, 'tests/cart.spec.ts:33', 3, 'locator.click'],
+    ]);
+    expect(census.open.map((o) => o.id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it('marks a page used when it loads something or runs a reported call, never on its own reads', async () => {
     const fake = fakePlaywright();
     const { ledger, running } = ledgerFor(fake);
@@ -401,6 +435,32 @@ describe('ResourceLedger', () => {
     expect(census.open.find((o) => o.id === 3)?.main).toEqual({ cpuMs: 30, heapMb: 1, nodes: 5, listeners: 2 });
     ledger.workerEnded();
     expect(metrics.dispose).toHaveBeenCalled();
+  });
+
+  it('puts the browser types back as it uninstalls, so ledgers installed one after another never stack', async () => {
+    const fake = fakePlaywright();
+    const launch = fake.playwright.chromium.launch;
+    for (let i = 0; i < 3; i++) {
+      const { ledger } = ledgerFor(fake);
+      ledger.install();
+      expect(fake.playwright.chromium.launch).not.toBe(launch);
+      ledger.uninstall();
+      expect(fake.playwright.chromium.launch).toBe(launch);
+    }
+
+    // A ledger uninstalled under another's wrapper leaves that wrapper in place, and its own only forwards the call.
+    const outer = ledgerFor(fake).ledger;
+    const inner = ledgerFor(fake).ledger;
+    outer.install();
+    const outerLaunch = fake.playwright.chromium.launch;
+    inner.install();
+    outer.uninstall();
+    expect(fake.playwright.chromium.launch).not.toBe(outerLaunch);
+    await fake.playwright.chromium.launch();
+    expect((await inner.testEnded(info('t1'))).census.born.map((b) => b.kind)).toEqual(['browser']);
+    expect((await outer.testEnded(info('t1'))).census.born).toEqual([]);
+    inner.uninstall();
+    expect(fake.playwright.chromium.launch).toBe(outerLaunch);
   });
 
   it('appends its shutdown census to the results file, readable by its owner alone, and stops listening', async () => {
@@ -863,12 +923,16 @@ describe('following the calls a test makes', () => {
   });
 });
 
-describe('the contexts the worker opens', () => {
-  /** Another Playwright client, in a process of its own: it opens a context on the browser at an endpoint and holds it. */
+describe('the contexts and pages the worker opens', () => {
+  /**
+   * Another Playwright client, in a process of its own: on the browser at an endpoint, it opens a context of its own, or
+   * a page in the first context it finds there (`page`), and holds it.
+   */
   const OTHER_CLIENT = `
-const [core, endpoint] = process.argv.slice(1);
+const [core, endpoint, what] = process.argv.slice(1);
 require(core).chromium.connect(endpoint).then(async (browser) => {
-  await browser.newContext();
+  if (what === 'page') await browser.contexts()[0].newPage();
+  else await browser.newContext();
   process.stdout.write('opened\\n');
   process.stdin.on('end', () => browser.close().finally(() => process.exit(0)));
   process.stdin.resume();
@@ -878,10 +942,13 @@ require(core).chromium.connect(endpoint).then(async (browser) => {
 });
 `;
 
-  /** Open a context on the browser at `endpoint` from another process; the returned function lets that process go. */
-  async function openElsewhere(endpoint: string): Promise<() => Promise<void>> {
+  /**
+   * Open a context, or a page in the browser's first context, on the browser at `endpoint` from another process; the
+   * returned function lets that process go.
+   */
+  async function openElsewhere(endpoint: string, what: 'context' | 'page' = 'context'): Promise<() => Promise<void>> {
     const core = createRequire(import.meta.url).resolve('playwright-core');
-    const child = childProcess.spawn(process.execPath, ['-e', OTHER_CLIENT, core, endpoint], { stdio: 'pipe' });
+    const child = childProcess.spawn(process.execPath, ['-e', OTHER_CLIENT, core, endpoint, what], { stdio: 'pipe' });
     const exited = new Promise((resolve) => child.once('exit', resolve));
     let errors = '';
     child.stderr.on('data', (chunk: Buffer) => {
@@ -891,7 +958,7 @@ require(core).chromium.connect(endpoint).then(async (browser) => {
       new Promise<boolean>((resolve) => child.stdout.on('data', (chunk: Buffer) => chunk.includes('opened') && resolve(true))),
       exited.then(() => false),
     ]);
-    if (!opened) throw new Error(`the other client opened no context: ${errors}`);
+    if (!opened) throw new Error(`the other client opened no ${what}: ${errors}`);
     return async () => {
       child.stdin.end();
       await exited;
@@ -923,6 +990,60 @@ require(core).chromium.connect(endpoint).then(async (browser) => {
       await browser?.close();
     }
   }, 60_000);
+
+  it('counts the pages the worker opens and their popups, never one another client opens in its context', async () => {
+    const playwright = (chromium as unknown as { _playwright: ConstructorParameters<typeof ResourceLedger>[0] })
+      ._playwright;
+    const ledger = new ResourceLedger(playwright, 3, 'report', null, () => info('t1'));
+    expect(ledger.install()).toBe(true);
+    let browser: Browser | undefined;
+    const letGo: Array<() => Promise<void>> = [];
+    try {
+      browser = await chromium.launch();
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.setContent('<a href="about:blank" target="_blank">Open</a>');
+      await Promise.all([page.waitForEvent('popup'), page.getByText('Open').click()]);
+      const { endpoint } = await browser.bind('piwi-resource-ledger');
+      // Another client opens a page in the worker's context while no call of the worker runs.
+      letGo.push(await openElsewhere(endpoint, 'page'));
+      await expect.poll(() => context.pages().length).toBe(3);
+      // And while the context's debugger holds a call of the worker at a stop.
+      await context.debugger.requestPause();
+      const held = page.getByText('Open').textContent();
+      await expect.poll(() => context.debugger.pausedDetails()).not.toBeNull();
+      letGo.push(await openElsewhere(endpoint, 'page'));
+      await expect.poll(() => context.pages().length).toBe(4);
+      await context.debugger.resume();
+      await held;
+
+      const { census } = await ledger.testEnded(info('t1'));
+      const pages = census.born.filter((birth) => birth.kind === 'page');
+      expect(pages).toEqual([
+        expect.objectContaining({ parent: 2 }),
+        expect.objectContaining({ parent: 2, opener: pages[0]!.id, trigger: 'locator.click' }),
+      ]);
+      expect(pages[0]).not.toHaveProperty('opener');
+      expect(census.open.map((open) => open.id)).toEqual([1, 2, pages[0]!.id, pages[1]!.id]);
+    } finally {
+      for (const release of letGo) await release();
+      ledger.uninstall();
+      await browser?.close();
+    }
+  }, 60_000);
+
+  it('puts the browser types back as it uninstalls', () => {
+    const launch = chromium.launch;
+    const own = Object.prototype.hasOwnProperty.call(chromium, 'launch');
+    const playwright = (chromium as unknown as { _playwright: ConstructorParameters<typeof ResourceLedger>[0] })
+      ._playwright;
+    const ledger = new ResourceLedger(playwright, 3, 'report', null, () => null);
+    expect(ledger.install()).toBe(true);
+    expect(chromium.launch).not.toBe(launch);
+    ledger.uninstall();
+    expect(chromium.launch).toBe(launch);
+    expect(Object.prototype.hasOwnProperty.call(chromium, 'launch')).toBe(own);
+  });
 });
 
 describe('leakFailureMessage', () => {

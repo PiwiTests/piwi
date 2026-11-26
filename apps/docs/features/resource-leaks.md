@@ -124,6 +124,9 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
   its browsers, the runner's current test and fixture, and a few private fields (`_routes`, `_ownerPage`, `_opener`).
   Each is checked before use: without the hooks the ledger stays off, and without the connection a page counts as used
   only when it navigates, loads, runs a script or builds a locator, and no finding names a last use.
+- **Pages the test opened.** A page counts when the test opened it: with `newPage`, as a popup of one of its pages, or,
+  with no opener (the tab a modifier click opens), while one of its calls runs. A page another client opens in its
+  context (a browser shared with `browser.bind`), or one that opens while the test is held at a stop, does not.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
 - A fixture with a `timeout` of its own runs with the slot a worker fixture has: what it leaves open is reported once
   its test's teardown steps show it torn down with the test, or once it opened something in two tests of the same

@@ -773,7 +773,10 @@ export class ResourceLedger {
     if (entry && !entry.closed && entry.closingAt === null) entry.closingAt = this.now();
   }
 
-  /** Stop listening, and put Node's `listen` and `spawn` back; the objects already tracked stay in the ledger. */
+  /**
+   * Stop listening, and put the browser types' methods and Node's `listen` and `spawn` back; the objects already
+   * tracked stay in the ledger.
+   */
   uninstall(): void {
     const remove = this.playwright?._instrumentation?.removeListener;
     if (this.listener && typeof remove === 'function') remove.call(this.playwright._instrumentation, this.listener);
@@ -991,19 +994,27 @@ export class ResourceLedger {
 
   /**
    * Track each browser a browser type launches or connects to, with the line that asked for it, as the call returns:
-   * a browser type has no event for the browsers it opens.
+   * a browser type has no event for the browsers it opens. `uninstall` puts each method back while the ledger's wrapper
+   * is still the one in place; a wrapper left under another one only forwards the call once the ledger is uninstalled.
    */
   private wrapBrowserType(type: BrowserTypeLike): void {
     for (const method of ['launch', 'connect', 'connectOverCDP']) {
       const original = type[method];
       if (typeof original !== 'function') continue;
+      const own = Object.prototype.hasOwnProperty.call(type, method);
       const bound = (original as (...args: unknown[]) => Promise<Browser>).bind(type);
-      type[method] = async (...args: unknown[]): Promise<Browser> => {
+      const wrapped = async (...args: unknown[]): Promise<Browser> => {
         const site = userSite(new Error().stack);
         const browser = await bound(...args);
-        this.guard(() => this.onBrowser(browser, site));
+        if (this.listener) this.guard(() => this.onBrowser(browser, site));
         return browser;
       };
+      type[method] = wrapped;
+      this.restores.push(() => {
+        if (type[method] !== wrapped) return;
+        if (own) type[method] = original;
+        else delete type[method];
+      });
     }
   }
 
@@ -1070,19 +1081,29 @@ export class ResourceLedger {
     for (const page of context.pages()) this.onPage(page, context, { site });
   }
 
-  /** `initial` is set for a page that came with its context (a persistent context's), which is no popup. */
+  /**
+   * Track a page of a context the worker opened, when the worker opened the page. `initial` is set for a page that came
+   * with its context (a persistent context's), which is no popup.
+   */
   private onPage(page: Page, context: BrowserContext, initial?: { site: string | null }): void {
     if (this.byObject.has(page)) return;
-    // A page `newPage` opened arrives while that call is still running; anything
-    // else is a popup, opened by its page through the call that last ran.
+    // A page `newPage` opened arrives while that call is still running. Any other page of the worker's is a popup,
+    // opened through the call that last ran: one with an opener was opened by a page the ledger counts (`opener()`),
+    // one without (the tab a modifier click opens) arrives while a call of the worker runs. Any other page, and every
+    // page that arrives while a debugger holds the test at a stop, is another client's (on a browser the worker
+    // shares, `browser.bind`) or a person's at a headed browser: never the worker's.
     const zone = this.latestPendingCall();
     const viaNewPage = NEW_PAGE_CALL.test(zone?.apiName ?? '');
+    const opener = (page as unknown as { _opener?: object | null })._opener;
+    const openerEntry = opener ? this.byObject.get(opener) : undefined;
+    if (!initial) {
+      const opened = viaNewPage || (opener ? !!openerEntry : zone !== null);
+      if (!opened || this.heldAtStop()) return;
+    }
     const popup = !viaNewPage && !initial;
     const site = viaNewPage ? zoneSite(zone) : initial ? initial.site : zoneSite(this.lastCall);
     const entry = this.track(page, 'page', context, site);
     if (popup) {
-      const opener = (page as unknown as { _opener?: object | null })._opener;
-      const openerEntry = opener ? this.byObject.get(opener) : undefined;
       if (openerEntry) entry.birth.opener = openerEntry.birth.id;
       if (this.lastCall?.apiName) entry.birth.trigger = this.lastCall.apiName;
     }
@@ -1115,6 +1136,20 @@ export class ResourceLedger {
         }
       };
     }
+  }
+
+  /** Whether the debugger of a context the ledger counts holds the test at a stop (`context.debugger`, feature-checked). */
+  private heldAtStop(): boolean {
+    for (const entry of this.openEntries()) {
+      if (entry.birth.kind !== 'context') continue;
+      const debuggerOf = (entry.object as { debugger?: { pausedDetails?: () => unknown } }).debugger;
+      try {
+        if (typeof debuggerOf?.pausedDetails === 'function' && debuggerOf.pausedDetails()) return true;
+      } catch {
+        // A debugger that cannot answer holds nothing.
+      }
+    }
+    return false;
   }
 
   private onClosed(object: object, byPiwi = false): void {
