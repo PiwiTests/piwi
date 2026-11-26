@@ -1,7 +1,8 @@
 /**
  * Compare with team instance, in the desktop app's pages: the sentence that says why the app cannot compare, for the
- * problems a person can act on or should hear of. Nothing shows while the app is connected to no team instance, or
- * the folder is linked to no project of it: the comparison is not set up, which is no problem.
+ * problems a person can act on or should hear of. Nothing shows while the app is connected to no team instance: the
+ * comparison is not set up, which is no problem. Connected, a project whose folder is linked to no team project says
+ * so, with a link to Settings → Team instance (`teamComparisonNeedsLink`).
  */
 import type { DesktopTeamComparison } from '~~/server/utils/desktop-team-comparison';
 
@@ -10,9 +11,11 @@ export function teamComparisonProblem(comparison: DesktopTeamComparison | null):
   if (!comparison || comparison.status === 'ok') return null;
   switch (comparison.problem) {
     case 'not-connected':
-    case 'no-folder':
-    case 'no-team-project':
       return null;
+    case 'no-folder':
+      return 'This project has no folder on this machine: link it on the project’s page, then pick its team project.';
+    case 'no-team-project':
+      return 'This project’s folder is linked to no project of the team instance.';
     case 'reconnect':
       return 'The connection to the team instance was made before the app could compare: connect it again in Settings → Team instance.';
     case 'not-supported':
@@ -29,4 +32,12 @@ export function teamComparisonProblem(comparison: DesktopTeamComparison | null):
 /** Whether a page shows the comparison: it compared, or the app cannot and says why. */
 export function teamComparisonShown(comparison: DesktopTeamComparison | null): boolean {
   return comparison?.status === 'ok' || teamComparisonProblem(comparison) !== null;
+}
+
+/** Whether the app is connected and the project's folder still needs linking to a team project, on Settings → Team instance. */
+export function teamComparisonNeedsLink(comparison: DesktopTeamComparison | null): boolean {
+  return (
+    comparison?.status === 'unavailable' &&
+    (comparison.problem === 'no-folder' || comparison.problem === 'no-team-project')
+  );
 }

@@ -11680,6 +11680,31 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-team-ci-unlinked',
+    description:
+      "A failing execution in the desktop app, connected to a team instance, whose project's folder is linked to no team project: the Team CI line says so and links Settings → Team instance (desktop shell)",
+    mode: 'desktop',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/desktop/team/executions/*/comparison', (route) =>
+        route.fulfill({
+          json: {
+            status: 'unavailable',
+            problem: 'no-team-project',
+            message: 'This folder is linked to no project of the team instance.',
+          },
+        }),
+      );
+      await page.reload();
+      const line = page.locator('[data-shot="team-ci-line"]');
+      await line.getByText('Link it on Settings → Team instance').waitFor({ timeout: 60_000 });
+      await line.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="situation-block"]', pad: 12 });
+    },
+  },
+  {
     name: 'desktop-reproduce-section',
     description:
       "A failure's Reproduce section in the desktop shell, for a linked folder whose Playwright config starts no app (desktop shell)",

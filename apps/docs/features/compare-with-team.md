@@ -26,8 +26,8 @@ On a failing execution, the situation block gets a **Team CI** line:
 - **The environment differences from the closest CI pass**, in a side panel.
 
 The test's own page shows the same strips in a **Team CI** card, without the conclusion. Neither shows while the app
-is connected to no team instance, or the project's folder is linked to no project of it: **Settings → Team instance**
-sets both.
+is connected to no team instance. Connected, a project whose folder is linked to no team project says so, with a link
+to **Settings → Team instance**, where you pick it.
 
 The results are the team's CI runs. Your teammates' runs show apart and never count in the conclusion: their machines
 are not the reference. A run someone asked for with [Run on my machine](./run-on-my-machine) is theirs alone and never

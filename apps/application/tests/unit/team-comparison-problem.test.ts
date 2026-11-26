@@ -1,22 +1,31 @@
 /**
- * Compare with team instance, on the desktop app's pages: nothing shows while the comparison is not set up (no
- * connection, no folder, no team project); a problem a person can act on shows one sentence; a refusal shows the team
- * instance's own message.
+ * Compare with team instance, on the desktop app's pages: nothing shows while the app is connected to no team instance;
+ * connected, a folder that still needs linking to a team project says so, with a link to Settings → Team instance; a
+ * problem a person can act on shows one sentence; a refusal shows the team instance's own message.
  */
 import { describe, expect, test } from 'vitest';
-import { teamComparisonProblem, teamComparisonShown } from '~/utils/team-comparison';
+import { teamComparisonNeedsLink, teamComparisonProblem, teamComparisonShown } from '~/utils/team-comparison';
 import type { DesktopTeamComparison, DesktopTeamComparisonProblem } from '~~/server/utils/desktop-team-comparison';
 
 const unavailable = (problem: DesktopTeamComparisonProblem, message = 'Compare with team instance is off.') =>
   ({ status: 'unavailable', problem, message }) as DesktopTeamComparison;
 
 describe('teamComparisonProblem', () => {
-  test('says nothing while the comparison is not set up', () => {
-    for (const problem of ['not-connected', 'no-folder', 'no-team-project'] as const) {
-      expect(teamComparisonProblem(unavailable(problem))).toBeNull();
-      expect(teamComparisonShown(unavailable(problem))).toBe(false);
-    }
+  test('says nothing while the app is connected to no team instance', () => {
+    expect(teamComparisonProblem(unavailable('not-connected'))).toBeNull();
+    expect(teamComparisonShown(unavailable('not-connected'))).toBe(false);
+    expect(teamComparisonNeedsLink(unavailable('not-connected'))).toBe(false);
     expect(teamComparisonShown(null)).toBe(false);
+  });
+
+  test('says when the project’s folder still needs linking to a team project, and links the page that does it', () => {
+    expect(teamComparisonProblem(unavailable('no-team-project'))).toMatch(/linked to no project of the team instance/);
+    expect(teamComparisonProblem(unavailable('no-folder'))).toMatch(/no folder on this machine/);
+    for (const problem of ['no-folder', 'no-team-project'] as const) {
+      expect(teamComparisonShown(unavailable(problem))).toBe(true);
+      expect(teamComparisonNeedsLink(unavailable(problem))).toBe(true);
+    }
+    expect(teamComparisonNeedsLink(unavailable('reconnect'))).toBe(false);
   });
 
   test('says what a person can act on', () => {

@@ -5,8 +5,8 @@
  * environment the CI ran it in and one for the teammates' shared runs, each with the pass rate of the results it shows,
  * then the links, which open in the browser: the test on the team instance, what the conclusion read there, and the
  * environment differences from the closest CI pass, in a side panel. When the app is connected and cannot compare,
- * one sentence says why (`teamComparisonProblem`); the page shows nothing when it is not connected or the folder is
- * linked to no team project.
+ * one sentence says why (`teamComparisonProblem`), with a link to Settings → Team instance when the folder still needs
+ * linking to a team project; the page shows nothing when the app is not connected.
  */
 import type { DesktopTeamComparison } from '~~/server/utils/desktop-team-comparison';
 import type { TestComparisonResult } from '#shared/test-comparison';
@@ -74,6 +74,7 @@ const conclusionLink = computed(() => {
 const differences = computed(() => (ok.value?.environmentDiff ?? []).filter((entry) => !entry.informational).length);
 
 const problem = computed(() => teamComparisonProblem(props.comparison));
+const needsLink = computed(() => teamComparisonNeedsLink(props.comparison));
 
 const panelOpen = ref(false);
 const pass = computed(() => ok.value?.comparison.closestPass ?? null);
@@ -136,7 +137,12 @@ const passFacts = computed(() => {
         >
       </p>
     </template>
-    <p v-else class="text-xs text-muted">{{ problem }}</p>
+    <p v-else class="text-xs text-muted" data-testid="team-ci-problem">
+      {{ problem }}
+      <NuxtLink v-if="needsLink" to="/settings/team-instance" :class="SENTENCE_LINK_CLASS"
+        >Link it on Settings → Team instance</NuxtLink
+      >
+    </p>
 
     <USlideover
       v-if="withConclusion && pass && ok?.environmentDiff"
