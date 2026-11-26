@@ -16,9 +16,8 @@ const config: KnipConfig = {
   ignoreExportsUsedInFile: true,
   // System commands the scripts run: Windows' `tasklist`, ImageMagick's `import` and `Xvfb` for the JetBrains
   // screenshots, `ffprobe`, which the reporter's live view spec reads a video's length with where it is installed, and
-  // the showcase's `ffmpeg` (its take's capture, its cut's encodes), fontconfig's `fc-match` (the stage's fonts) and
-  // `mkfifo`, with which the reporter's private-file spec makes a named pipe on POSIX systems.
-  ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe', 'ffmpeg', 'fc-match', 'mkfifo'],
+  // the showcase's `ffmpeg` (its take's capture, its cut's encodes) and fontconfig's `fc-match` (the stage's fonts).
+  ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe', 'ffmpeg', 'fc-match'],
   workspaces: {
     '.': {
       // The JetBrains plugin and the showcase are not workspaces: their scripts are read from the root. The showcase's
@@ -35,13 +34,10 @@ const config: KnipConfig = {
         'scripts/*.mjs',
         // The performance suite's report step, run by `reusable-perf.yml`.
         'scripts/perf/*.mjs',
-        'tests/globalSetup.ts',
-        'tests/globalTeardown.ts',
         // The fake Claude Code CLI the server runs in `assistant-claude-code.spec.ts`.
         'tests/fixtures/fake-claude.mjs',
         // The fetch hook `integrations-zephyr-binding.spec.ts` loads into the spawned server with `node --import`.
         'tests/utils/zephyr-fetch-redirect.mjs',
-        'drizzle.config.pg.ts',
         // Dashboard widgets are imported from `#components` by `app/utils/analytics-widgets.ts`.
         'app/components/analytics/*.vue',
         // drizzle-kit reads every table the schema exports.
