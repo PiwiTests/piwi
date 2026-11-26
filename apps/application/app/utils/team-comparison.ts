@@ -14,7 +14,7 @@ export function teamComparisonProblem(comparison: DesktopTeamComparison | null):
     case 'no-team-project':
       return null;
     case 'reconnect':
-      return 'The connection to the team instance was made before the app could compare: connect it again in Settings → Desktop app.';
+      return 'The connection to the team instance was made before the app could compare: connect it again in Settings → Team instance.';
     case 'not-supported':
       return 'The team instance cannot compare yet: it needs a newer Piwi.';
     case 'unreachable':

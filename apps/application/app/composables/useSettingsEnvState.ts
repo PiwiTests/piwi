@@ -49,6 +49,7 @@ export function useSettingsEnvState() {
     credentials: false,
     ai: false,
     desktop: false,
+    'team-instance': false,
     connect: false,
     capabilities: false,
     mcp: false,

@@ -77,7 +77,7 @@ use runner::{
 use repro::desktop_run_repro;
 use run_target::{
     desktop_find_request_folders, desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder,
-    desktop_request_folders, desktop_run_requested_tests, desktop_unlink_request_folder,
+    desktop_link_team_project, desktop_request_folders, desktop_run_requested_tests, desktop_unlink_request_folder,
 };
 use worktree::{
     desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
@@ -3596,6 +3596,7 @@ pub fn run() {
             desktop_find_request_folders,
             desktop_link_request_folder,
             desktop_unlink_request_folder,
+            desktop_link_team_project,
             desktop_run_requested_tests,
             desktop_run_repro,
             desktop_reproduce_here,

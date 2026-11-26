@@ -208,8 +208,9 @@ const instanceAddress = computed(() => {
               />
               <p v-else class="text-sm text-highlighted leading-relaxed">
                 No app of yours takes run requests yet. In Piwi Desktop, open
-                <strong>Settings → Desktop app</strong> and connect it to
-                <code class="text-xs">{{ instanceAddress }}</code> under <strong>Run on my machine</strong>.
+                <strong>Settings → Team instance</strong> and connect it to
+                <code class="text-xs">{{ instanceAddress }}</code
+                >.
                 <DocLink to="features/run-on-my-machine" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
               </p>
             </div>

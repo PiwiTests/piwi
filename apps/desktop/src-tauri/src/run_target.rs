@@ -949,6 +949,37 @@ pub async fn desktop_unlink_request_folder(app: AppHandle, project_id: String) -
         .map_err(|e| e.to_string())?
 }
 
+/// Link the folder of this app's project `local_project_id` to the connected
+/// instance's project `team_project_id` (Compare with team instance), without
+/// a request. The window names both ids alone: the shell reads the folder from
+/// its own links of this app's projects, never from the window.
+#[tauri::command]
+pub async fn desktop_link_team_project(
+    app: AppHandle,
+    team_project_id: String,
+    local_project_id: String,
+) -> Result<String, String> {
+    if !crate::runner::valid_project_id(&team_project_id) || !crate::runner::valid_project_id(&local_project_id) {
+        return Err("invalid project id".into());
+    }
+    let instance = connected_instance(&app).ok_or("no team instance is connected")?;
+    let folder = crate::runner::read_links(&app)
+        .remove(&local_project_id)
+        .map(|link| link.path)
+        .ok_or("this project has no folder linked on this machine")?;
+    if !Path::new(&folder).is_dir() {
+        return Err("this project's folder is no longer on this machine".into());
+    }
+    let mut links = links_of(&app, &instance);
+    links.insert(team_project_id, folder.clone());
+    write_links(&app, &instance, links)?;
+    let handed = app.clone();
+    tauri::async_runtime::spawn_blocking(move || hand_links(&handed, &instance))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(folder)
+}
+
 /// What the server answers the shell for a request after **Run**.
 struct Launch {
     instance: String,

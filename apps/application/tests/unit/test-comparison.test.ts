@@ -43,6 +43,9 @@ const { setInstanceDecisions, setProjectDecisions } = await import('#shared/hand
 const route = (await import('../../server/api/run-targets/projects/[id]/test-comparison.get')).default as unknown as (
   event: FakeEvent,
 ) => Promise<unknown>;
+const projectList = (await import('../../server/api/run-targets/projects/index.get')).default as unknown as (
+  event: FakeEvent,
+) => Promise<{ projects: { id: number; name: string }[] }>;
 const self = (await import('../../server/api/run-targets/self.put')).default as unknown as (
   event: FakeEvent,
 ) => Promise<{ compares: boolean | null }>;
@@ -498,6 +501,16 @@ describe('the route', () => {
     await setProjectDecisions(db as never, shop, { 'team-comparison': null });
     await setInstanceDecisions(db as never, { 'team-comparison': 'declined' });
     await expect(call(plaintext, shop)).rejects.toMatchObject(off);
+  });
+
+  test('lists the projects the key’s owner reads, to link a folder to, and refuses a key that cannot compare', async () => {
+    const listed = await projectList(event(await key(['run:receive', 'project:read']), shop));
+    expect(listed.projects.map((project) => project.id)).toContain(shop);
+    expect(listed.projects.map((project) => project.id)).not.toContain(hidden);
+    await expect(projectList(event(await key(['run:receive']), shop))).rejects.toMatchObject({
+      statusCode: 403,
+      data: { errorCode: 'RUN_TARGET_KEY_CANNOT_COMPARE' },
+    });
   });
 
   test('refuses a query that names no test', async () => {

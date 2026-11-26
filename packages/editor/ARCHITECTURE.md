@@ -563,14 +563,14 @@ nodes are not `runnable`.
 `RunTestsArgs`, read from the tree as it stands (`nodeRuns` in `src/test-tree.ts`). Each node runs by the narrowest
 filter Playwright takes for it, so a run needs no instance and a group is one argument, not its tests':
 
-| Node | Filter |
-| --- | --- |
-| A config | none (`RunTestsArgs.all`): `npx playwright test` |
-| A folder | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax |
-| A spec | its whole path (`^/repo/e2e/tests/cart.spec.ts`) |
-| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
-| A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
-| A project's node | its test's, in that project alone (`--project`) |
+| Node             | Filter                                                                                                                                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A config         | none (`RunTestsArgs.all`): `npx playwright test`                                                                                                                                                                                                                                            |
+| A folder         | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax                                                                                                                                           |
+| A spec           | its whole path (`^/repo/e2e/tests/cart.spec.ts`)                                                                                                                                                                                                                                            |
+| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text)                                                                                                                                     |
+| A test           | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
+| A project's node | its test's, in that project alone (`--project`)                                                                                                                                                                                                                                             |
 
 A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
 Every location is written by `locationArg`, from the config's folder as the file system spells it: its whole path,
@@ -1933,7 +1933,9 @@ The target's key holds `run:receive`, and the desktop app's also `project:read`,
 `compare` reads `GET /api/run-targets/projects/:id/test-comparison` for the project a linked folder belongs to
 (`compareWithTeam` in `src/run-target.ts`). A refusal there refuses that comparison alone, and its `data.errorCode`
 says why (`RUN_TARGET_KEY_CANNOT_COMPARE` for a key made before it, `TEAM_COMPARISON_OFF` for a decline). The describe
-answer's `compares` says whether the key may compare, and reaches the window as the connection's `compares`.
+answer's `compares` says whether the key may compare, and reaches the window as the connection's `compares`. `projects`
+reads `GET /api/run-targets/projects`, the projects the key's owner reads (`teamProjects`), which the desktop app
+offers to link a folder to without a request; the shell keeps that link with the ones requests make.
 
 The request host tells the shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the
 instance's 401 for a key it no longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance
@@ -2112,13 +2114,13 @@ The session (`attach` in `sessions.ts`):
 JetBrains plugin in its `server/`. The service finds the other files next to its own bundle, or in `PIWI_EDITOR_DIST`
 (the `distDir` option of `startServer` in tests).
 
-| File                         | What                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
-| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
+| File                         | What                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.                           |
+| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                                             |
 | `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options, and its tests for the listing (`src/recorder/use-reporter.ts`). |
-| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
-| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
+| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens.               |
+| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                                        |
 
 The first three are bundled by esbuild, as CommonJS for Node 20 and later. `build.mjs` writes the service's version
 into the bundle (`SERVICE_VERSION` in `src/server.ts`, `0.0.0-dev` unbundled), which the discovery file and the hub's

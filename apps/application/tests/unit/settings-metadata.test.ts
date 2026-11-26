@@ -63,8 +63,9 @@ describe('buildSettingsNavSections', () => {
 
   test('the desktop-only pages show in the desktop build alone, first', () => {
     const desktopOnly = SETTINGS_PAGES.filter((p) => p.desktopOnly).map((p) => p.to);
-    expect(desktopOnly).toEqual(['/settings/desktop']);
+    expect(desktopOnly).toEqual(['/settings/desktop', '/settings/team-instance']);
     expect(paths(WEB_ADMIN)).not.toContain('/settings/desktop');
+    expect(paths(WEB_ADMIN)).not.toContain('/settings/team-instance');
     // The first page `/settings` opens on in the desktop build.
     expect(paths(DESKTOP)[0]).toBe('/settings/desktop');
   });

@@ -54,6 +54,7 @@ fn main() {
             "desktop_find_request_folders",
             "desktop_link_request_folder",
             "desktop_unlink_request_folder",
+            "desktop_link_team_project",
             "desktop_run_requested_tests",
             "desktop_run_repro",
             "desktop_reproduce_here",

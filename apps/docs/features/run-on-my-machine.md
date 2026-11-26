@@ -1,6 +1,6 @@
 ---
 title: Run on my machine
-description: 'Ask the desktop app or Piwi Runner on your own machine to run Playwright tests from the dashboard: who may ask, how an administrator turns it on, Connected apps, and why a requested run is yours alone.'
+description: "Ask the desktop app or Piwi Runner on your own machine to run Playwright tests from the dashboard: who may ask, how an administrator turns it on, Connected apps, and why a requested run is yours alone."
 lang: en-US
 ---
 
@@ -36,15 +36,15 @@ Turned off or declined, the instance refuses every request for that project, and
 
 ## Connect the desktop app
 
-In Piwi Desktop, open **Settings → Desktop app → Run on my machine**, enter the instance's address and click
+In Piwi Desktop, open **Settings → Team instance**, enter the instance's address and click
 **Connect**. The app opens the instance's page, which asks you to allow **Piwi Desktop** with the code the app shows.
 Once allowed, the app keeps its key in the operating system's keychain (Keychain on macOS, Credential Manager on
 Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs.
 An app connects to one instance at a time. **Disconnect** removes the key from the keychain; the app stays listed in
 the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
-Each project's folder is linked on this machine, per instance, when its first request asks; **Settings → Desktop
-app** lists them, with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
+Each project's folder is linked on this machine, per instance, when its first request asks, or beforehand on
+**Settings → Team instance**, which lists them with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
 in your code folders; a picked folder without the tests gets a better one offered.
 
 ## Ask for a run
