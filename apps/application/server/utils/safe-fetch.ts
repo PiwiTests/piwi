@@ -15,13 +15,16 @@ import type { Agent, RequestInit as UndiciRequestInit } from 'undici';
 function isBlockedIpv4(ip: string): boolean {
   const parts = ip.split('.').map((n) => Number(n));
   if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
-  const [a, b] = parts as [number, number, number, number];
+  const [a, b, c] = parts as [number, number, number, number];
   if (a === 0 || a === 10 || a === 127) return true; // "this network", private, loopback
   if (a === 169 && b === 254) return true; // link-local (incl. 169.254.169.254 metadata)
   if (a === 172 && b >= 16 && b <= 31) return true; // private
   if (a === 192 && b === 168) return true; // private
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (100.64.0.0/10)
   if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return true; // IETF protocol assignments, documentation
+  if (a === 192 && b === 88 && c === 99) return true; // 6to4 relay anycast
+  if ((a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)) return true; // documentation
   if (a >= 224) return true; // multicast + reserved
   return false;
 }
@@ -78,6 +81,8 @@ function isBlockedIpv6(ip: string): boolean {
   if ((g0 & 0xffc0) === 0xfe80) return true; // link-local (fe80::/10)
   if ((g0 & 0xffc0) === 0xfec0) return true; // site-local (fec0::/10)
   if ((g0 & 0xff00) === 0xff00) return true; // multicast (ff00::/8)
+  if (g0 === 0x2001 && (g1 === 0 || g1 === 0xdb8)) return true; // Teredo (2001::/32), documentation (2001:db8::/32)
+  if (g0 === 0x100 && groups.slice(1, 4).every((group) => group === 0)) return true; // discard-only (100::/64)
   // Local-use NAT64 (64:ff9b:1::/48): not globally reachable, and where its IPv4 address sits depends on the network.
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true;
   const v4 = embeddedIpv4(groups);

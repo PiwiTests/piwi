@@ -45,7 +45,10 @@ address:
 - `PIWI_PRIVATE_HOSTS` lists the host, or `host:port` for one port only: `PIWI_PRIVATE_HOSTS=ollama:11434,jira.lan`;
 - the dashboard runs in the [desktop app](/features/desktop), which reaches any address.
 
-A link someone pins and a webhook go through a stricter guard, which allows no private address at all.
+A server whose DNS answers public names with private addresses, or that reaches the internet only through a proxy set
+for Node, lists the hosts it calls in `PIWI_PRIVATE_HOSTS`: a listed host is reached as any other request is. A
+webhook, and a link someone pins outside a connection's site, go through a stricter guard, which allows no private
+address at all.
 
 ## Optional, and worth a thought
 

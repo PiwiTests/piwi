@@ -15,7 +15,7 @@ import {
   type AiKeyScope,
 } from './ai-credentials';
 import { CredentialRefusedError, withCredential, type CredentialActor } from './credentials';
-import { connectionFetch } from './connection-fetch';
+import { connectionFetch, privateAddressRefusal } from './connection-fetch';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -352,6 +352,12 @@ export interface StreamResult {
   costUsd?: number | null;
 }
 
+/** What a failed AI call says: a refused private address by its own words, whatever client wrapped it. */
+function aiErrorMessage(err: unknown): string {
+  const reason = privateAddressRefusal(err) ?? err;
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   assertAiKey(config);
   try {
@@ -365,7 +371,7 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
     }
     return await callOpenAiCompat(config, opts);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = aiErrorMessage(err);
     throw new Error(`[${config.provider}] ${msg.slice(0, 500)}`, { cause: err });
   }
 }
@@ -652,8 +658,7 @@ export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOpti
       yield* streamOpenAiCompat(config, opts);
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    yield { type: 'error', data: msg };
+    yield { type: 'error', data: aiErrorMessage(err) };
   }
 }
 

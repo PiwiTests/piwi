@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { resolveE2ETarget } from './desktop-target';
 
 test.describe('request guards', () => {
   test('a state-changing request a browser sends from another site is refused', async ({ request }) => {
@@ -30,6 +31,7 @@ test.describe('request guards', () => {
   });
 
   test('a Jira site on a private address the operator did not allow is never reached', async ({ request }) => {
+    test.skip(resolveE2ETarget().desktop, 'the desktop app reaches any address');
     const res = await request.post('/api/integrations/connections/check', {
       data: { provider: 'jira', baseUrl: 'http://169.254.169.254' },
     });

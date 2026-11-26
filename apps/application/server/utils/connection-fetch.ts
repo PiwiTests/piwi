@@ -1,28 +1,30 @@
 /**
  * Requests to an address an administrator sets in Settings: a Jira site, an AI base URL. Such an address reaches a
  * private address (a loopback, private, link-local or reserved one) only where the operator allows it:
- * - the host and port of an address the environment sets (`PIWI_JIRA_BASE_URL`, `PIWI_AI_BASE_URL` and the AI roles'
- *   `PIWI_AI_*_BASE_URL`);
+ * - the host and port of an address the environment sets (`PIWI_JIRA_BASE_URL`, the AI roles' base URLs of the
+ *   runtime config, `ANTHROPIC_BASE_URL`);
  * - a host or `host:port` of `PIWI_PRIVATE_HOSTS`;
  * - anywhere, on the desktop app.
- * Any other address must resolve to public addresses only, checked when each connection opens, and a redirect is
- * followed only for a GET or a HEAD, each hop checked again.
+ * Any other address must resolve to public addresses only, checked when each connection opens. Redirects are followed
+ * as `fetch` follows them, each hop checked on its own: a hop to another site loses the request's credentials, and a
+ * hop from https to http is refused.
  */
 import type { Agent, RequestInit as UndiciRequestInit } from 'undici';
 import { isDesktopRuntime } from './ai-claude-cli';
 import { hostPlace, hostPlaces, isBlockedAddress, placesAllow, publicOnlyLookup, type HostPlace } from './safe-fetch';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
 
-/** The variables an operator sets an address in, whose host may be private. */
-const OPERATOR_ADDRESS_VARIABLES = [
-  'PIWI_AI_BASE_URL',
-  'PIWI_AI_RESEARCH_BASE_URL',
-  'PIWI_AI_EMBEDDING_BASE_URL',
-  'PIWI_AI_ASSISTANT_BASE_URL',
-] as const;
+/** The keys of the runtime config's `ai` block that hold an AI role's base URL from the environment. */
+const AI_BASE_URL_KEYS = ['baseUrl', 'researchBaseUrl', 'embeddingBaseUrl', 'assistantBaseUrl'] as const;
 
-/** The most redirects a GET or a HEAD follows. */
+/** The most redirects a request follows. */
 const MAX_REDIRECTS = 3;
+
+/** The headers that carry a credential, which a redirect to another site does not take along. */
+const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'x-api-key'];
+
+/** The headers that describe a request's body, dropped when a redirect turns the request into a GET. */
+const BODY_HEADERS = ['content-type', 'content-length', 'content-encoding', 'content-language', 'content-location'];
 
 /** Why a request is refused, for the person who set the address. */
 export class PrivateAddressError extends Error {
@@ -34,17 +36,34 @@ export class PrivateAddressError extends Error {
   }
 }
 
+/** The refusal behind an error, however deep a client library wrapped it, or null. */
+export function privateAddressRefusal(error: unknown): PrivateAddressError | null {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth++) {
+    if (current instanceof PrivateAddressError) return current;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/** The addresses the environment sets for a Jira site or an AI role. */
+function environmentAddresses(): Array<string | undefined> {
+  const ai = (useRuntimeConfig().ai ?? {}) as Partial<Record<(typeof AI_BASE_URL_KEYS)[number], unknown>>;
+  return [
+    normalizeJiraSiteUrl(process.env.PIWI_JIRA_BASE_URL ?? '')?.url,
+    ...AI_BASE_URL_KEYS.map((key) => (typeof ai[key] === 'string' ? ai[key].trim() : undefined)),
+    process.env.ANTHROPIC_BASE_URL?.trim(),
+  ];
+}
+
 /** The places an address set in Settings may reach on a private address. */
 export function connectionPrivatePlaces(): HostPlace[] {
   const places: HostPlace[] = [];
-  const addresses = [
-    normalizeJiraSiteUrl(process.env.PIWI_JIRA_BASE_URL ?? '')?.url,
-    ...OPERATOR_ADDRESS_VARIABLES.map((name) => process.env[name]?.trim()),
-  ];
-  for (const address of addresses) {
+  for (const address of environmentAddresses()) {
     if (!address) continue;
     try {
-      places.push(hostPlace(new URL(address)));
+      const url = new URL(address);
+      if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) places.push(hostPlace(url));
     } catch {
       // not a URL: it allows nothing
     }
@@ -63,7 +82,6 @@ export function connectionMayReachPrivateAddress(url: string): boolean {
  * its only check; a name is checked again by the lookup of each connection.
  */
 function refuseNamedPrivateHost(url: URL): void {
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Only http(s) addresses are allowed');
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   const named =
     !host ||
@@ -78,38 +96,70 @@ function refuseNamedPrivateHost(url: URL): void {
 let publicOnlyAgent: Agent | null = null;
 
 /**
- * `fetch` for an address set in Settings. An address the operator allows is fetched as is; any other one connects
- * only to public addresses, with no redirect followed but a GET's or a HEAD's, each hop checked again.
+ * Send one request to one address, following no redirect: as is to a place the operator allows, else through a
+ * connection that reaches public addresses only.
+ */
+async function sendOnce(url: URL, init: RequestInit): Promise<Response> {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Only http(s) addresses are allowed');
+  if (connectionMayReachPrivateAddress(url.href)) return fetch(url, { ...init, redirect: 'manual' });
+  refuseNamedPrivateHost(url);
+  const undici = await import('undici');
+  publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
+  try {
+    return (await undici.fetch(url, {
+      ...(init as UndiciRequestInit),
+      redirect: 'manual',
+      dispatcher: publicOnlyAgent,
+    })) as unknown as Response;
+  } catch (error) {
+    // The lookup of the connection refused an address the name resolves to.
+    if ((error as { cause?: { code?: string } }).cause?.code === 'EADDRNOTAVAIL') {
+      throw new PrivateAddressError(url.host);
+    }
+    throw error;
+  }
+}
+
+/**
+ * A form's body as bytes and its `content-type`: the connection that reaches public addresses only comes from the
+ * `undici` package, which sends no `FormData` but its own.
+ */
+async function encodeForm(init: RequestInit): Promise<RequestInit> {
+  if (!(init.body instanceof FormData)) return init;
+  const encoded = new Response(init.body);
+  const headers = new Headers(init.headers);
+  headers.set('content-type', encoded.headers.get('content-type') ?? 'multipart/form-data');
+  return { ...init, headers, body: new Uint8Array(await encoded.arrayBuffer()) };
+}
+
+/**
+ * `fetch` for an address set in Settings: each hop goes to a place the operator allows as is, and anywhere else only
+ * to a public address. A redirect is followed as `fetch` follows it (a 303, or a 301 or 302 after a POST, as a GET),
+ * except a 307 or 308 whose body cannot be sent again, which is answered as is.
  */
 export async function connectionFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
   const address = String(input);
-  if (connectionMayReachPrivateAddress(address)) return fetch(address, init);
-
-  const undici = await import('undici');
-  publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
-  const method = (init.method ?? 'GET').toUpperCase();
-  const follows = init.redirect !== 'manual' && init.redirect !== 'error' && (method === 'GET' || method === 'HEAD');
   let current = new URL(address);
+  let request = await encodeForm(init);
   for (let hop = 0; ; hop++) {
-    refuseNamedPrivateHost(current);
-    let response: Response;
-    try {
-      response = (await undici.fetch(current, {
-        ...(init as UndiciRequestInit),
-        redirect: 'manual',
-        dispatcher: publicOnlyAgent,
-      })) as unknown as Response;
-    } catch (error) {
-      // The lookup of the connection refused an address the name resolves to.
-      if ((error as { cause?: { code?: string } }).cause?.code === 'EADDRNOTAVAIL') {
-        throw new PrivateAddressError(current.host);
-      }
-      throw error;
-    }
+    const response = await sendOnce(current, request);
     const location = response.headers.get('location');
-    if (!follows || response.status < 300 || response.status >= 400 || !location) return response;
+    const redirected = [301, 302, 303, 307, 308].includes(response.status) && location;
+    if (!redirected || init.redirect === 'manual' || init.redirect === 'error') return response;
+    const method = (request.method ?? 'GET').toUpperCase();
+    const asGet = response.status === 303 ? method !== 'HEAD' : response.status <= 302 && method === 'POST';
+    if (!asGet && request.body instanceof ReadableStream) return response;
     if (hop >= MAX_REDIRECTS) throw new Error(`${address} redirected more than ${MAX_REDIRECTS} times`);
+
+    const next = new URL(location, current);
+    if (current.protocol === 'https:' && next.protocol === 'http:') {
+      throw new Error(`${address} redirected from https to http, which is not followed`);
+    }
+    const headers = new Headers(request.headers);
+    if (next.origin !== current.origin) for (const name of CREDENTIAL_HEADERS) headers.delete(name);
+    if (asGet) for (const name of BODY_HEADERS) headers.delete(name);
+    request = asGet ? { ...request, method: 'GET', body: undefined, headers } : { ...request, headers };
     await response.body?.cancel();
-    current = new URL(location, current);
+    current = next;
   }
 }

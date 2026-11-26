@@ -523,7 +523,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'block',
     pages: ['/settings/integrations'],
     describes:
-      'The note under the Jira card: a site on a private address is reached only when the operator lists its host in PIWI_PRIVATE_HOSTS.',
+      'The note under the Jira card: a site on a private address is reached only when the environment sets it, PIWI_PRIVATE_HOSTS lists it, or in the desktop app.',
     requires: { capability: 'integrations', permission: 'connections:manage' },
     help: 'settings.integrations.private-host',
     doc: 'operate/production-checklist#private-hosts',
