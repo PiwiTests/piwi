@@ -66,7 +66,7 @@ administrator first. The Railway, Render and Coolify [one-click deploy templates
 Sign in at `/login` with your username or your email address (letter case ignored, verified or not). A username wins
 over another account's email, such as the old address a provider-created account kept as its username.
 
-A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
+A session is an encrypted cookie, `__Host-piwi_session`, lasting 7 days, that neighboring subdomains cannot set. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
 
 ## OAuth (Google, GitHub)
 

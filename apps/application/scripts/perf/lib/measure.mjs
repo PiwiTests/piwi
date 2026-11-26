@@ -49,8 +49,10 @@ const PAGE_OBSERVERS = () => {
 /** A browser context signed in to `server`, warm-cached across the loads it makes. */
 export async function signedInContext(browser, server) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const name = server.cookie.slice(0, server.cookie.indexOf('='));
   const value = server.cookie.slice(server.cookie.indexOf('=') + 1);
-  await context.addCookies([{ name: 'piwi_session', value, url: server.base }]);
+  // A `__Host-` cookie is taken only Secure, with `Path=/` and its host named, which localhost allows over HTTP.
+  await context.addCookies([{ name, value, domain: new URL(server.base).hostname, path: '/', secure: true }]);
   await context.addInitScript(PAGE_OBSERVERS);
   return context;
 }

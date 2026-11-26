@@ -213,11 +213,14 @@ function getSessionPassword(config: ReturnType<typeof useRuntimeConfig>): string
 const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
 
 /**
- * Name of the sealed session cookie. It names Piwi, not the framework (h3's
- * default is `h3`), and is part of the public contract documented in the
- * OpenAPI `sessionCookie` scheme in nuxt.config.ts.
+ * Name of the sealed session cookie. The `__Host-` prefix makes the browser
+ * keep it only when it is `Secure`, with `Path=/` and no `Domain`, so another
+ * host under the same domain cannot plant one this server would read; the
+ * unprefixed name, which any of them could set, is never read. It names Piwi,
+ * not the framework (h3's default is `h3`), and is part of the public contract
+ * documented in the OpenAPI `sessionCookie` scheme in nuxt.config.ts.
  */
-export const SESSION_COOKIE_NAME = 'piwi_session';
+export const SESSION_COOKIE_NAME = '__Host-piwi_session';
 
 /**
  * Config for the sealed session cookie, shared by every session operation so its

@@ -361,7 +361,9 @@ test.describe.serial('Dashboards access', () => {
 
     const context = await browser.newContext({ baseURL: AUTH_BASE });
     const [name, value] = viewer.split('=');
-    await context.addCookies([{ name: name!, value: value!, url: AUTH_BASE }]);
+    // A `__Host-` cookie is taken only Secure, with `Path=/` and its host named.
+    const host = new URL(AUTH_BASE).hostname;
+    await context.addCookies([{ name: name!, value: value!, domain: host, path: '/', secure: true }]);
     const page = await context.newPage();
     await page.goto(`/analytics/d/${view.id}`);
     await expect(page.getByTestId('dashboard-hidden-projects')).toContainText('1 project hidden (no access)', {
