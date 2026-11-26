@@ -201,7 +201,15 @@ describe('computeErrorFingerprint', () => {
 
     const fingerprint = async (locator: string, spec?: string) =>
       (await computeErrorFingerprint(timeoutOn(locator, spec))).fingerprint;
-    const FRAMES = ['frameLocator()', "frameLocator('#pay')", "locator('#pay').contentFrame()"];
+    const FRAMES = [
+      'frameLocator()',
+      "frameLocator('#pay')",
+      "locator('#pay').contentFrame()",
+      "locator('iframe').first().contentFrame()",
+      "locator('iframe').nth(2).contentFrame()",
+      "locator('iframe').filter({ hasText: 'a' }).contentFrame()",
+      "getByTestId('checkout').locator('iframe').contentFrame()",
+    ];
 
     test.each(FRAMES)('in %s, is told apart by the locator inside the frame', async (frame) => {
       const card = await computeErrorFingerprint(timeoutOn(`${frame}.getByLabel('Card number')`));
@@ -383,6 +391,14 @@ describe('errorFingerprintV4', () => {
     [
       "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator('#pay').getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
       '904824428190ba83a8a749af144e9cacc1c04b4eb4d6a7e82b216669bdac065d',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('iframe').first().contentFrame().getByLabel('Expiry')\n    at tests/checkout.spec.ts:31:7",
+      '82cbef3b0580b6fa6dcf824cc423cc1c3c2a9afe3df002bba200e6914493b652',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+      '49ef5b2b76f6b47fa14be9084582d08610e2633e48bedbe59b94ff8ef3f13246',
     ],
   ] as const;
 

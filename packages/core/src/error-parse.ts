@@ -121,12 +121,11 @@ export function stripAnsi(text: string): string {
 
 const SELECTOR_FN_RE =
   /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
-/** The link from a `frameLocator(…)` call into the locator call inside its frame, read at `lastIndex`. */
-const FRAME_LOCATOR_LINK_RE =
-  /\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
-/** The link through `.contentFrame()` into the locator call inside that frame, read at `lastIndex`. */
-const CONTENT_FRAME_LINK_RE =
-  /\.contentFrame\(\)\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
+/** A link of a locator chain, `.name(`, read at `lastIndex`, its name captured. */
+const CHAIN_LINK_RE = /\.(\w+)\(/y;
+/** The name of a call that builds a locator, as `SELECTOR_FN_RE` reads one. */
+const LOCATOR_CALL_RE =
+  /^(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)$/;
 
 /**
  * Cut the error down to its message head: everything before the Playwright
@@ -187,25 +186,44 @@ export function locatorCallEnd(text: string, from: number): number {
 /**
  * Extract the first Playwright locator expression, scanning forward with a
  * paren-depth counter so nested forms like getByRole('row', { name: '…' })
- * are captured whole. A call that names a frame is read with the locator call
- * inside it, frame after frame: a `frameLocator(…)` call, named or empty (any
- * frame), and a call followed by `.contentFrame()`, so
- * `locator('#pay').contentFrame().getByLabel('Card number')` is kept whole.
+ * are captured whole. It is the first call alone, unless the chain it starts
+ * enters a frame (a `.contentFrame()` link, a `frameLocator(…)` call, named or
+ * empty for any frame): then it runs through the first locator call inside the
+ * last frame entered, so
+ * `locator('iframe').first().contentFrame().getByLabel('Card number')` is kept
+ * whole. The chain is read link by link, `.name(…)`, up to the first text that
+ * is not one or a call that does not close.
  */
 export function extractSelector(text: string): string | null {
   const match = SELECTOR_FN_RE.exec(text);
   if (!match) return null;
   const start = match.index;
-  let callStart = start;
+  let end = locatorCallEnd(text, start);
+  // Unbalanced within the window — keep a stable prefix
+  if (end === -1) return text.slice(start, start + 80);
+  let inFrame = text.startsWith('frameLocator(', start);
+  let callEnd = end;
   for (;;) {
-    const end = locatorCallEnd(text, callStart);
-    // Unbalanced within the window — keep a stable prefix
-    if (end === -1) return text.slice(start, callStart + 80);
-    const link = text.startsWith('frameLocator(', callStart) ? FRAME_LOCATOR_LINK_RE : CONTENT_FRAME_LINK_RE;
-    link.lastIndex = end;
-    if (!link.test(text)) return text.slice(start, end);
-    callStart = link.lastIndex;
+    CHAIN_LINK_RE.lastIndex = callEnd;
+    const link = CHAIN_LINK_RE.exec(text);
+    if (!link) break;
+    const name = link[1]!;
+    const callStart = link.index + 1;
+    const isLocatorCall = LOCATOR_CALL_RE.test(name);
+    const next = locatorCallEnd(text, callStart);
+    if (next === -1) {
+      // The locator inside a frame cut short — keep a stable prefix of it
+      if (inFrame && isLocatorCall) return text.slice(start, callStart + 80);
+      break;
+    }
+    if (inFrame && isLocatorCall) {
+      end = next;
+      inFrame = false;
+    }
+    if (name === 'contentFrame' || name === 'frameLocator') inFrame = true;
+    callEnd = next;
   }
+  return text.slice(start, end);
 }
 
 /**
@@ -310,7 +328,7 @@ function lenientLeaf(region: string): string | null {
  * every top-level `.method(...)` link included, so
  * `getByRole('row', { name: 'Acme' }).getByRole('button').first()` is kept
  * whole where `extractSelector` stops after the first balanced call, or after
- * the first one inside the frame it names.
+ * the first locator call inside the frame the chain enters.
  */
 export function extractLocatorChain(text: string): string | null {
   const first = SELECTOR_FN_RE.exec(text);

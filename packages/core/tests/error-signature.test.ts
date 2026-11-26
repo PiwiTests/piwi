@@ -63,6 +63,16 @@ describe('extractErrorSignature', () => {
       'locator("iframe[title=\\"Pay\\"]").contentFrame().locator(\'#inner\').contentFrame().getByText(\'Pay\')',
     );
     expect(maskSelector("frameLocator().getByLabel('Card number')")).toBe("frameLocator().getByLabel('Card number')");
+    expect(maskSelector("getByTestId('checkout').frameLocator('iframe').getByLabel('Card')")).toBe(
+      "getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card')",
+    );
+  });
+
+  test('leaves a frameLocator() written inside an argument as it is', () => {
+    expect(maskSelector('getByText("frameLocator(\'#x\')")')).toBe('getByText("frameLocator(\'#x\')")');
+    expect(maskSelector('getByText("frameLocator(\'#x\')")')).not.toBe(
+      maskSelector('getByText("locator(\'#x\').contentFrame()")'),
+    );
   });
 
   test('names an empty error', () => {

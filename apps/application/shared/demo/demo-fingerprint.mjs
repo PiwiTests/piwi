@@ -37,10 +37,9 @@ const SELECTOR_OPTION_RE =
   /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])(?:\\.|(?!\2)[\s\S])*?\2/gi;
 const SELECTOR_FN_RE =
   /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
-const FRAME_LOCATOR_LINK_RE =
-  /\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
-const CONTENT_FRAME_LINK_RE =
-  /\.contentFrame\(\)\.(?=(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\()/y;
+const CHAIN_LINK_RE = /\.(\w+)\(/y;
+const LOCATOR_CALL_RE =
+  /^(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)$/;
 const NAMED_FRAME_LOCATOR_RE = /\bframeLocator\(((['"`])(?:\\.|(?!\2)[^\\])*\2)\)/g;
 
 /** @param {string} text */
@@ -108,9 +107,15 @@ function maskSelectorOptions(text) {
 }
 
 /** @param {string} selector */
+function spellNamedFrames(selector) {
+  return selector.replace(NAMED_FRAME_LOCATOR_RE, (call, arg, _quote, at) =>
+    at === 0 || selector.startsWith(').', at - 2) ? `locator(${arg}).contentFrame()` : call,
+  );
+}
+
+/** @param {string} selector */
 export function maskSelector(selector) {
-  const framed = selector.replace(NAMED_FRAME_LOCATOR_RE, 'locator($1).contentFrame()');
-  return maskVolatile(maskSelectorOptions(framed));
+  return maskVolatile(maskSelectorOptions(spellNamedFrames(selector)));
 }
 
 /** @param {string} text @param {number} from */
@@ -135,15 +140,30 @@ export function extractSelector(text) {
   const match = SELECTOR_FN_RE.exec(text);
   if (!match) return null;
   const start = match.index;
-  let callStart = start;
+  let end = locatorCallEnd(text, start);
+  if (end === -1) return text.slice(start, start + 80);
+  let inFrame = text.startsWith('frameLocator(', start);
+  let callEnd = end;
   for (;;) {
-    const end = locatorCallEnd(text, callStart);
-    if (end === -1) return text.slice(start, callStart + 80);
-    const link = text.startsWith('frameLocator(', callStart) ? FRAME_LOCATOR_LINK_RE : CONTENT_FRAME_LINK_RE;
-    link.lastIndex = end;
-    if (!link.test(text)) return text.slice(start, end);
-    callStart = link.lastIndex;
+    CHAIN_LINK_RE.lastIndex = callEnd;
+    const link = CHAIN_LINK_RE.exec(text);
+    if (!link) break;
+    const name = link[1];
+    const callStart = link.index + 1;
+    const isLocatorCall = LOCATOR_CALL_RE.test(name);
+    const next = locatorCallEnd(text, callStart);
+    if (next === -1) {
+      if (inFrame && isLocatorCall) return text.slice(start, callStart + 80);
+      break;
+    }
+    if (inFrame && isLocatorCall) {
+      end = next;
+      inFrame = false;
+    }
+    if (name === 'contentFrame' || name === 'frameLocator') inFrame = true;
+    callEnd = next;
   }
+  return text.slice(start, end);
 }
 
 /** @param {string} text @returns {string | null} */

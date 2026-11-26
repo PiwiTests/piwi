@@ -140,6 +140,10 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('#pay').contentFrame().getByRole('row', { name: 'Order 42' })",
     'TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\'#outer\').contentFrame().frameLocator("iframe[title=\\"Pay\\"]").getByText(\'Pay\')',
     `Error: frameLocator().getByRole('row', { name: '${'x'.repeat(100)}`,
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('iframe').first().contentFrame().getByLabel('Expiry')",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('checkout').frameLocator('iframe').filter({ hasText: 'a' }).getByLabel('Card')",
+    `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByText("frameLocator('#x')")`,
+    `Error: locator('iframe').nth(2).contentFrame().getByRole('row', { name: '${'x'.repeat(100)}`,
   ];
 
   for (const [i, err] of corpus.entries()) {

@@ -572,24 +572,40 @@ describe('locator and frame helpers', () => {
     expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Delete' })");
   });
 
-  test('extractSelector reads a frame call with the locator call inside its frame', () => {
+  test('extractSelector reads a chain that enters a frame through the first locator call inside it', () => {
     const waitingFor = (locator: string) =>
       `TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${locator}\n`;
     for (const locator of [
       "frameLocator().getByLabel('Card number')",
       "frameLocator('#pay').getByLabel('Card number')",
       "locator('#pay').contentFrame().getByLabel('Card number')",
+      "locator('iframe').first().contentFrame().getByLabel('Expiry')",
+      "locator('iframe').nth(2).contentFrame().getByLabel('Expiry')",
+      "locator('iframe').filter({ hasText: 'a' }).contentFrame().getByLabel('Expiry')",
+      "getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card number')",
       "frameLocator().locator('#my-frame').contentFrame().getByRole('button')",
       "locator('#outer').contentFrame().locator('#inner').contentFrame().getByLabel('Card number')",
+      "locator('#outer').contentFrame().frameLocator('#inner').getByLabel('Card number')",
     ]) {
       expect(extractSelector(waitingFor(`${locator}.first()`)), locator).toBe(locator);
     }
+    expect(extractSelector("await page.frameLocator('#pay').getByLabel('Card').fill('4242')")).toBe(
+      "frameLocator('#pay').getByLabel('Card')",
+    );
     expect(extractSelector("Error: frameLocator('#pay').owner().first() has no src")).toBe("frameLocator('#pay')");
     expect(extractSelector("Error: locator('iframe#pay').contentFrame().owner() has no src")).toBe(
       "locator('iframe#pay')",
     );
-    const cutShort = `frameLocator().getByRole('button', { name: '${'x'.repeat(100)}`;
-    expect(extractSelector(cutShort)).toBe(cutShort.slice(0, 'frameLocator().'.length + 80));
+    const cutShort = `locator('iframe').first().contentFrame().getByRole('button', { name: '${'x'.repeat(100)}`;
+    const inner = cutShort.indexOf('getByRole');
+    expect(extractSelector(cutShort)).toBe(cutShort.slice(0, inner + 80));
+  });
+
+  test('extractSelector reads the first call alone of a chain that enters no frame', () => {
+    expect(extractSelector("waiting for getByRole('row', { name: 'Acme' }).getByRole('button').first()")).toBe(
+      "getByRole('row', { name: 'Acme' })",
+    );
+    expect(extractSelector("waiting for locator('iframe').first().owner().click()")).toBe("locator('iframe')");
   });
 
   test('extractLeafSelector reads parentheses inside names as text', () => {

@@ -6,8 +6,8 @@
  *
  * Version 4 masked fewer volatile tokens and never hashed the top frame. It
  * read the error type and the locator as `extractErrorSignature` reads them
- * (`classifyError`, `extractSelector`), a frame call without the locator call
- * inside its frame ({@link selectorV4}), and the message head as
+ * (`classifyError`, `extractSelector`), a chain that enters a frame cut back
+ * to its first call ({@link selectorV4}), and the message head as
  * `extractMessageHead` cuts it.
  */
 import { extractMessageHead, locatorCallEnd, stripAnsi } from '@piwitests/core/error-parse';
@@ -34,8 +34,9 @@ function maskVolatileV4(text: string): string {
 
 /**
  * The locator version 4 hashed: the first call of `selector`, up to the
- * parenthesis that closes it, so a frame call (`frameLocator('#pay')`,
- * `locator('#pay')` before `.contentFrame()`) stands alone.
+ * parenthesis that closes it, so a chain that enters a frame
+ * (`locator('iframe').first().contentFrame().getByLabel(…)`) stands as
+ * `locator('iframe')`.
  */
 function selectorV4(selector: string | null): string | null {
   if (!selector) return selector;

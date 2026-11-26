@@ -168,15 +168,25 @@ export function maskVolatile(text: string): string {
 }
 
 /**
+ * Spell each named `frameLocator('#pay')` that starts the chain or one of its
+ * links as Playwright prints that frame, `locator('#pay').contentFrame()`; one
+ * inside an argument stays as it is.
+ */
+function spellNamedFrames(selector: string): string {
+  return selector.replace(NAMED_FRAME_LOCATOR_RE, (call: string, arg: string, _quote: string, at: number) =>
+    at === 0 || selector.startsWith(').', at - 2) ? `locator(${arg}).contentFrame()` : call,
+  );
+}
+
+/**
  * Normalize a locator for the fingerprint: spell a named frame as Playwright
- * prints it (`frameLocator('#pay')` as `locator('#pay').contentFrame()`), so
- * both spellings of one frame hash alike, blank out dynamic option values (row
- * names, hasText, …) that carry per-row data, then apply the standard volatile
- * masking. The primary positional target is preserved.
+ * prints it ({@link spellNamedFrames}), so both spellings of one frame hash
+ * alike, blank out dynamic option values (row names, hasText, …) that carry
+ * per-row data, then apply the standard volatile masking. The primary
+ * positional target is preserved.
  */
 export function maskSelector(selector: string): string {
-  const framed = selector.replace(NAMED_FRAME_LOCATOR_RE, 'locator($1).contentFrame()');
-  return maskVolatile(maskSelectorOptions(framed));
+  return maskVolatile(maskSelectorOptions(spellNamedFrames(selector)));
 }
 
 /** Reduce raw error text to its {@link ErrorSignature}. */

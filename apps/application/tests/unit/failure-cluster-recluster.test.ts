@@ -427,64 +427,124 @@ describe('a fingerprint version bump', () => {
     expect(row!.updatedAt).toEqual(resolvedAt);
   });
 
-  test("keys each cluster of failures in a frame by its sample's frame and locator, its triage kept", async () => {
+  describe('of failures in a frame', () => {
     const timeoutOn = (locator: string) =>
       `TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${locator}\n    at tests/checkout.spec.ts:31:7`;
-    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
-    // Under an earlier version, which hashed the frame alone, every failure in any frame joined one cluster and every
-    // failure in #pay another.
     const anyCard = timeoutOn("frameLocator().getByLabel('Card number')");
     const payCard = timeoutOn("locator('#pay').contentFrame().getByLabel('Card number')");
-    const anyFrame = await seedCluster({
-      fingerprint: STALE_A,
-      sampleError: anyCard,
-      fingerprintSample: anyCard,
-      errorType: 'timeout',
-      selector: 'frameLocator()',
-      triageNote: 'The payment frame loads late.',
-    });
-    const pay = await seedCluster({
-      fingerprint: STALE_B,
-      sampleError: payCard,
-      fingerprintSample: payCard,
-      errorType: 'timeout',
-      selector: "locator('#pay')",
-      triageNote: 'The card field is renamed.',
-    });
+    const payExpiry = timeoutOn("locator('#pay').contentFrame().getByLabel('Expiry date')");
 
-    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 0 });
-
-    const rows = await db
-      .select({
-        id: schema.failureClusters.id,
-        fingerprint: schema.failureClusters.fingerprint,
-        selector: schema.failureClusters.selector,
-        triageNote: schema.failureClusters.triageNote,
-      })
-      .from(schema.failureClusters);
-    expect(rows).toEqual([
-      {
-        id: anyFrame,
-        fingerprint: (await computeErrorFingerprint(anyCard)).fingerprint,
-        selector: "frameLocator().getByLabel('Card number')",
+    test("keys each cluster by its sample's frame and locator, its triage kept and its embedding stale", async () => {
+      await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+      const email = timeoutOn("getByLabel('Email')");
+      const { signature } = await computeErrorFingerprint(anyCard);
+      const vector = { embedding: '[1,0]', embeddingModel: 'embed#v3' };
+      // STALE_A stands for every failure in any frame, STALE_B for every failure in #pay, each sample naming one
+      // element; STALE_C for a failure in no frame, whose signature, type and locator are what its sample gives.
+      const anyFrame = await seedCluster({
+        fingerprint: STALE_A,
+        sampleError: anyCard,
+        fingerprintSample: anyCard,
+        signature,
+        errorType: 'timeout',
+        selector: 'frameLocator()',
         triageNote: 'The payment frame loads late.',
-      },
-      {
-        id: pay,
-        fingerprint: (await computeErrorFingerprint(payCard)).fingerprint,
-        selector: "locator('#pay').contentFrame().getByLabel('Card number')",
+        ...vector,
+      });
+      const pay = await seedCluster({
+        fingerprint: STALE_B,
+        sampleError: payCard,
+        fingerprintSample: payCard,
+        signature,
+        errorType: 'timeout',
+        selector: "locator('#pay')",
         triageNote: 'The card field is renamed.',
-      },
-    ]);
-    expect(await clusterJoined(1, anyCard, 1)).toBe(anyFrame);
-    expect(await clusterJoined(1, payCard, 1)).toBe(pay);
-    expect(await clusterJoined(2, timeoutOn("frameLocator('#pay').getByLabel('Card number')"), 1)).toBe(pay);
-    const others = [
-      await clusterJoined(2, timeoutOn("frameLocator().getByLabel('Expiry date')"), 1),
-      await clusterJoined(2, timeoutOn("locator('#pay').contentFrame().getByLabel('Expiry date')"), 1),
-    ];
-    expect(new Set([anyFrame, pay, ...others]).size).toBe(4);
-    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
+        ...vector,
+      });
+      const plain = await seedCluster({
+        fingerprint: 'earlier-version-fingerprint-c',
+        sampleError: email,
+        fingerprintSample: email,
+        signature,
+        errorType: 'timeout',
+        selector: "getByLabel('Email')",
+        ...vector,
+      });
+
+      expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 3, merged: 0 });
+
+      const rows = await db
+        .select({
+          id: schema.failureClusters.id,
+          fingerprint: schema.failureClusters.fingerprint,
+          selector: schema.failureClusters.selector,
+          triageNote: schema.failureClusters.triageNote,
+          embedding: schema.failureClusters.embedding,
+          embeddingModel: schema.failureClusters.embeddingModel,
+        })
+        .from(schema.failureClusters)
+        .orderBy(schema.failureClusters.id);
+      expect(rows).toEqual([
+        {
+          id: anyFrame,
+          fingerprint: (await computeErrorFingerprint(anyCard)).fingerprint,
+          selector: "frameLocator().getByLabel('Card number')",
+          triageNote: 'The payment frame loads late.',
+          embedding: '[1,0]',
+          embeddingModel: null,
+        },
+        {
+          id: pay,
+          fingerprint: (await computeErrorFingerprint(payCard)).fingerprint,
+          selector: "locator('#pay').contentFrame().getByLabel('Card number')",
+          triageNote: 'The card field is renamed.',
+          embedding: '[1,0]',
+          embeddingModel: null,
+        },
+        {
+          id: plain,
+          fingerprint: (await computeErrorFingerprint(email)).fingerprint,
+          selector: "getByLabel('Email')",
+          triageNote: null,
+          embedding: '[1,0]',
+          embeddingModel: 'embed#v3',
+        },
+      ]);
+      expect(await clusterJoined(1, anyCard, 1)).toBe(anyFrame);
+      expect(await clusterJoined(1, payCard, 1)).toBe(pay);
+      expect(await clusterJoined(2, timeoutOn("frameLocator('#pay').getByLabel('Card number')"), 1)).toBe(pay);
+      const others = [
+        await clusterJoined(2, timeoutOn("frameLocator().getByLabel('Expiry date')"), 1),
+        await clusterJoined(2, payExpiry, 1),
+      ];
+      expect(new Set([anyFrame, pay, plain, ...others]).size).toBe(5);
+      expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
+    });
+
+    test('keeps routing a test moved out of the cluster to its own, by the elements it failed on', async () => {
+      await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+      // STALE_A stands for every failure in #pay. Test 2 failed on the expiry field and moved out of it into a
+      // cluster of its own, which holds those failures.
+      const pay = await seedCluster({ fingerprint: STALE_A, sampleError: payCard, fingerprintSample: payCard });
+      const moved = await seedCluster({
+        fingerprint: 'split:moved',
+        sampleError: null,
+        fingerprintSample: null,
+        triageNote: 'Test 2 opens the payment frame before it loads.',
+      });
+      await db
+        .insert(schema.failureClusterTestRoutes)
+        .values({ projectId: 1, fingerprint: STALE_A, testCaseId: 2, clusterId: moved });
+      await db
+        .insert(schema.testRunsCases)
+        .values({ testRunId: 1, testCaseId: 2, status: 'failed', error: payExpiry, failureClusterId: moved });
+
+      expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 1, merged: 0 });
+
+      expect(await clusterJoined(2, payExpiry, 1)).toBe(moved);
+      expect(await clusterJoined(1, payCard, 1)).toBe(pay);
+      expect(await db.$count(schema.failureClusters)).toBe(2);
+    });
   });
 
   test('merges two clusters whose samples share a recomputed fingerprint into the one first seen earlier', async () => {
