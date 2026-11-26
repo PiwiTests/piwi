@@ -30,6 +30,14 @@ About** shows an administrator the runs in progress. A script asks the instance 
 node -e "fetch('http://localhost:3000/api/admin/activity',{headers:{'X-API-Key':'pd_your_key'}}).then(r=>r.text()).then(console.log)"
 ```
 
+A deployment script that holds no account in the instance asks the operator route instead, with the token of
+[`PIWI_OPERATOR_TOKEN`](/reference/configuration#authentication) as a Bearer token. It answers counts only, under
+`now`, and nothing else opens it: no session, no API key.
+
+```bash
+node -e "fetch('http://localhost:3000/api/operator/usage',{headers:{Authorization:'Bearer your_operator_token'}}).then(r=>r.text()).then(console.log)"
+```
+
 Nothing is left to wait for once `runsInProgress` is empty and `requestsInProgress`, `diagnosesInProgress` and
 `assistantAnswersInProgress` are 0. `openEventStreams` is for information: browser tabs, live views and connected apps
 reconnect on their own. The work a run's end leaves running in the background (notifications, issue tracker

@@ -163,6 +163,7 @@ export const PROJECT = {
   NOTIFY_EMAIL: 'notify-email-test',
   NO_FILES: 'no-files-project',
   NO_METADATA: 'no-metadata-test',
+  OPERATOR_USAGE: 'operator-usage-test',
   PAGE_DIFF: 'page-diff-test',
   PERFETTO_EXPORT: 'perfetto-export-test',
   PERF_TEST: 'perf-test-project',
