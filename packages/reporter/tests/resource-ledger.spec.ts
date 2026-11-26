@@ -97,15 +97,14 @@ function fakePlaywright() {
     pages() {
       return this.all.filter((p) => !p.closed);
     }
-    /** What `context.debugger.pausedDetails()` answers: the call a stop holds, or null. */
-    readonly debugger = { held: null as object | null, pausedDetails: () => this.debugger.held };
     /**
-     * A page this context opens on its own: a popup of `opener`, or with no opener, as the tab a modifier click opens
-     * and a page another client opens in the context arrive.
+     * A page this context opens on its own, on `url`: a popup of `opener`, or with no opener, as the tab a modifier
+     * click opens (on its URL) and a page another client's `newPage` opens (blank) arrive.
      */
-    popup(opener: FakePage | null) {
+    popup(opener: FakePage | null, url = 'about:blank') {
       const page = new FakePage(this);
       page._opener = opener;
+      page.goto(url);
       this.all.push(page);
       this.emit('page', page);
       return page;
@@ -268,17 +267,16 @@ describe('ResourceLedger', () => {
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
     const page = await context.newPage();
-    // The tab a modifier click opens has no opener, and arrives while the click runs.
-    await fake.apiCall('locator.click', () => context.popup(null), 'tests/cart.spec.ts', 30);
-    // Another client's page has no opener, and arrives while no call of the worker runs; so does its popup.
-    const elsewhere = context.popup(null);
-    context.popup(elsewhere);
-    // While a debugger holds the test at a stop, no page that arrives is the worker's, its popups included.
-    context.debugger.held = {};
-    await fake.apiCall('locator.click', () => context.popup(page), 'tests/cart.spec.ts', 31);
-    await fake.apiCall('locator.click', () => context.popup(null), 'tests/cart.spec.ts', 32);
-    context.debugger.held = null;
-    await fake.apiCall('locator.click', () => context.popup(page), 'tests/cart.spec.ts', 33);
+    // The tab a modifier click opens has no opener, and arrives on its URL, after the click returned.
+    await fake.apiCall('locator.click', () => undefined, 'tests/cart.spec.ts', 30);
+    context.popup(null, 'https://shop.example.test/cart');
+    // The page another client's `newPage` opens is blank and has no opener, whether a call of the worker runs or not;
+    // a popup of that page is not the worker's either.
+    const elsewhere = await fake.apiCall('page.waitForTimeout', () => context.popup(null), 'tests/cart.spec.ts', 31);
+    context.popup(null);
+    context.popup(elsewhere, 'https://shop.example.test/help');
+    // A popup of a page the worker opened.
+    await fake.apiCall('locator.click', () => context.popup(page, 'https://shop.example.test/terms'), 'tests/cart.spec.ts', 33);
 
     const { census } = await ledger.testEnded(info('t1'));
     expect(census.born.filter((b) => b.kind === 'page').map((b) => [b.id, b.site, b.opener, b.trigger])).toEqual([
@@ -991,7 +989,7 @@ require(core).chromium.connect(endpoint).then(async (browser) => {
     }
   }, 60_000);
 
-  it('counts the pages the worker opens and their popups, never one another client opens in its context', async () => {
+  it('never counts a page another client opens in its context, whether a call of the worker runs or a stop holds it', async () => {
     const playwright = (chromium as unknown as { _playwright: ConstructorParameters<typeof ResourceLedger>[0] })
       ._playwright;
     const ledger = new ResourceLedger(playwright, 3, 'report', null, () => info('t1'));
@@ -1008,12 +1006,18 @@ require(core).chromium.connect(endpoint).then(async (browser) => {
       // Another client opens a page in the worker's context while no call of the worker runs.
       letGo.push(await openElsewhere(endpoint, 'page'));
       await expect.poll(() => context.pages().length).toBe(3);
+      // While a call of the worker runs.
+      const waiting = page.waitForFunction(() => (globalThis as { piwiGo?: boolean }).piwiGo === true);
+      letGo.push(await openElsewhere(endpoint, 'page'));
+      await expect.poll(() => context.pages().length).toBe(4);
+      await page.evaluate(() => ((globalThis as { piwiGo?: boolean }).piwiGo = true));
+      await waiting;
       // And while the context's debugger holds a call of the worker at a stop.
       await context.debugger.requestPause();
       const held = page.getByText('Open').textContent();
       await expect.poll(() => context.debugger.pausedDetails()).not.toBeNull();
       letGo.push(await openElsewhere(endpoint, 'page'));
-      await expect.poll(() => context.pages().length).toBe(4);
+      await expect.poll(() => context.pages().length).toBe(5);
       await context.debugger.resume();
       await held;
 
@@ -1029,6 +1033,54 @@ require(core).chromium.connect(endpoint).then(async (browser) => {
       for (const release of letGo) await release();
       ledger.uninstall();
       await browser?.close();
+    }
+  }, 60_000);
+
+  it('counts the popups and tabs the test opens, whenever they arrive, a stop holding the test included', async () => {
+    // Each link's page answers late, so it arrives after the click that opened it returned.
+    const server = http.createServer((req, res) => {
+      res.setHeader('content-type', 'text/html');
+      if (req.url === '/') return res.end('<a id="popup" target="_blank" href="/late">Popup</a> <a id="tab" href="/late">Tab</a>');
+      setTimeout(() => res.end('<p>late</p>'), 500);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const playwright = (chromium as unknown as { _playwright: ConstructorParameters<typeof ResourceLedger>[0] })
+      ._playwright;
+    const ledger = new ResourceLedger(playwright, 3, 'report', null, () => info('t1'));
+    expect(ledger.install()).toBe(true);
+    let browser: Browser | undefined;
+    try {
+      browser = await chromium.launch();
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${(server.address() as net.AddressInfo).port}/`);
+      /** Whether a debugger held the test as each page arrived. */
+      const held: boolean[] = [];
+      context.on('page', () => held.push(!!context.debugger.pausedDetails()));
+      // A popup, which names its opener, and a middle click's tab, which names none, each arriving while a stop holds
+      // the test's next call.
+      for (const [link, button] of [['#popup', 'left'], ['#tab', 'middle']] as const) {
+        await page.click(link, { button });
+        await context.debugger.requestPause();
+        const next = page.locator('#tab').textContent();
+        await expect.poll(() => context.debugger.pausedDetails()).not.toBeNull();
+        await expect.poll(() => held.length).toBe(link === '#popup' ? 1 : 2);
+        await context.debugger.resume();
+        await next;
+      }
+      // A shift click's tab, arriving while no call of the test runs.
+      await page.click('#tab', { modifiers: ['Shift'] });
+      await expect.poll(() => context.pages().length).toBe(4);
+      expect(held).toEqual([true, true, false]);
+
+      const { census } = await ledger.testEnded(info('t1'));
+      const pages = census.born.filter((birth) => birth.kind === 'page');
+      expect(pages.map((birth) => birth.opener)).toEqual([undefined, pages[0]!.id, undefined, undefined]);
+      expect(census.open.map((open) => open.id)).toEqual([1, 2, ...pages.map((birth) => birth.id)]);
+    } finally {
+      ledger.uninstall();
+      await browser?.close();
+      await new Promise((resolve) => server.close(resolve));
     }
   }, 60_000);
 

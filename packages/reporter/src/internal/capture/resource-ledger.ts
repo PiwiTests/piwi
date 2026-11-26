@@ -221,6 +221,8 @@ const WAITS_CAP = 1000;
 
 /** A call that opens a page (`newPage`, and the capture fixtures' wrapper of it, `originalNewPage`). */
 const NEW_PAGE_CALL = /newpage$/i;
+/** The URL of a page that has not navigated: the one a `newPage` call opens. */
+const BLANK_URL = /^(?:about:blank)?$/;
 /** A call that opens a context with a browser of its own. */
 const PERSISTENT_CALL = /launchPersistentContext$/;
 
@@ -1087,19 +1089,18 @@ export class ResourceLedger {
    */
   private onPage(page: Page, context: BrowserContext, initial?: { site: string | null }): void {
     if (this.byObject.has(page)) return;
-    // A page `newPage` opened arrives while that call is still running. Any other page of the worker's is a popup,
-    // opened through the call that last ran: one with an opener was opened by a page the ledger counts (`opener()`),
-    // one without (the tab a modifier click opens) arrives while a call of the worker runs. Any other page, and every
-    // page that arrives while a debugger holds the test at a stop, is another client's (on a browser the worker
-    // shares, `browser.bind`) or a person's at a headed browser: never the worker's.
+    // Playwright reports a page a `newPage` call opens on `about:blank`, while that call runs, and a page the browser
+    // opens for a link or a script once its first navigation committed, on that URL. So a page is the worker's when it
+    // is a popup of a page the ledger counts (its `opener()`), when it has no opener and a URL other than `about:blank`
+    // (the tab a modifier click opens), or when it is blank while a `newPage` call of the worker runs. Any other page
+    // is another client's (on a browser the worker shares, `browser.bind`): a popup of its page, or a blank page its
+    // `newPage` opened. A page of the worker's that no `newPage` call opened is a popup, opened through the call that
+    // last ran.
     const zone = this.latestPendingCall();
     const viaNewPage = NEW_PAGE_CALL.test(zone?.apiName ?? '');
     const opener = (page as unknown as { _opener?: object | null })._opener;
     const openerEntry = opener ? this.byObject.get(opener) : undefined;
-    if (!initial) {
-      const opened = viaNewPage || (opener ? !!openerEntry : zone !== null);
-      if (!opened || this.heldAtStop()) return;
-    }
+    if (!initial && (opener ? !openerEntry : BLANK_URL.test(page.url()) && !viaNewPage)) return;
     const popup = !viaNewPage && !initial;
     const site = viaNewPage ? zoneSite(zone) : initial ? initial.site : zoneSite(this.lastCall);
     const entry = this.track(page, 'page', context, site);
@@ -1136,20 +1137,6 @@ export class ResourceLedger {
         }
       };
     }
-  }
-
-  /** Whether the debugger of a context the ledger counts holds the test at a stop (`context.debugger`, feature-checked). */
-  private heldAtStop(): boolean {
-    for (const entry of this.openEntries()) {
-      if (entry.birth.kind !== 'context') continue;
-      const debuggerOf = (entry.object as { debugger?: { pausedDetails?: () => unknown } }).debugger;
-      try {
-        if (typeof debuggerOf?.pausedDetails === 'function' && debuggerOf.pausedDetails()) return true;
-      } catch {
-        // A debugger that cannot answer holds nothing.
-      }
-    }
-    return false;
   }
 
   private onClosed(object: object, byPiwi = false): void {
