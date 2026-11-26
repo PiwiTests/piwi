@@ -152,9 +152,9 @@ A protected environment, Production as a rule, holds at least one required tag (
 against it:
 
 - **runs only the tests carrying one of its required tags**, and the setup and teardown projects they depend on, which
-  Playwright runs whole: Piwi adds a `--grep-invert` that leaves out every other test, and keeps the run's own filter.
-  The command shown carries it. On Windows, PowerShell may break its quoting when `npx` resolves to `npx.cmd`: start
-  these runs from the desktop app or Run on my machine;
+  Playwright runs whole: Piwi adds a `--grep-invert` that leaves out every other test, and keeps the run's own filter
+  case-insensitive. The command shown carries it. On Windows, PowerShell may break its quoting when `npx` resolves to
+  `npx.cmd`: start these runs from the desktop app or Run on my machine;
 - **is confirmed**, its name shown, in the desktop app, the app taking a Run on my machine request and the editors'
   question;
 - **is started by a project admin only**: the instance gives a protected environment's run variables, and takes a

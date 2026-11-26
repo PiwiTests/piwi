@@ -78,6 +78,39 @@ describe('a protected environment’s required tags', () => {
       '--grep-invert',
       merged,
     ]);
+    // The filters go first: the own -G taken out hands no filter to a --project, a --shuffle or a --debug before it.
+    for (const option of [['--project', 'api'], ['--shuffle'], ['--debug']]) {
+      expect(withRequiredTags([...option, '-G', 'slow', 'tests/a.spec.ts'], ['@smoke'])).toEqual([
+        'tests/a.spec.ts',
+        ...option,
+        '--grep-invert',
+        merged,
+      ]);
+    }
+  });
+
+  test('keep an own pattern written /source/flags with i as its source, and refuse one that matches letters in their case', () => {
+    const merged = requiredTagsGrepInvert(['@smoke'], 'slow');
+    expect(withRequiredTags(['-G', '/slow/i', 'tests/a.spec.ts'], ['@smoke'])).toEqual([
+      'tests/a.spec.ts',
+      '--grep-invert',
+      merged,
+    ]);
+    expect(withRequiredTags(['--grep-invert=/slow/gi'], ['@smoke'])).toEqual(['--grep-invert', merged]);
+    expect(withRequiredTags(['-G', '/Slow/'], ['@smoke'])).toBe(
+      "-G /Slow/ matches letters in their case, which a protected environment's run cannot keep: it reads -G ignoring case, as -G /Slow/i does",
+    );
+    expect(withRequiredTags(['--grep-invert', '/slow/g'], ['@smoke'])).toMatch(/^--grep-invert \/slow\/g matches/);
+    // Not read as /source/flags: kept as written.
+    expect(withRequiredTags(['-G', '/slow/m'], ['@smoke'])).toEqual([
+      '--grep-invert',
+      requiredTagsGrepInvert(['@smoke'], '/slow/m'),
+    ]);
+    // `//i` leaves out every test, as Playwright reads it, and the merged filter is still one a shell takes.
+    const every = withRequiredTags(['-G', '//i', 'tests/a.spec.ts'], ['@smoke']) as string[];
+    expect(every[2]).toBe(`(?:)|${requiredTagsGrepInvert(['@smoke'])}`);
+    expect(isRequiredTagsFilter(every[2]!)).toBe(true);
+    expect(isRequiredTagsFilter(merged)).toBe(true);
   });
 
   test('write a filter every shell reads as it is in double quotes, and nothing else past the usual checks', () => {
@@ -140,9 +173,42 @@ describe('playwrightTestCommand', () => {
     expect(playwrightTestCommand(['a.spec.ts', '--shuffle'])).toBe('npx playwright test a.spec.ts --shuffle');
     expect(playwrightTestCommand(['--shuffle=1234', '--headed'])).toBe('npx playwright test --shuffle=1234 --headed');
     expect(playwrightArgsOf('npx playwright test --shuffle -G slow')).toEqual(['--shuffle', '-G', 'slow']);
-    for (const args of [['-G'], ['--shuffle=$(id)'], ['--shuffle', '-5'], ['-Gslow'], ['-G=slow'], ['-g=pays']]) {
+    // A negative number is a seed, as Playwright reads it, never an option.
+    expect(playwrightTestCommand(['--shuffle', '-5'])).toBe('npx playwright test --shuffle -5');
+    for (const args of [['-G'], ['--shuffle=$(id)'], ['-5'], ['-Gslow'], ['-G=slow'], ['-g=pays']]) {
       expect(playwrightTestCommand(args), JSON.stringify(args)).toBeNull();
     }
+  });
+
+  test('reads the word after --debug as its mode, as Playwright does, and refuses one that is not a mode', () => {
+    expect(playwrightTestCommand(['tests/a.spec.ts', '--debug'])).toBe('npx playwright test tests/a.spec.ts --debug');
+    expect(playwrightTestCommand(['--debug', 'cli', 'tests/a.spec.ts'])).toBe(
+      'npx playwright test --debug cli tests/a.spec.ts',
+    );
+    expect(playwrightTestCommand(['--debug=inspector', '--headed'])).toBe(
+      'npx playwright test --debug=inspector --headed',
+    );
+    expect(playwrightTestCommand(['--debug', '--headed', 'tests/a.spec.ts'])).toBe(
+      'npx playwright test --debug --headed tests/a.spec.ts',
+    );
+    // Playwright reads the filter as the mode, and refuses it.
+    for (const args of [['--debug', 'tests/a.spec.ts'], ['--debug=tests/a.spec.ts'], ['--debug='], ['--debug', '-5']]) {
+      expect(playwrightTestCommand(args), JSON.stringify(args)).toBeNull();
+    }
+    expect(runName(['--debug', 'cli', 'tests/a.spec.ts:3'])).toBe('a.spec.ts:3');
+  });
+
+  test('reads every word after --project up to an option as a project, as Playwright does', () => {
+    expect(playwrightTestCommand(['--project', 'chromium', 'firefox', '--headed'])).toBe(
+      'npx playwright test --project chromium firefox --headed',
+    );
+    expect(runName(['--project', 'chromium', 'tests/a.spec.ts'])).toBe('every test');
+    expect(runName(['--project=chromium', 'tests/a.spec.ts'])).toBe('a.spec.ts');
+    expect(runName(['--project', 'chromium', '-x', 'tests/a.spec.ts'])).toBe('a.spec.ts');
+    // The word after it is a project, whatever it is.
+    expect(playwrightTestCommand(['--project', '--headed'])).toBe('npx playwright test --project --headed');
+    expect(playwrightTestCommand(['--project'])).toBeNull();
+    expect(playwrightTestCommand(['--project', 'a', ''])).toBeNull();
   });
 
   test('refuses an option that loads or writes a file, and an argument a shell would expand', () => {
@@ -198,14 +264,17 @@ describe('repeatArgs', () => {
     ]);
     expect(
       repeatArgs(['--retries', '2', '--grep', '--retries', '--repeat-each=5', '--project=chromium', 'a.spec.ts'], 3),
-    ).toEqual(['--grep', '--retries', '--project=chromium', 'a.spec.ts', '--repeat-each=3', '--retries=0']);
-    // A --shuffle written without a seed takes no option as its seed.
+    ).toEqual(['a.spec.ts', '--grep', '--retries', '--project=chromium', '--repeat-each=3', '--retries=0']);
+    // The filters go first: an option left out never hands a filter to the option before it as its value.
     expect(repeatArgs(['--shuffle', '--retries', '2', 'a.spec.ts'], 3)).toEqual([
-      '--shuffle',
       'a.spec.ts',
+      '--shuffle',
       '--repeat-each=3',
       '--retries=0',
     ]);
+    expect(repeatArgs(['--project', 'api', '--retries', '2', 'a.spec.ts', '--debug', '--repeat-each', '4'], 3)).toEqual(
+      ['a.spec.ts', '--project', 'api', '--debug', '--repeat-each=3', '--retries=0'],
+    );
   });
 
   test('is null for a repeat that is not a whole number from 1 to 100, or arguments Piwi does not pass', () => {

@@ -1921,6 +1921,21 @@ describe('the Piwi language server', () => {
       });
       expect(await runArgs()).not.toBeNull();
       expect(asked).toHaveLength(5);
+      // An own pattern that matches letters in their case cannot be kept in the filter: nothing runs, a notice says why.
+      const said: Notice[] = [];
+      const listening = client.onNotification('piwi/notice', (n: Notice) => {
+        said.push(n);
+      });
+      try {
+        expect(await runArgs({ grepInvert: '/Slow/' })).toBeNull();
+        expect((await waitFor(() => said[0])).message).toBe(
+          "Piwi runs nothing against Production: --grep-invert /Slow/ matches letters in their case, which a protected environment's run cannot keep: it reads --grep-invert ignoring case, as --grep-invert /Slow/i does.",
+        );
+      } finally {
+        listening.dispose();
+      }
+      expect(await runArgs({ grepInvert: '/slow/i' })).toMatchObject({ args: kept!.args });
+      expect(asked).toHaveLength(7);
 
       // An environment the project no longer has runs nothing, and the item says so.
       await choose(4);
@@ -1930,7 +1945,7 @@ describe('the Piwi language server', () => {
       expect((await status()).environment).toMatchObject({ id: 4, text: 'Staging' });
       expect((await status()).environment?.tooltip).toMatch(/^Staging is no longer one of Acme Mugs’s environments/);
       expect(await runArgs()).toBeNull();
-      expect(asked).toHaveLength(5);
+      expect(asked).toHaveLength(7);
       // None stays offered, and is chosen.
       expect(await choose(null)).toEqual({ kept: null });
     } finally {

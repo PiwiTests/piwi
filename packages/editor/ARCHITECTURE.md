@@ -2165,6 +2165,14 @@ test filter, or an option of `PLAYWRIGHT_OPTIONS`, none of which names a file Pl
 An argument that is anything else, or that a shell would expand, refuses the whole command, and the clients run only
 what the service built.
 
+The arguments are read as Playwright's command line (commander) reads them (`readArgs`): an option's value after `=`,
+or the next word whatever it is; an optional value (`--shuffle [seed]`, `--debug [mode]`) the next word unless it reads
+as an option (a negative number does not); a variadic one (`--project <name...>`) every next word up to one that reads
+as an option, so a filter written after `--project x` is a project. `--debug` takes `inspector` or `cli` alone
+(`OPTION_CHOICES`, Playwright 1.63), and refuses the command for any other word after it, a test filter included, as
+Playwright does. A command whose options are taken out (`repeatArgs`, `withRequiredTags`) is written with its test
+filters first (`writtenArgs`), so no option left before a filter takes it as its value.
+
 ### Run variables
 
 A project's run variables (`@piwitests/core/run-variables`, `adr/run-variables.md`) are environment variables, never
@@ -2201,7 +2209,10 @@ environment's run variables merged (`parseRunVariables` with `RUN_VARIABLE_LIMIT
 **Allow** question covers each new set: the merged variables with the environment's key. A protected environment asks
 before every run instead (`confirmProtected`), and its arguments keep to the tests carrying one of its required tags:
 the run's own `--grep-invert` merged into one with `requiredTagsGrepInvert` (`withRequiredTags`), which `shellWord`
-double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). Playwright applies a
+double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). The merged pattern is a
+plain one, which Playwright matches ignoring case: an own pattern written `/source/flags` with `i` is kept as its
+source, and one without `i`, which matches letters in their case, refuses the run with a notice saying so
+(`requiredTagsGrepInvertProblem`), as the desktop app's shell refuses it. Playwright applies a
 CLI filter before it adds the projects a run's projects depend on, so their setup and teardown tests run whole: every
 sentence that states the rule says so (`requiredTagsWords`). On Windows such a run starts the project's Playwright CLI
 with `node` (`playwrightNodeCommand`), since PowerShell hands `npx.cmd` the filter bare and cmd would read its `^` and

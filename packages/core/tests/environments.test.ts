@@ -10,6 +10,7 @@ import {
   parseEnvironmentForRun,
   requiredTagProblem,
   requiredTagsGrepInvert,
+  requiredTagsGrepInvertProblem,
   resolveEnvironment,
 } from '../src/environments';
 import { RUN_VARIABLE_LIMITS, mergeRunVariables, parseRunVariables } from '../src/run-variables';
@@ -152,6 +153,31 @@ describe('requiredTagsGrepInvert', () => {
     expect(matches(pattern, 'a flaky test @smoke')).toBe(true);
     expect(matches(pattern, 'a test @smoke')).toBe(false);
     expect(matches(pattern, 'a test')).toBe(true);
+  });
+
+  test('keeps an own pattern written /source/flags with i as its source, and refuses one without i', () => {
+    const required = requiredTagsGrepInvert(['@smoke']);
+    for (const [own, kept] of [
+      ['/slow/i', 'slow'],
+      ['/slow/gi', 'slow'],
+      ['/a/b/ig', 'a/b'],
+      ['//i', ''],
+      ['/slow/m', '/slow/m'],
+      ['/slow', '/slow'],
+      ['/a\u2028b/i', '/a\u2028b/i'],
+    ] as const) {
+      expect(requiredTagsGrepInvertProblem(own), own).toBeNull();
+      expect(requiredTagsGrepInvert(['@smoke'], own), own).toBe(`(?:${kept})|${required}`);
+    }
+    expect(matches(requiredTagsGrepInvert(['@smoke'], '/Slow/i'), 'a slow test @smoke')).toBe(true);
+    expect(requiredTagsGrepInvert(['@smoke'], '')).toBe(required);
+    expect(requiredTagsGrepInvertProblem('/Slow/')).toBe(
+      "-G /Slow/ matches letters in their case, which a protected environment's run cannot keep: it reads -G ignoring case, as -G /Slow/i does",
+    );
+    for (const own of ['/slow/g', '/x/i/']) {
+      expect(requiredTagsGrepInvertProblem(own, '--grep-invert'), own).toMatch(/^--grep-invert .* matches letters/);
+      expect(() => requiredTagsGrepInvert(['@smoke'], own), own).toThrow(/matches letters in their case/);
+    }
   });
 });
 
