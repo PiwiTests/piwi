@@ -31,8 +31,9 @@ node -e "fetch('http://localhost:3000/api/admin/activity',{headers:{'X-API-Key':
 ```
 
 A deployment script that holds no account in the instance asks the operator route instead, with the token of
-[`PIWI_OPERATOR_TOKEN`](/reference/configuration#authentication) as a Bearer token. It answers counts only, under
-`now`, and nothing else opens it: no session, no API key.
+[`PIWI_OPERATOR_TOKEN`](/reference/configuration#authentication) as a Bearer token; nothing else opens it, no session
+and no API key. It answers counts only: under `now`, `runsInProgress` is a number, `lastRunActivityAt` the last time
+any of those runs reported, and the other counts are the same as below.
 
 ```bash
 node -e "fetch('http://localhost:3000/api/operator/usage',{headers:{Authorization:'Bearer your_operator_token'}}).then(r=>r.text()).then(console.log)"

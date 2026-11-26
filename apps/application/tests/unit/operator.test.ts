@@ -46,11 +46,13 @@ describe('requireOperator', () => {
     vi.restoreAllMocks();
   });
 
-  test('answers 404 while no token is set, or one too short to be taken', () => {
+  test('answers 404 while no token is set, or one it cannot take: too short, or holding a space', () => {
     vi.stubEnv('PIWI_OPERATOR_TOKEN', '');
     expect(status(request(`Bearer ${TOKEN}`).event)).toBe(404);
     vi.stubEnv('PIWI_OPERATOR_TOKEN', TOKEN.slice(1));
     expect(status(request(`Bearer ${TOKEN.slice(1)}`).event)).toBe(404);
+    vi.stubEnv('PIWI_OPERATOR_TOKEN', `${TOKEN} ${TOKEN}`);
+    expect(status(request(`Bearer ${TOKEN}`).event)).toBe(404);
   });
 
   test('admits the token as a Bearer token, and nothing else', () => {
@@ -65,13 +67,15 @@ describe('requireOperator', () => {
     }
   });
 
-  test('refuses a client network after ten wrong tokens, while another network and the right token still pass', () => {
+  test('refuses a client network after ten wrong tokens, but never the right one, and counts no request without one', () => {
     vi.stubEnv('PIWI_OPERATOR_TOKEN', TOKEN);
-    for (let attempt = 0; attempt < 20; attempt++) expect(status(request(`Bearer ${TOKEN}`).event)).toBe(200);
+    for (let attempt = 0; attempt < 20; attempt++) expect(status(request(null).event)).toBe(401);
     for (let attempt = 0; attempt < 10; attempt++) expect(status(request('Bearer wrong').event)).toBe(401);
-    expect(status(request('Bearer wrong').event)).toBe(429);
-    expect(status(request(`Bearer ${TOKEN}`).event)).toBe(429);
-    expect(status(request(`Bearer ${TOKEN}`, '198.51.100.7').event)).toBe(200);
+    const refused = request('Bearer wrong');
+    expect(status(refused.event)).toBe(429);
+    expect(refused.setHeader).toHaveBeenCalledWith('Retry-After', expect.any(Number));
+    expect(status(request(`Bearer ${TOKEN}`).event)).toBe(200);
+    expect(status(request('Bearer wrong', '198.51.100.7').event)).toBe(401);
   });
 });
 
@@ -107,6 +111,8 @@ describe('getOperatorUsage', () => {
         run('passed', 2, '0.76.0'),
         run('running', 1, '0.76.0', 0.5),
         run('initializing', 3, null),
+        run('passed', 4, 'mail me at someone@example.com'),
+        run('passed', 4, `9.9.9-${'x'.repeat(100)}`),
       ])
       .returning();
     await db.insert(schema.files).values([
@@ -131,7 +137,7 @@ describe('getOperatorUsage', () => {
       },
       projects: 1,
       users: 1,
-      runs: { total: 5, last24Hours: 3, last30Days: 4, lastCreatedAt: ago(1) },
+      runs: { total: 7, last24Hours: 5, last30Days: 6, lastStartedAt: ago(1) },
       storage: { files: 2, bytes: 1000 },
       reporterVersions: [
         { version: '0.76.0', runs: 2, lastRunAt: ago(1) },
@@ -140,6 +146,7 @@ describe('getOperatorUsage', () => {
     });
     expect(JSON.stringify(usage)).not.toContain('secret-project-name');
     expect(JSON.stringify(usage)).not.toContain('alice');
+    expect(JSON.stringify(usage)).not.toContain('someone@example.com');
   });
 
   test('answers zeros and nulls on an empty instance', async () => {
@@ -149,7 +156,7 @@ describe('getOperatorUsage', () => {
       NOW,
     );
     expect(usage.now).toMatchObject({ runsInProgress: 0, lastRunActivityAt: null });
-    expect(usage.runs).toEqual({ total: 0, last24Hours: 0, last30Days: 0, lastCreatedAt: null });
+    expect(usage.runs).toEqual({ total: 0, last24Hours: 0, last30Days: 0, lastStartedAt: null });
     expect(usage.reporterVersions).toEqual([]);
   });
 });

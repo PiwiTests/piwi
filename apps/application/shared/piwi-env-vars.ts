@@ -530,7 +530,7 @@ export const PIWI_ENV_VARS = {
     since: '0.78.0',
     docs: 'operate/upgrading',
     notes:
-      "At least 32 characters: a shorter token leaves the routes closed and logs a warning. A client network that sends ten wrong tokens in 15 minutes is refused until the window ends. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
+      "At least 32 characters, with no space: a token it cannot take leaves the routes closed, and the first request to them logs a warning. The right token always passes; a client network that sends ten wrong tokens in 15 minutes is refused until the window ends, the network being the reverse proxy's unless PIWI_TRUST_PROXY is set. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
   },
   PIWI_METRICS_ENABLED: {
     description:
