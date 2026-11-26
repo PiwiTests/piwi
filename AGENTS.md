@@ -146,6 +146,9 @@ form exists show a bash and a PowerShell version. The mappings and the VitePress
   `npx @piwitests/reporter init` writes, and what the connect wizard (`GetStartedWizard`) shows. The bare reporter
   entry appears only as the fallback for a config that cannot be wrapped, saying what it gives up. The wizard's
   snippets come from `app/utils/setup-snippets.ts`, which `tests/unit/setup-snippets.test.ts` holds to `init`'s output.
+- **The product is called Piwi.** "Piwi Dashboard" stays only where something matches on it: the reporter's
+  `[Piwi Dashboard]` log prefix, the markers of Piwi's pull-request comments and the desktop app's former install
+  name. `apps/application/tests/unit/product-name.test.ts` scans what people read.
 - **Repository links point at `https://github.com/PiwiTests/piwi`**: docs, package metadata (`repository`,
   `RepositoryUrl`), app links, the desktop updater endpoints. Two names stay as they are: the container image
   `ghcr.io/piwitests/platform`, which users pull by name, and the links release-please already wrote into

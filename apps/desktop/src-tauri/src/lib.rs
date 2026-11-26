@@ -4137,7 +4137,7 @@ mod tests {
         ServerNotification {
             kind: kind.into(),
             project_id,
-            title: "Piwi Dashboard".into(),
+            title: "Piwi".into(),
             body: "acme-web: 3/120 tests failed".into(),
             path: Some("/test-runs/146".into()),
             default_on,
@@ -4179,12 +4179,12 @@ mod tests {
 
     #[test]
     fn a_server_notification_reads_as_the_server_sends_it() {
-        let sent = r#"{"type":"run.failed","projectId":3,"title":"Piwi Dashboard","body":"acme-web: 3/120 tests failed","path":"/test-runs/146","defaultOn":true}"#;
+        let sent = r#"{"type":"run.failed","projectId":3,"title":"Piwi","body":"acme-web: 3/120 tests failed","path":"/test-runs/146","defaultOn":true}"#;
         assert_eq!(
             serde_json::from_str::<ServerNotification>(sent).unwrap(),
             server_notification("run.failed", Some(3), true)
         );
-        let about_no_project = r#"{"type":"report.ready","projectId":null,"title":"Piwi Dashboard","body":"Your quality report is ready","path":null,"defaultOn":false}"#;
+        let about_no_project = r#"{"type":"report.ready","projectId":null,"title":"Piwi","body":"Your quality report is ready","path":null,"defaultOn":false}"#;
         let read = serde_json::from_str::<ServerNotification>(about_no_project).unwrap();
         assert_eq!((read.project_id, read.path), (None, None));
     }

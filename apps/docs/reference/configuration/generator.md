@@ -9,7 +9,7 @@ outline: false
 
 <ConfigModeSwitch mode="generator" />
 
-Build a ready-to-paste configuration for a self-hosted Piwi — as a `.env` file, systemd unit or shell exports; a Docker Compose service, `docker run` command or Kubernetes ConfigMap + Secret; or a hosting-platform manifest for [Railway, Render, Fly.io, Koyeb or Coolify](/operate/deployment#one-click-deploy). Everything below is driven by the same typed registry as the [configuration reference](../configuration), so options, defaults and validation always match your server.
+Build a ready-to-paste configuration for a self-hosted Piwi server — as a `.env` file, systemd unit or shell exports; a Docker Compose service, `docker run` command or Kubernetes ConfigMap + Secret; or a hosting-platform manifest for [Railway, Render, Fly.io, Koyeb or Coolify](/operate/deployment#one-click-deploy). Everything below is driven by the same typed registry as the [configuration reference](../configuration), so options, defaults and validation always match your server.
 
 <EnvWizard />
 
