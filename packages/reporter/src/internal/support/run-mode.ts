@@ -1,4 +1,19 @@
 /**
+ * The command line of the runner, for the readers below and `cli-filters.ts`: Playwright's own snapshot of it
+ * (`config.argv`, Playwright 1.61 and later), else this process's `process.argv`. A run Playwright starts without a
+ * command line of its own (merge-reports, watch mode, an editor's test server) has an empty snapshot, which reads as
+ * none: the process's arguments name its files and filters there.
+ */
+export function runnerArgv(
+  config: { argv?: unknown } | null | undefined,
+  fallback: readonly string[] = process.argv,
+): string[] {
+  const argv = config?.argv;
+  if (Array.isArray(argv) && argv.length > 0 && argv.every((arg) => typeof arg === 'string')) return argv as string[];
+  return [...fallback];
+}
+
+/**
  * Detect Playwright's interactive **UI mode** (`playwright test --ui`, or
  * `--ui-host` / `--ui-port`).
  *
@@ -11,12 +26,12 @@
  * those stray runs.
  *
  * `globalSetup` runs in the same process the CLI was launched in, so the
- * `--ui*` flags are visible on `process.argv`. We only scan tokens after the
- * `test` subcommand (mirroring `detectCliFileFilters`) so an unrelated value
- * that happens to look like a UI flag can't trigger a false positive.
+ * `--ui*` flags are on the runner's command line (`runnerArgv`). We only scan
+ * tokens after the `test` subcommand (mirroring `detectCliFileFilters`) so an
+ * unrelated value that happens to look like a UI flag can't trigger a false
+ * positive.
  *
- * `argv` is a parameter (defaulting to `process.argv`) purely so tests can drive
- * it deterministically.
+ * `argv` is the runner's command line, `process.argv` by default.
  */
 const PW_UI_FLAGS = ['--ui', '--ui-host', '--ui-port'];
 
@@ -42,8 +57,7 @@ export function isUiMode(argv: string[] = process.argv): boolean {
  * As with `isUiMode`, only the tokens after the `test` subcommand are scanned so
  * a spec file or value that merely contains "list" can't trigger a false positive.
  *
- * `argv` is a parameter (defaulting to `process.argv`) purely so tests can drive
- * it deterministically.
+ * `argv` is the runner's command line, `process.argv` by default.
  */
 const PW_LIST_FLAGS = ['--list'];
 

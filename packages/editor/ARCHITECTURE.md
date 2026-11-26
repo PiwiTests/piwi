@@ -535,9 +535,11 @@ config's last listing:
 whose text differs from the file's, line endings aside: `sameText`), listed since it last changed on disk, and loading. Its tests are then one per
 title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
 spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
-`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, a title
-written on the call's line or on the first line of code below it, with the titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
-are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
+`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a `test.skip(…)`, `test.fixme(…)` or
+`test.fail(…)` only with an argument after its title (`test.skip('reason')` marks the test it is in), a line starting
+with `//` read as blank, a title written on the call's line or on the first line of code below it, with the titled
+`test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests are one
+test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
 (`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
 `specTests` in `src/server.ts`.
 
@@ -1373,7 +1375,7 @@ would open on the machine the run runs on, not this one.").
   `src/` folders, following links, and reads them as a live trace, an unfinished call shown running. An
   `<attempt>.json` on disk is served in place of that listing.
   The viewer reads it once, as it stands when it loads: its service worker keeps a trace by its URL, so neither its
-  live poll nor a reload shows what came since (Playwright 1.59 to 1.64; a `.trace` file opened alone does not load,
+  live poll nor a reload shows what came since (Playwright 1.59 to 1.65; a `.trace` file opened alone does not load,
   being no archive). One viewer for each attempt at a time: a second ask while it is open says so, and to close it to
   see the trace as it stands then.
 - **The launcher** (`startTraceViewer`): the Playwright CLI of the run's folder (`resolvePlaywrightCli`) with the
@@ -2004,7 +2006,7 @@ or when the config's options are not read within 3 s; whole otherwise.
 3. Forks the launcher in the config's folder (`sessions.ts`).
 
 The options reader and the launcher both run with the project's Node (`node.ts`): under an editor's Electron, the first
-`node` on the service's `PATH` when it is Node 20 or later, run without `ELECTRON_RUN_AS_NODE`; else the service's own
+`node` on the service's `PATH` when it is Node 22 or later, run without `ELECTRON_RUN_AS_NODE`; else the service's own
 runtime.
 
 The launcher (`launcher.ts`):

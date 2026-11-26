@@ -27,7 +27,8 @@ import {
   type PlanReason,
 } from '../internal/support/selection-client.js';
 import { privateTempDir, writePrivateFile } from '../internal/support/private-file.js';
-import { PIWI_ENV_KEYS, PIWI_PLAN_ENV } from '../internal/config/env.js';
+import { PIWI_ENV_KEYS, PIWI_PLAN_ENV, PIWI_PLAN_SKIP_ENV } from '../internal/config/env.js';
+import { playwrightVersionAtLeast } from '../internal/support/playwright-version.js';
 import { resolveCliConnection } from '../internal/support/connection.js';
 import { readInstalledPlaywrightVersion } from './add-reporter.js';
 import { findKey, git, gitChange, readOption, runRun, spawnPlaywrightForRun } from './select.js';
@@ -38,6 +39,8 @@ const EXIT_ERROR = 2;
 const FETCH_TIMEOUT_MS = 120_000;
 /** Changed files one diff may carry, as the dashboard takes them; a larger diff is not sent and its tests run. */
 const MAX_CHANGED_FILES = 5000;
+/** The Playwright whose reporters can skip tests themselves (`testRun.skip` in `preprocess`). */
+const REPORTER_SKIPS_SINCE = '1.62';
 
 const USAGE = `
 piwi plan — plan a run that reuses the passes whose code has not changed (experimental)
@@ -274,6 +277,17 @@ export function isPlannedRun(argv: string[]): boolean {
   return own.includes('--reuse') || own.some((arg) => arg === '--plan' || arg.startsWith('--plan='));
 }
 
+/**
+ * Playwright's arguments for one shard of a plan: `--shard`, with `--pass-with-no-tests` unless `others` pass it, so a
+ * shard passes when no test the plan names is left (Playwright 1.65 and later fail a sharded run whose whole selection
+ * is empty). None for a run that is not sharded.
+ */
+function planShardArgs(shard: string | null, others: string[]): string[] {
+  if (!shard) return [];
+  const passWithNoTests = others.includes('--pass-with-no-tests') ? [] : ['--pass-with-no-tests'];
+  return [`--shard=${shard.replace(/\s+/g, '')}`, ...passWithNoTests];
+}
+
 /** `argv` without `--reuse`, for the run a failed plan falls back to. */
 function withoutReuse(argv: string[]): string[] {
   const dashIndex = argv.indexOf('--');
@@ -282,12 +296,14 @@ function withoutReuse(argv: string[]): string[] {
 }
 
 /**
- * Run a plan: its selection, less the tests it reuses, through Playwright's
- * `--test-list-invert`, sharded by Playwright's own `--shard` so every shard
- * filters the same list. A plan read by another job than the one that made it
- * is used only when both checkouts are clean at one commit, since it skips
- * tests on the diff of the tree it was made in: otherwise this throws, and the
- * caller falls back.
+ * Run a plan: its selection, less the tests it reuses, sharded by Playwright's
+ * own `--shard` so every shard skips the same tests. With Playwright 1.62 or
+ * later in the project, the reporter skips them itself (`PIWI_PLAN_SKIP`), so
+ * every reporter shows them as skipped, naming the run whose pass stands in for
+ * each; below it, Playwright's `--test-list-invert` leaves them out. A plan read
+ * by another job than the one that made it is used only when both checkouts are
+ * clean at one commit, since it skips tests on the diff of the tree it was made
+ * in: otherwise this throws, and the caller falls back.
  */
 async function runStoredPlan(
   args: PlanArgs,
@@ -314,7 +330,7 @@ async function runStoredPlan(
   if (planned && named && planned.toLowerCase() !== named.toLowerCase()) {
     throw new Error(`plan ${planId} was made for the environment ${planned}, and this run names ${named}`);
   }
-  const shardArgs = args.shard ? [`--shard=${args.shard.replace(/\s+/g, '')}`] : [];
+  const shardArgs = planShardArgs(args.shard, [...plan.args, ...args.extra]);
   console.error(
     `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
@@ -323,9 +339,16 @@ async function runStoredPlan(
     ...runEnv(args, env),
     ...(planned && !named ? { [PIWI_ENV_KEYS.environment]: planned } : {}),
     [PIWI_PLAN_ENV]: String(planId),
+    [PIWI_PLAN_SKIP_ENV]: undefined,
   };
   if (plan.skip.length === 0) {
     return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], planEnv);
+  }
+  if (playwrightVersionAtLeast(readInstalledPlaywrightVersion(process.cwd()), REPORTER_SKIPS_SINCE)) {
+    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], {
+      ...planEnv,
+      [PIWI_PLAN_SKIP_ENV]: 'true',
+    });
   }
   const dir = fs.mkdtempSync(path.join(privateTempDir(), 'plan-'));
   const list = path.join(dir, 'skip.txt');

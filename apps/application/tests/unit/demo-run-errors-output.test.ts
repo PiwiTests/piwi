@@ -55,18 +55,28 @@ function finishBody(streamToken: string, extra: Partial<TestRunFinishPayload> = 
 }
 
 describe("the demo's run", () => {
-  test('keeps its errors outside any test', async () => {
+  test('keeps its errors outside any test, with the worker an error came from', async () => {
     const { runId, streamToken } = await beginRun();
+    const worker = { parallelIndex: 1, playwrightProject: 'chromium' };
     await apiFinishTestRun(
       runId,
       finishBody(streamToken, {
         runErrors: [
-          { message: 'Error: worker teardown failed', location: { file: 'fixtures.ts', line: 9, column: 3 } },
+          {
+            message: 'Error: worker teardown failed',
+            location: { file: 'fixtures.ts', line: 9, column: 3 },
+            ...worker,
+          },
         ],
       }),
     );
     expect((await getTestRun(db as never, runId))?.runErrors).toEqual([
-      { message: 'Error: worker teardown failed', stack: null, location: { file: 'fixtures.ts', line: 9, column: 3 } },
+      {
+        message: 'Error: worker teardown failed',
+        stack: null,
+        location: { file: 'fixtures.ts', line: 9, column: 3 },
+        ...worker,
+      },
     ]);
   });
 

@@ -73,7 +73,7 @@ When a test passed on retry, the **Attempts** tab lists every attempt (status an
 - the **error** present on the failing attempt and gone on the pass;
 - a **request**, keyed by route (`GET /api/cart/:id`), that failed (5xx or no response) on one attempt only, or took
   at least 1 s and twice as long on the failing one;
-- a **console** error or warning logged on one attempt only;
+- a **console** error, warning or page error on one attempt;
 - a **step** that errored, ran much slower, or ran with different **params** on one attempt;
 - a **page-state or URL** difference, including storage keys and cookies;
 - an **ARIA structural** difference at the landmark and heading level.
@@ -94,8 +94,8 @@ and reports nodes **added**, **removed**, **renamed**, **changed** (an attribute
 **moved**. The element the failing locator names
 is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the button renamed `"Pay now"`.
 
-The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then
-the same branch. Green snapshots come from
+The baseline is the same test's latest passing snapshot on the same browser, preferring the same environment, then
+Playwright release, then branch. Green snapshots come from
 [sampling on pass](/guide/capture-fixtures#green-page-sampling-on-pass), about once a day per test; until one exists the
 view says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
 `explain_failure` [MCP tool](/features/mcp).

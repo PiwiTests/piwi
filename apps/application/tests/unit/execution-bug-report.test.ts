@@ -44,6 +44,7 @@ beforeAll(async () => {
       consoleLogs: [
         { type: 'error', text: 'Failed to load resource: 500', timestamp: 1790000000300 },
         { type: 'log', text: 'hello', timestamp: 1790000000301 },
+        { type: 'pageerror', text: 'TypeError: total is undefined', timestamp: 1790000000302 },
       ],
       steps: [
         { title: 'Navigate', subtitle: '/cart', category: 'navigation', depth: 0, location: at(5) },
@@ -108,7 +109,10 @@ describe('getExecutionBugReport', () => {
     });
     expect(report.steps.steps[3]!.assertion).toMatchObject({ expected: 'Total: 42', actual: 'Total: 50' });
     expect(report.steps.viewports).toEqual([{ step: 0, width: 1280, height: 720 }]);
-    expect(report.evidence.console.map((c) => c.message)).toEqual(['Failed to load resource: 500']);
+    expect(report.evidence.console.map((c) => [c.source, c.level, c.message])).toEqual([
+      ['console', 'error', 'Failed to load resource: 500'],
+      ['error', 'error', 'TypeError: total is undefined'],
+    ]);
     expect(report.evidence.requests).toEqual([{ method: 'POST', url: '/api/coupons', status: 500, page: '', time: 0 }]);
     expect(report.export).toMatchObject({ executionId: 7, failedStep: 3 });
     expect(report.export!.notes.map((n) => [n.title, n.location])).toEqual([

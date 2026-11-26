@@ -40,7 +40,9 @@ project, and are never set on an earlier attempt of a retried test.
 
 The environment, visual and page diffs of one failing execution compare it with the same test's last passing
 execution on the same browser, in a shorter order: the same environment, then the same branch, then the most recent,
-with no base-branch rung. When no passing run from the same environment exists, the card says which environment the
+with no base-branch rung. The page diff also prefers, right after the environment, a run on the same Playwright
+release (major and minor version), since ARIA snapshots can change from one version to the next (Playwright 1.65 leaves out text the browser
+does not render). When no passing run from the same environment exists, the card says which environment the
 baseline came from (_"compared with a production run; no passing development run of this test exists"_) and leaves
 the environment label out of the diff.
 
@@ -72,7 +74,7 @@ Two ways to compare against something else:
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
 - **Deployed to Staging**, for a run of a [deployed environment](./deployed-environments) — the application's commit
   each run tested, the application's commits between them, and the environment's deploy markers between the two runs.
-- **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
+- **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns. The browsers are those of the Playwright projects each run ran: the ones `--project` selects and the projects they depend on.
 
 <figure>
   <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, the tests that newly started failing, the ones that got fixed, and the commits landed since the baseline">

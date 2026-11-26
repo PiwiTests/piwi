@@ -83,6 +83,42 @@ describe('an error of a run outside any test', () => {
   });
 });
 
+describe('the worker an error outside any test came from', () => {
+  const teardown = { message: 'Error: worker teardown failed', stack: null, location: null };
+
+  test('keeps its lane, its shard and its Playwright project', () => {
+    const error = { ...teardown, parallelIndex: 2, shardIndex: 3, playwrightProject: 'webkit' };
+    expect(sanitizeRunError(error)).toEqual(error);
+    expect(sanitizeRunErrors([error])).toEqual([error]);
+  });
+
+  test('keeps each part only when valid, and none of them without a lane', () => {
+    expect(sanitizeRunError({ ...teardown, parallelIndex: 0, shardIndex: 0, playwrightProject: '' })).toEqual({
+      ...teardown,
+      parallelIndex: 0,
+    });
+    expect(
+      sanitizeRunError({ ...teardown, parallelIndex: 1, shardIndex: 1.5, playwrightProject: 'x'.repeat(1001) }),
+    ).toEqual({ ...teardown, parallelIndex: 1 });
+    for (const parallelIndex of [-1, 1.5, '2', null, undefined]) {
+      expect(sanitizeRunError({ ...teardown, parallelIndex, shardIndex: 2, playwrightProject: 'webkit' })).toEqual(
+        teardown,
+      );
+    }
+  });
+
+  test('is the one Playwright names beside the error, read back from a blob report too', () => {
+    const fromConfig = (file: string) => file;
+    const reported = { message: 'Error: worker teardown failed' };
+    expect(runErrorOfReported(reported, fromConfig, { parallelIndex: 1, playwrightProject: 'chromium' })).toEqual({
+      ...teardown,
+      parallelIndex: 1,
+      playwrightProject: 'chromium',
+    });
+    expect(runErrorOfReported(reported, fromConfig, null)).toEqual(teardown);
+  });
+});
+
 describe("a run's errors outside any test", () => {
   test(`keeps the first ${MAX_RUN_ERRORS} that hold a message`, () => {
     const errors = sanitizeRunErrors([

@@ -2179,6 +2179,40 @@ describe('the test tree', () => {
     fs.rmSync(path.join(dir, 'tests/grouped.spec.ts'));
   });
 
+  test('reads no test from a test.skip, test.fixme or test.fail given a description alone', async () => {
+    write(
+      'tests/marked.spec.ts',
+      [
+        "import { test } from '@playwright/test';",
+        "test('declines a card', async ({ browserName }) => {",
+        "  test.skip(browserName === 'webkit', 'no card reader');",
+        "  test.fixme('needs a card reader');",
+        '  test.fail(`declines ${browserName}`);',
+        '});',
+        "test.skip('refunds', async () => {});",
+        '',
+      ].join('\n'),
+    );
+    try {
+      const items = (await client.sendRequest('piwi/testItems', {
+        uris: [uri('tests/marked.spec.ts')],
+        catalog: false,
+      })) as TestItemsResult;
+      expect(specsOf(items.contexts[0]!.nodes)).toEqual([
+        {
+          uri: uri('tests/marked.spec.ts'),
+          label: 'marked.spec.ts',
+          tests: [
+            expect.objectContaining({ title: 'declines a card', line: 1, endLine: 5 }),
+            expect.objectContaining({ title: 'refunds', line: 6, endLine: 6 }),
+          ],
+        },
+      ]);
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/marked.spec.ts'));
+    }
+  });
+
   test('takes the tests Playwright lists, each project’s, and puts the catalog’s tests none of them is apart', async () => {
     const LISTED = [
       "import { test } from '@playwright/test';",

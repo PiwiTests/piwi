@@ -1380,6 +1380,13 @@
       "when": 1795617106595,
       "tag": "0196_credential_authorization_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1795637462192,
+      "tag": "0197_youthful_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

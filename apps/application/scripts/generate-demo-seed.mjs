@@ -2758,19 +2758,33 @@ const INCIDENT_MARKERS = [];
 
 // ── Errors outside the tests (post-processing, rng-free) ────────────────────
 // The newest checkout run its failure budget stopped (`maxFailures`, its last
-// tests did not run): Playwright said so outside any test, and the global
-// teardown, which still ran, threw. The reporter sends both as the run's
-// errors outside any test (`onError`), each as `sanitizeRunErrors` keeps it.
+// tests did not run): Playwright said so outside any test, then the teardown of
+// a worker fixture threw as its worker stopped, which names that worker (its
+// lane and its Playwright project), and the global teardown, which still ran,
+// threw. The reporter sends them as the run's errors outside any test
+// (`onError`), in that order, each as `sanitizeRunErrors` keeps it.
 {
   const target = TEST_RUNS.filter((r) => r.project_id === 1 && r.status === 'interrupted' && !incidentRunIds.has(r.id))
     .sort((a, b) => a.id - b.id)
     .at(0);
   if (!target) throw new Error('No checkout run stopped by its failure budget can carry errors outside its tests');
+  const worker = TEST_RUNS_CASES.find(
+    (row) => row.test_run_id === target.id && row.browser_name && row.worker_index != null,
+  );
+  if (!worker) throw new Error('The checkout run stopped by its failure budget ran no test on a worker');
   target.run_errors = JSON.stringify([
     {
       message: `\u001b[31mTesting stopped early after ${target.failed_tests} maximum allowed failures.\u001b[39m`,
       stack: null,
       location: null,
+    },
+    {
+      message: 'Error: worker fixture "paymentSandbox" could not release the sandbox account: 423 Locked',
+      stack: '    at paymentSandbox (/home/runner/work/shop/shop/tests/support/fixtures.ts:42:13)',
+      location: { file: 'tests/support/fixtures.ts', line: 42, column: 13 },
+      parallelIndex: worker.worker_index,
+      ...(worker.shard_index != null && { shardIndex: worker.shard_index }),
+      playwrightProject: worker.browser_name,
     },
     {
       message: 'Error: global teardown could not delete the test tenant ci-checkout-7f3a: 409 Conflict (open orders)',

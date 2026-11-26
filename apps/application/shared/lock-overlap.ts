@@ -10,6 +10,8 @@
  * summary read the same overlap here.
  */
 
+import { isExclusiveLock } from './test-locks';
+
 /** A lock-holding execution and the wall-clock window it held its locks. */
 export interface LockHolderInterval {
   id: number;
@@ -33,8 +35,10 @@ export function intervalsOverlap(aStart: number, aEnd: number, bStart: number, b
 
 /**
  * Lock names that two holders on different shards held at the same time. A
- * holder counts only when it carries a shard, a start and a duration. Returns
- * the lock names sorted, without duplicates.
+ * holder counts only when it carries a shard, a start and a duration. The
+ * `-exclusive-` lock names no shared resource: its holder runs alone in its own
+ * shard's run, so it is never reported. Returns the lock names sorted, without
+ * duplicates.
  */
 export function locksHeldAcrossShards(holders: LockHolderInterval[]): string[] {
   const usable = holders.filter(
@@ -44,6 +48,7 @@ export function locksHeldAcrossShards(holders: LockHolderInterval[]): string[] {
   const byLock = new Map<string, LockHolderInterval[]>();
   for (const holder of usable) {
     for (const lock of new Set(holder.locks)) {
+      if (isExclusiveLock(lock)) continue;
       const list = byLock.get(lock);
       if (list) list.push(holder);
       else byLock.set(lock, [holder]);

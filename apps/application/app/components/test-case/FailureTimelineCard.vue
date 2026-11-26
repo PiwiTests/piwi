@@ -57,6 +57,7 @@
  * against the same anchor.
  */
 import type { FailureTimeline, TimelineItem, TimelineLane, TimelineLanes } from '#shared/failure-timeline';
+import { isPageErrorType } from '#shared/console-entries';
 import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 import { useExecutionTimeline } from '~/composables/useExecutionTimeline';
@@ -712,6 +713,7 @@ watch(hiddenTypeSet, () => hide());
 const hoveredCutText = computed(() => (hovered.value ? windowCutText(barCuts(hovered.value)) : null));
 
 function kindTag(item: TimelineItem): string {
+  if (item.kind === 'console' && isPageErrorType(item.status)) return 'page error';
   if (item.kind === 'console') return `console ${item.status ?? ''}`.trim();
   if (item.kind === 'backend') return `backend ${item.status ?? ''}`.trim();
   if (item.kind === 'dialogs') return `dialog ${item.status ?? ''}`.trim();

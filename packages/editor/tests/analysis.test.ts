@@ -15,6 +15,7 @@ import {
   locatorLineTellsMore,
   pauseAtValue,
   pickEditOnLine,
+  replaceLocatorOnLine,
   piwiActionTitle,
   placeLine,
   sameText,
@@ -243,6 +244,17 @@ describe('a pick at a breakpoint', () => {
     const edit = pickEditOnLine(assertion, "getByTestId('pay')")!;
     expect(assertion.slice(0, edit.start) + edit.newText + assertion.slice(edit.end)).toBe(
       "  await expect(this.page.getByTestId('pay')).toBeVisible();",
+    );
+  });
+
+  test('keeps the description a chain ends with', () => {
+    const line = "  await page.getByRole('button', { name: 'Save' }).describe('Save button').click();";
+    const edit = pickEditOnLine(line, "getByTestId('save')")!;
+    expect(line.slice(0, edit.start) + edit.newText + line.slice(edit.end)).toBe(
+      "  await page.getByTestId('save').describe('Save button').click();",
+    );
+    expect(replaceLocatorOnLine(line, "getByRole('button', { name: 'Save' })", "getByTestId('save')")).toBe(
+      "  await page.getByTestId('save').describe('Save button').click();",
     );
   });
 
@@ -502,6 +514,76 @@ describe('testCalls', () => {
       { line: 1, endLine: 6, title: 'opens', suite: ['cart'], suiteUnread: false },
       { line: 8, endLine: 10, title: 'after', suite: [], suiteUnread: false },
     ]);
+  });
+
+  test('reads test.skip, test.fixme and test.fail as a test only with an argument after its title', () => {
+    const lines = [
+      "test.describe('cart', () => {",
+      "  test.skip('empties it', async () => {});",
+      '  test.fixme(',
+      "    'refunds',",
+      '    async () => {',
+      "      test.slow('the bank takes its time');",
+      '    },',
+      '  );',
+      "  test('pays', async ({ browserName }) => {",
+      "    test.skip('needs a card reader');",
+      '    test.fixme(`fails on ${browserName}`);',
+      '    test.fail("declines the card" );',
+      "    test.skip(browserName === 'webkit', 'no card reader');",
+      '  });',
+      "  test.fail('declines', { tag: '@bug' }, async () => {});",
+      '});',
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 1, endLine: 1, title: 'empties it', suite: ['cart'], suiteUnread: false },
+      { line: 2, endLine: 7, title: 'refunds', suite: ['cart'], suiteUnread: false },
+      { line: 8, endLine: 13, title: 'pays', suite: ['cart'], suiteUnread: false },
+      { line: 14, endLine: 14, title: 'declines', suite: ['cart'], suiteUnread: false },
+    ]);
+    // Split over lines: a description alone, then a title and a function.
+    const split = [
+      "test('pays', async () => {",
+      '  test.skip(',
+      "    'needs a card reader',",
+      '  );',
+      '});',
+      'test.skip(',
+      "  'refunds',",
+      '',
+      '  async () => {},',
+      ');',
+    ];
+    expect(testCalls(split)).toEqual([
+      { line: 0, endLine: 4, title: 'pays', suite: [], suiteUnread: false },
+      { line: 5, endLine: 9, title: 'refunds', suite: [], suiteUnread: false },
+    ]);
+    // A description and a test on one line; a declaration not closed yet.
+    expect(
+      testCalls(["test.fixme('later'); test('pays', async () => {});", "test.fail('declines', async () => {"]),
+    ).toEqual([
+      { line: 0, endLine: 0, title: 'pays', suite: [], suiteUnread: false },
+      { line: 1, endLine: 1, title: 'declines', suite: [], suiteUnread: false },
+    ]);
+  });
+
+  test('counts a mark’s arguments past comments, and a test’s title written as an expression', () => {
+    const lines = [
+      "test('pays', async () => {",
+      '  test.fixme(',
+      "    'flaky on CI', // see the board",
+      '  );',
+      "  test.skip('needs a reader', /* JIRA-1 */);",
+      "  test.skip('reason'); // see test('other')",
+      "  test.fail('reason'); log(\"rerun test('x') later\");",
+      '});',
+      "test.skip('checkout ' + name, async () => {});",
+      "test.fixme('a ' +",
+      "  'b', async () => {});",
+      "test.skip('title' /* c */, async () => {});",
+      'test.skip(`a ${c ? `x` : "y"}`, async () => {});',
+    ];
+    expect(testCalls(lines).map((call) => call.line)).toEqual([0, 8, 9, 11, 12]);
   });
 
   test('marks the tests of a describe block titled by a template with ${} or by a variable', () => {

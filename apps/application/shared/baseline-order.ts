@@ -1,8 +1,9 @@
 /**
- * Baseline candidate ordering shared by the environment diff and the visual
- * diff. A failing execution is compared against the same test's last passing
- * execution — preferably one from the same deployment environment, then the
- * same branch, then simply the most recent. Comparing a `development` failure
+ * Baseline candidate ordering shared by the environment, visual and page
+ * diffs. A failing execution is compared against the same test's last passing
+ * execution — preferably one from the same deployment environment, then (for
+ * the page diff) the same Playwright version, then the same branch, then
+ * simply the most recent. Comparing a `development` failure
  * with a `production` pass would report the environment label itself as the
  * change, so the fallback is named in a note the cards show.
  */
@@ -12,19 +13,34 @@ export interface BaselineScope {
   environment: string | null;
   /** Git branch of the run. */
   branch: string | null;
+  /**
+   * Playwright version of the run, for a diff whose evidence Playwright itself
+   * renders (the ARIA snapshot of the page diff), compared by its release
+   * (major and minor): a patch release keeps the rules. Left out, it ranks
+   * nothing.
+   */
+  playwrightVersion?: string | null;
+}
+
+/** A Playwright version's release, its major and minor (`1.65` for `1.65.1`); null when unknown. */
+function playwrightRelease(version: string | null | undefined): string | null {
+  return version ? version.split('.').slice(0, 2).join('.') : null;
 }
 
 /**
  * Order passing candidates, most suitable first: same environment before other
- * environments, same branch before other branches, and the input order (most
- * recent first) within a tier. An unknown failing environment or branch does
- * not rank the candidates on that axis.
+ * environments, then same Playwright release before other releases, then same
+ * branch before other branches, and the input order (most recent first) within
+ * a tier. An unknown failing environment, version or branch does not rank the
+ * candidates on that axis.
  */
 export function rankBaselineCandidates<T extends BaselineScope>(failing: BaselineScope, candidates: T[]): T[] {
   const tier = (c: BaselineScope): number => {
-    const otherEnvironment = failing.environment != null && c.environment !== failing.environment ? 2 : 0;
+    const otherEnvironment = failing.environment != null && c.environment !== failing.environment ? 4 : 0;
+    const release = playwrightRelease(failing.playwrightVersion);
+    const otherVersion = release != null && playwrightRelease(c.playwrightVersion) !== release ? 2 : 0;
     const otherBranch = failing.branch != null && c.branch !== failing.branch ? 1 : 0;
-    return otherEnvironment + otherBranch;
+    return otherEnvironment + otherVersion + otherBranch;
   };
   return candidates
     .map((candidate, index) => ({ candidate, index, tier: tier(candidate) }))

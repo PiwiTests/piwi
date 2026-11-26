@@ -45,6 +45,21 @@ describe('Flaky root cause classification', () => {
     expect(result).toBe('timing');
   });
 
+  test('reads an inert element in the call log as timing, as it reads one that is not visible', async () => {
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
+    const input = {
+      errorMessages: [],
+      stepErrors: ['element is inert'],
+      stepNames: ["Click getByRole('button', { name: 'Place order' })"],
+      networkErrorCount: 0,
+      status5xxCount: 0,
+      browserDistribution: { chromium: { passed: 2, failed: 5 } },
+    };
+    expect(classifyFlakyRootCause(input)).toBe('timing');
+    expect(classifyFlakyRootCause({ ...input, stepErrors: ['element is not visible'] })).toBe('timing');
+    expect(classifyFlakyRootCause({ ...input, stepErrors: ['element is detached'] })).toBe('other');
+  });
+
   test('classifies network errors', async () => {
     const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({

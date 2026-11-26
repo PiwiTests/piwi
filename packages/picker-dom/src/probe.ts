@@ -158,7 +158,10 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
 
       // Mirrors core's `approximateAccessibleName` — inlined because this
       // function is serialized into the page by the reporter and cannot
-      // reference imports. Keep the two in step.
+      // reference imports. Keep the two in step. The same approximation: a
+      // name from content is the whole `textContent`, text the browser does not
+      // render included (a shadow host's unassigned text, a closed `<details>`'s
+      // own text) and shadow-root text left out.
       const nameOf = (n: any): string | null => {
         const labelledBy = !!n.getAttribute('aria-labelledby');
         const isField = FIELD_TAGS.indexOf((n.tagName || '').toLowerCase()) !== -1;

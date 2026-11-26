@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { WireRunError } from '#shared/types';
-import { RUN_ERRORS_COLLAPSED_COOKIE, runErrorHeadline } from '~/utils/run-errors';
+import { RUN_ERRORS_COLLAPSED_COOKIE, runErrorHeadline, runErrorWorker } from '~/utils/run-errors';
 
 /**
  * The run header's errors outside any test, as Playwright reported them beside the tests: a global setup that threw,
  * a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose
  * teardown threw, the failure budget that stopped the run. Each shows its message and stack as Playwright printed
- * them, and the place it was thrown; past the first two, a button shows the rest.
+ * them, the worker it came from (`runErrorWorker`) and the place it was thrown; past the first two, a button shows the
+ * rest.
  *
  * The block can be folded to one line, the title and the first error's first line, so a long stack does not take the
  * height the tab below needs (the Video tab fits its video to what is left). The fold is kept per browser and starts
@@ -83,6 +84,9 @@ function errorText(error: WireRunError): string {
           <div class="max-h-48 overflow-y-auto rounded-md border border-default px-2.5 py-2">
             <ErrorText :text="errorText(error)" mode="block" />
           </div>
+          <p v-if="runErrorWorker(error)" class="text-xs text-muted" data-testid="run-error-worker">
+            {{ runErrorWorker(error) }}
+          </p>
           <OpenInIdeLink
             v-if="error.location"
             :file-path="error.location.file"

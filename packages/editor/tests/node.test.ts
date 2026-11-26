@@ -34,7 +34,7 @@ describe('nodeMajor', () => {
 
 describe('pathNode', () => {
   test('the first node of the PATH, checked once with --version', () => {
-    const run = vi.fn(() => 'v20.0.0');
+    const run = vi.fn(() => 'v22.0.0');
     const isFile = vi.fn((file: string) => file === '/usr/bin/node' || file === '/opt/node/bin/node');
     expect(pathNode(lookup({ pathVariable: 'bin:/usr/local/bin:/usr/bin:/opt/node/bin', run, isFile }))).toBe(
       '/usr/bin/node',
@@ -44,10 +44,10 @@ describe('pathNode', () => {
     expect(isFile).not.toHaveBeenCalledWith(path.posix.join('bin', 'node'));
   });
 
-  test('none when the first node is older than 20, does not run or there is none', () => {
+  test('none when the first node is older than 22, does not run or there is none', () => {
     const isFile = (file: string) => file === '/usr/bin/node' || file === '/opt/node/bin/node';
     const pathVariable = '/usr/bin:/opt/node/bin';
-    expect(pathNode(lookup({ pathVariable, isFile, run: () => 'v18.20.4\n' }))).toBeNull();
+    expect(pathNode(lookup({ pathVariable, isFile, run: () => 'v20.19.5\n' }))).toBeNull();
     expect(pathNode(lookup({ pathVariable, isFile, run: () => null }))).toBeNull();
     expect(pathNode(lookup({ pathVariable: '/usr/local/bin' }))).toBeNull();
     expect(pathNode(lookup({ pathVariable: undefined }))).toBeNull();

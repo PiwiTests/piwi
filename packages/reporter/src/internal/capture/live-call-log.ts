@@ -54,7 +54,7 @@ const MAX_TITLE = 500;
 /** The most calls the instrumentation is heard running at once; past it, the ones heard first are forgotten. */
 const MAX_HEARD = 200;
 
-/** One update of Playwright's call stream, as Playwright 1.64 writes it. */
+/** One update of Playwright's call stream, as Playwright 1.64 and 1.65 write it. */
 interface CallUpdate {
   id?: unknown;
   title?: unknown;

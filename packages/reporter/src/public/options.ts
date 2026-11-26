@@ -390,6 +390,18 @@ export interface PiwiDashboardOptions {
    */
   failOnFlakyTests?: boolean;
 
+  // ── Sharding ───────────────────────────────────────────────────────────────
+  /**
+   * Split a sharded run (`--shard=i/n`) between its shards by the durations the dashboard recorded, rather than by
+   * test count, keeping every test that shares a lock, and every group Playwright runs in one worker (a serial
+   * describe, a file that is not fully parallel), in one shard. Each shard asks the dashboard for the split before
+   * Playwright shards the run, and every shard of the run reads the same stored answer. Needs Playwright 1.62 or later
+   * and a dashboard; stands aside for `--last-failed`, `--only-changed`, `--test-list` and `--test-list-invert`, whose
+   * selection differs per machine. When the dashboard does not answer within 10 seconds, or answers wrongly, Playwright
+   * splits the run as usual. Defaults to `false`. Can also be set with `PIWI_BALANCE_SHARDS`.
+   */
+  balanceShards?: boolean;
+
   // ── Authentication ─────────────────────────────────────────────────────────
   /** Username or email address for dashboard login (use `apiKey` instead when possible) */
   username?: string | null;

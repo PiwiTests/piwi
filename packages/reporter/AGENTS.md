@@ -179,10 +179,20 @@ responsibilities.
   its path checked before it is opened, never written through a link nor waited on as a named pipe, read back only
   when this user owns it; on Windows the owner and mode checks are no-ops and only that path check refuses a link
   (`tests/private-file.spec.ts`).
+- **The resource ledger counts the contexts the worker opens, and no other**: it learns of them from the
+  instrumentation's `runAfterCreateBrowserContext` (`internal/capture/resource-ledger.ts`), never from
+  `browser.on('context')`, which also reports those another client opens on a browser the worker shares (`browser.bind`,
+  as a stop shares it with Playwright's tools). `tests/resource-ledger.spec.ts` checks it.
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor
   (`scripts/playwright-floor.mjs`), and `docs-drift.test.ts` holds the docs' stated minimum to it.
+- **`preprocess` never throws, and reads `testRun` before it returns**: Playwright awaits it unguarded, so an error
+  thrown there fails the run, and its `TestRun` answers only during the call (`readSuiteModes` in
+  `internal/collect/metadata-collector.ts` keeps what it read; `tests/suite-modes-run.spec.ts`).
+- **A shard that cannot read its pass reuse plan runs the whole suite** (`skipSharding` in `runWithoutPlan`,
+  `public/reporter.ts`): Playwright splits a suite holding skipped tests apart from one without, so a shard that skipped
+  none of the plan's tests would not line up with the others (`tests/preprocess-edits-run.spec.ts`).
 
 ## Workflow
 

@@ -2324,9 +2324,10 @@ export const FAILURE_STORIES = [
     evidence: {
       consoleOnFail: [
         {
-          type: 'error',
-          text: "Uncaught TypeError: Cannot read properties of undefined (reading 'activate')\n    at ModalController.open (https://design.example.com/assets/modal-C7hQx2.js:2:1381)",
-          location: 'https://design.example.com/assets/modal-C7hQx2.js:2:1381',
+          // The exception the page threw and nothing caught, as the capture fixtures record it, placed 0-based.
+          type: 'pageerror',
+          text: "TypeError: Cannot read properties of undefined (reading 'activate')",
+          location: 'https://design.example.com/assets/modal-C7hQx2.js:1:1380',
         },
       ],
     },

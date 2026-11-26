@@ -10,7 +10,7 @@ import type { RoleCost } from '@piwitests/core/wire';
 import { ProcFs, descendantsOf, roleOf, type ProcessRole } from '../support/system-readers.js';
 
 export type { RoleCost };
-import { internalCall } from './quiet-capture.js';
+import { internalCall, internalCallWithin } from './quiet-capture.js';
 
 /**
  * What a test cost its worker, read at the test's start and end: the worker
@@ -214,8 +214,11 @@ export class WorkerMetrics {
 }
 
 interface CdpSessionLike {
-  send(method: string, params?: object): Promise<unknown>;
+  send(method: string, params?: object, options?: { timeout?: number }): Promise<unknown>;
 }
+
+/** How long one DevTools call of a page read runs at most, in ms. */
+const PAGE_CALL_TIMEOUT_MS = 5000;
 
 interface PageLike {
   context(): { newCDPSession(page: unknown): Promise<CdpSessionLike> };
@@ -223,8 +226,10 @@ interface PageLike {
 
 /**
  * Reads pages over CDP, one session per page, opened the first time a page is
- * read and kept while it lives. On a browser without CDP the read is null, and
- * the page is never tried again.
+ * read and kept while it lives. Each DevTools call ends after
+ * `PAGE_CALL_TIMEOUT_MS`. On a browser without CDP, or when the session's
+ * `Performance.enable` fails or does not answer in that time, the read is null,
+ * and the page is never tried again.
  */
 export class PageReader {
   private readonly sessions = new WeakMap<object, Promise<CdpSessionLike | null>>();
@@ -232,17 +237,22 @@ export class PageReader {
   async read(page: object): Promise<PageMain | null> {
     let session = this.sessions.get(page);
     if (!session) {
-      session = internalCall(page, async () => {
-        const opened = await (page as PageLike).context().newCDPSession(page);
-        await opened.send('Performance.enable', { timeDomain: 'threadTicks' });
-        return opened;
-      }).catch(() => null);
+      session = internalCall(page, () => (page as PageLike).context().newCDPSession(page))
+        .then(async (opened) => {
+          await internalCallWithin(page, PAGE_CALL_TIMEOUT_MS, (options) =>
+            opened.send('Performance.enable', { timeDomain: 'threadTicks' }, options),
+          );
+          return opened;
+        })
+        .catch(() => null);
       this.sessions.set(page, session);
     }
     const opened = await session;
     if (!opened) return null;
     try {
-      const result = (await internalCall(page, () => opened.send('Performance.getMetrics'))) as {
+      const result = (await internalCallWithin(page, PAGE_CALL_TIMEOUT_MS, (options) =>
+        opened.send('Performance.getMetrics', undefined, options),
+      )) as {
         metrics?: Array<{ name: string; value: number }>;
       };
       const values = new Map((result.metrics ?? []).map((metric) => [metric.name, metric.value]));
@@ -267,12 +277,12 @@ export class PageReader {
    */
   private async countElements(page: object, session: CdpSessionLike): Promise<number | null> {
     try {
-      const result = (await internalCall(page, () =>
-        session.send('Runtime.evaluate', {
-          expression: "document.getElementsByTagName('*').length",
-          returnByValue: true,
-          silent: true,
-        }),
+      const result = (await internalCallWithin(page, PAGE_CALL_TIMEOUT_MS, (options) =>
+        session.send(
+          'Runtime.evaluate',
+          { expression: "document.getElementsByTagName('*').length", returnByValue: true, silent: true },
+          options,
+        ),
       )) as { result?: { value?: unknown } };
       const value = result.result?.value;
       return typeof value === 'number' && Number.isFinite(value) ? value : null;

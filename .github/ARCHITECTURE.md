@@ -32,6 +32,7 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 | `workflows/live-jira.yml`                  | on demand                                    | the live Jira E2E, against a real Atlassian Cloud site                                                              |
 | `workflows/nightly-vscode.yml`             | every night, on demand                       | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release                          |
 | `workflows/nightly-showcase.yml`           | every night, on demand                       | the showcase's story in check mode (`apps/showcase`); with `film`, filmed and cut, the cut uploaded                 |
+| `workflows/playwright-next.yml`            | every week, on demand                        | the reporter's suite and integration runs on Playwright's next release (`@playwright/test@next`)                    |
 | `actions/setup-workspace/action.yml`       | the workflows above                          | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                                                 |
 | `actions/container-health/action.yml`      | `ci.yml`, `reusable-publish-container.yml`   | starts a server image on an empty data folder and waits for `/api/health`                                           |
 
@@ -39,7 +40,7 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - The `changes` job reads which areas a change touches (`dorny/paths-filter`), and each job runs for the areas it
   covers. A change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all.
-- A change to a JavaScript workspace (`js`) runs the five check jobs at once:
+- A change to a JavaScript workspace (`js`) runs the six check jobs at once:
   - `Format, lint and typecheck`: oxfmt, oxlint and the type check of every workspace, then knip;
   - `Dashboard unit tests`, on the docs reference pages it generates first, with the coverage comment;
   - `Reporter tests`, under `xvfb-run`, then the integration runs of the AI steps and of the capture fixtures, with the
@@ -47,6 +48,9 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   - `Reporter tests (Playwright floor)`: the same suite on the oldest Playwright the reporter supports
     (`scripts/playwright-floor.mjs --install`), where a spec that needs a later version skips itself, on an Ubuntu
     that Playwright has Chromium builds for (24.04);
+  - `Reporter tests (Playwright latest)`: the suite and the two integration runs on the latest Playwright release
+    (`scripts/playwright-floor.mjs --install latest`), which stops after reading the version while the lockfile holds
+    that release or when the release is outside the reporter's peer range;
   - `Package tests`: core, picker-dom (unit and in a browser), the run model, the editor service, the VS Code and
     browser extensions' unit tests, and the showcase's cut.
 - The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in `Dashboard unit tests` with
@@ -58,8 +62,9 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 - `changes` also picks two matrices:
   - the dashboard E2E suite, five shards per backend: two backends on a pull request (`local + sqlite` on Node 22, and
     `s3 + postgres`), all four on `main`;
-  - the package smoke test: Linux on a pull request, plus Windows, macOS and a Linux leg on the reporter's Playwright
-    floor when it changes the packages or their dependencies, and all four on `main`.
+  - the package smoke test: Linux on a pull request, plus Windows, macOS, Linux on Node 26, two Linux legs on the
+    reporter's Playwright floor and on the latest Playwright release, and a Linux leg that runs the suite on Bun
+    (`--runtime bun`) when it changes the packages or their dependencies, and all seven on `main`.
 - A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the run model, the editor service,
   core or the catalog and text checks of `shared/` (`runner`) runs the `Piwi Runner` job: the layer's and the app's
   unit tests, the host's bundle and the window's static build, then the built window in French and German
@@ -107,7 +112,10 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 `dependabot.yml` checks every week for updates to:
 
 - the actions of the workflows and of `.github/actions/*`: the commit SHA and the version comment together;
-- the npm lockfiles: the root's (every workspace), `apps/desktop`'s and `apps/docs`'s;
+- the npm lockfiles: the root's (every workspace), `apps/desktop`'s and `apps/docs`'s. A range in a `package.json`
+  moves only when it no longer admits the new version (`increase-if-necessary`), so the reporter's peer range on
+  `@playwright/test` stays its floor. Playwright's packages arrive in a pull request of their own (the `playwright`
+  group), apart from the weekly minor and patch updates;
 - the desktop shell's crates and the JetBrains plugin's Gradle dependencies;
 - the .NET packages, within their major;
 - the `Dockerfile`'s base image, whose tag and digest move together. Its Node version is also the one the desktop app

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { runErrorHeadline } from '~/utils/run-errors';
+import { runErrorHeadline, runErrorWorker } from '~/utils/run-errors';
 
 describe('runErrorHeadline', () => {
   test("is the first error's first line, without its stack", () => {
@@ -27,5 +27,19 @@ describe('runErrorHeadline', () => {
     expect(runErrorHeadline([])).toBe('');
     expect(runErrorHeadline([{ message: '' }])).toBe('');
     expect(runErrorHeadline([{ message: ' \n\t\n' }])).toBe('');
+  });
+});
+
+describe('runErrorWorker', () => {
+  test('names the worker by its lane from 1, then its shard and its Playwright project', () => {
+    expect(runErrorWorker({ parallelIndex: 1, shardIndex: 3, playwrightProject: 'webkit' })).toBe(
+      'Worker 2 · Shard 3 · Playwright project webkit',
+    );
+    expect(runErrorWorker({ parallelIndex: 0 })).toBe('Worker 1');
+  });
+
+  test('is empty for an error of no worker', () => {
+    expect(runErrorWorker({})).toBe('');
+    expect(runErrorWorker({ shardIndex: 2, playwrightProject: 'webkit' })).toBe('');
   });
 });

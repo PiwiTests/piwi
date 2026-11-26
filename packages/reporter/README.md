@@ -70,7 +70,7 @@ With authentication on, the reporter needs an API key in `PIWI_API_KEY` (the env
 
 ## Requirements
 
-- Node.js 20 or higher (the reporter runs inside your test project — the dashboard *server* itself targets Node 22+, or use its Docker image)
+- Node.js 22 or higher (the reporter runs inside your test project — the dashboard *server* itself targets Node 22+, or use its Docker image)
 - Playwright Test 1.59 or higher (a few features need a later version, named in their docs)
 - A running Piwi Dashboard server
 

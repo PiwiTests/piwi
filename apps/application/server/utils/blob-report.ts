@@ -507,7 +507,13 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
 
     if (method === 'onError') {
       if (runErrors.length >= MAX_RUN_ERRORS) continue;
-      const error = runErrorOfReported(record(params.error), (file) => resolver.fromAbsolute(file));
+      // The worker of an error a worker reported (Playwright 1.60 and later); its shard is the archive's, named below.
+      const worker = params.workerInfo === undefined ? null : record(params.workerInfo);
+      const error = runErrorOfReported(
+        record(params.error),
+        (file) => resolver.fromAbsolute(file),
+        worker && { parallelIndex: worker.parallelIndex, playwrightProject: worker.projectName },
+      );
       if (error) runErrors.push(error);
       continue;
     }
@@ -653,6 +659,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
 
   if (shard) {
     for (const entry of cases) entry.case.shardIndex = shard.current;
+    for (const error of runErrors) if (error.parallelIndex !== undefined) error.shardIndex = shard.current;
   }
 
   // One result per test, each `--repeat-each` repetition being a test of its own (a Playwright test id of its own),

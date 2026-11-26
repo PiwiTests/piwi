@@ -128,6 +128,7 @@ const STATE_PHRASES: Record<string, string> = {
   'not-visible': 'never became visible',
   'not-enabled': 'never became enabled',
   'not-editable': 'never became editable',
+  inert: 'stayed inert',
   'not-stable': 'never stopped moving',
   'outside-viewport': 'stayed outside the viewport',
   'intercepts-pointer': 'was covered by another element',

@@ -90,8 +90,11 @@ wrote it:
 ## When there are no videos
 
 Most suites record video only for failing tests (`video: 'retain-on-failure'`), so a run where nothing failed often has
-none. The tab is then disabled, with the tooltip "no videos in this run". Set `video: 'on'` in Playwright's `use` options to record every test. Videos can be large, so
-read [storage cleanup](/operate/storage#storage-management) first.
+none. The tab is then disabled, with the tooltip "no videos in this run". Set `video: 'on'` in Playwright's `use`
+options to record every test. Playwright 1.61 adds `retain-on-first-failure`, `on-all-retries` and
+`retain-on-failure-and-retries`, for a video of the first failure or of the retries alone, and 1.64 an `fps` option
+(`video: { mode: 'retain-on-failure', fps: 30 }`) for smoother animations and scrolling, at more CPU. Videos can be
+large, so read [storage cleanup](/operate/storage#storage-management) first.
 
 ## Related
 

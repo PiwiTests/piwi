@@ -72,7 +72,7 @@ run runs on, with a reporter newer than 0.68.0, while the worker runs a test: be
 (**Piwi: Open the trace so far**), in the JetBrains **Worker** tab, and in a watched page's head in the Runs window
 and the tray. The editor service or the desktop app's server asks the worker where its trace grows,
 checks that file, and starts the viewer with your project's own Playwright; the path never leaves it, and each tool
-hears why when the viewer does not start. Playwright 1.59 to 1.64 shows the trace as it stood when it opened: close
+hears why when the viewer does not start. Playwright 1.59 to 1.65 shows the trace as it stood when it opened: close
 it and choose the button again for what came since.
 
 It shows only where it can open: the machine has a display (on Linux, `DISPLAY` or `WAYLAND_DISPLAY` set), the tool

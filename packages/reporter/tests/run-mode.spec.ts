@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUiMode, isListMode, isMergeReports } from '../src/internal/support/run-mode.js';
+import { isUiMode, isListMode, isMergeReports, runnerArgv } from '../src/internal/support/run-mode.js';
 
 const NODE = ['/usr/bin/node', '/path/to/playwright'];
 
@@ -63,5 +63,22 @@ describe('isMergeReports', () => {
   it('is false for a test run, one that filters on a spec named merge-reports included', () => {
     expect(isMergeReports([...NODE, 'test'])).toBe(false);
     expect(isMergeReports([...NODE, 'test', 'merge-reports'])).toBe(false);
+  });
+});
+
+describe('runnerArgv', () => {
+  const own = [...NODE, 'test', 'tests/cart.spec.ts'];
+
+  it("is Playwright's snapshot of the runner's command line (config.argv)", () => {
+    const argv = [...NODE, 'test', '--list'];
+    expect(runnerArgv({ argv }, own)).toBe(argv);
+    expect(isListMode(runnerArgv({ argv }, own))).toBe(true);
+  });
+
+  it('is this process’s where Playwright gives none: before 1.61, or empty with no command line of its own', () => {
+    // Merge-reports, watch mode and an editor's test server leave the snapshot empty.
+    for (const config of [{}, { argv: [] }, { argv: 'test' }, { argv: [1, 2] }, null, undefined]) {
+      expect(runnerArgv(config, own)).toEqual(own);
+    }
   });
 });

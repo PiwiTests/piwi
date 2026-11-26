@@ -54,6 +54,7 @@ describe('planned runs', () => {
       worktree?: string;
       status?: number;
       environment?: string | null;
+      args?: string[];
     } = {},
   ): void {
     requests = [];
@@ -94,7 +95,7 @@ describe('planned runs', () => {
             ...(options.environment !== undefined ? { environment: options.environment } : {}),
             expiresAt: '',
             ...SUMMARY,
-            args: [],
+            args: options.args ?? [],
             skip: options.skip ?? SKIP,
             reused: [],
           };
@@ -107,6 +108,13 @@ describe('planned runs', () => {
 
   /** The content of each run's skip list, read while Playwright would be running. */
   let lists: string[];
+
+  /** The Playwright the checkout installs, which `git status` does not count. */
+  function installed(version: string): void {
+    const pkg = path.join(dir, 'node_modules', '@playwright', 'test');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version }));
+  }
 
   function spawned(): Array<{ args: string[]; env: NodeJS.ProcessEnv }> {
     return vi.mocked(spawn).mock.calls.map((c) => {
@@ -125,6 +133,8 @@ describe('planned runs', () => {
     git('init', '-q');
     git('commit', '-q', '--allow-empty', '-m', 'init');
     head = git('rev-parse', 'HEAD');
+    fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'node_modules/\n');
+    installed('1.61.3');
     lists = [];
     vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
       const at = args.indexOf('--test-list-invert');
@@ -150,10 +160,28 @@ describe('planned runs', () => {
     expect(requests[requests.length - 1]!.url).toBe('https://dash.example/api/projects/7/run-plans/9');
     const [run] = spawned();
     const listPath = run!.args[run!.args.indexOf('--test-list-invert') + 1]!;
-    expect(run!.args).toEqual(['--test-list-invert', listPath, '--shard=2/3', '--workers=1']);
+    expect(run!.args).toEqual(['--test-list-invert', listPath, '--shard=2/3', '--pass-with-no-tests', '--workers=1']);
     expect(lists).toEqual([`${SKIP.join('\n')}\n`]);
     expect(run!.env.PIWI_PLAN).toBe('9');
     expect(fs.existsSync(listPath)).toBe(false);
+  });
+
+  it('has the reporter skip the reused tests with Playwright 1.62 or later in the project, with no list', async () => {
+    installed('1.62.0');
+    dashboard();
+    expect(await runPlannedRun(['--plan', '9', '--shard', '2/3', '--', '--workers=1'], env)).toBe(0);
+    const [run] = spawned();
+    expect(run!.args).toEqual(['--shard=2/3', '--pass-with-no-tests', '--workers=1']);
+    expect(lists).toEqual([]);
+    expect(run!.env.PIWI_PLAN).toBe('9');
+    expect(run!.env.PIWI_PLAN_SKIP).toBe('true');
+  });
+
+  it('passes the list below Playwright 1.62, and no PIWI_PLAN_SKIP a shell left set', async () => {
+    dashboard();
+    expect(await runPlannedRun(['--plan', '9'], { ...env, PIWI_PLAN_SKIP: 'true' })).toBe(0);
+    expect(spawned()[0]!.args[0]).toBe('--test-list-invert');
+    expect(spawned()[0]!.env.PIWI_PLAN_SKIP).toBeUndefined();
   });
 
   it('runs a stored plan in the environment it was made for, and never in another', async () => {
@@ -178,6 +206,22 @@ describe('planned runs', () => {
     dashboard({ skip: [] });
     expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
     expect(spawned()[0]!.args).toEqual([]);
+  });
+
+  it('passes --pass-with-no-tests to each shard of a plan that reuses nothing, once', async () => {
+    dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
+    expect(await runPlannedRun(['--plan', '9', '--shard', '1/2'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--shard=1/2', '--pass-with-no-tests']);
+
+    vi.mocked(spawn).mockClear();
+    dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
+    expect(await runPlannedRun(['--plan', '9', '--shard', '1/2', '--', '--pass-with-no-tests'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--shard=1/2', '--pass-with-no-tests']);
+
+    vi.mocked(spawn).mockClear();
+    dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
+    expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3']);
   });
 
   it('runs the whole suite in a shard whose checkout is not at the plan’s commit', async () => {

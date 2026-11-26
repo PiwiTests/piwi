@@ -337,6 +337,18 @@ describe('split-lock warning', () => {
     expect(r.warnings.some((w) => w.code === 'split-lock')).toBe(false);
   });
 
+  test('does not warn about tests holding the -exclusive- lock, which shard like tests without a lock', async () => {
+    const first = await seedCase('first', { locks: ['-exclusive-'] });
+    const second = await seedCase('second', { locks: ['-exclusive-'] });
+    await seedExecution(first, 'passed');
+    await seedExecution(second, 'passed');
+    const shards = await Promise.all(
+      [1, 2].map((index) => resolveSelectionDefinition(db, 1, {}, { shard: { index, total: 2 } })),
+    );
+    expect(shards.map((r) => r.tests.length)).toEqual([1, 1]);
+    for (const r of shards) expect(r.warnings.some((w) => w.code === 'split-lock')).toBe(false);
+  });
+
   test('surfaces locks on each resolved test', async () => {
     const a = await seedCase('a', { locks: ['db', 'cache'] });
     await seedExecution(a, 'passed');

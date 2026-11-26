@@ -1,14 +1,14 @@
 /**
  * The Node that runs the project's Playwright, for the config's reader and the recorder's launcher. Under an editor's
  * Electron running as Node (`process.versions.electron`), the first `node` on the `PATH` of the service's environment
- * when it is Node 20 or later; else, or when there is none, the service's own runtime.
+ * when it is Node 22 or later; else, or when there is none, the service's own runtime.
  */
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/** The oldest Node major the editor clients support. */
-const MIN_MAJOR = 20;
+/** The oldest Node major the reporter supports, which the project's Playwright loads. */
+const MIN_MAJOR = 22;
 
 /** How long `node --version` may take. */
 const VERSION_TIMEOUT_MS = 5_000;
@@ -48,7 +48,7 @@ function isFile(file: string): boolean {
   }
 }
 
-/** The first `node` (`node.exe` on Windows) in an absolute folder of the `PATH`, when it is Node 20 or later. */
+/** The first `node` (`node.exe` on Windows) in an absolute folder of the `PATH`, when it is Node 22 or later. */
 export function pathNode(lookup: NodeLookup): string | null {
   const windows = lookup.platform === 'win32';
   const paths = windows ? path.win32 : path.posix;

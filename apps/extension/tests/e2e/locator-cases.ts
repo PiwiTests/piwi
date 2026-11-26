@@ -615,6 +615,18 @@ export const EDGE_CASES: Record<string, string[]> = {
     "locator('#text-parent >> text=Inner')",
     "locator('text=Twin >> nth=1')",
   ],
+  'text the browser does not render': [
+    "getByRole('button', { name: 'Checkout Cart', exact: true })",
+    "getByRole('button', { name: 'Unassigned' })",
+    "getByRole('button', { name: 'Unassigned', includeHidden: true })",
+    "getByText('Unassigned words')",
+    "getByRole('textbox', { name: 'Gift message', exact: true })",
+    "getByRole('textbox', { name: 'Unrendered aside' })",
+    "getByLabel('Unrendered aside')",
+    "getByRole('button', { name: 'Plan terms', exact: true })",
+    "getByRole('button', { name: 'fine print' })",
+    "getByRole('button', { name: 'fine print', includeHidden: true })",
+  ],
 };
 
 /** Expressions run against `pages/locator-scoping.html`: two frames with the same content, a frame that isn't there, and CSS scoped to an element. */

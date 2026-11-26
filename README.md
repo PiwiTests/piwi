@@ -167,7 +167,7 @@ and `--shard` merging are detected automatically ([CI & sharding](https://piwite
 
 Piwi is one Node process: about 300 MB of RAM idle, 1 vCPU, `linux/amd64` or `linux/arm64`. Disk is the
 variable, as traces and reports dominate: budget 50 to 200 MB per run and set a retention window. Your
-test project needs Node.js 20 or later for the reporter; Node 22 is the *dashboard's* requirement.
+test project needs Node.js 22 or later for the reporter, as the dashboard does.
 
 ## Before you expose it
 

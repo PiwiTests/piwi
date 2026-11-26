@@ -2,8 +2,8 @@
  * The errors of a run outside any test (`WireRunError`), as the reporter sends them and the dashboard stores them:
  * at most {@link MAX_RUN_ERRORS}, each text with what may be a secret hidden as the error text of a test is
  * (`hideSecretsInError`), and credentials anywhere in it (`hideSecretsInText`), then cut to
- * {@link MAX_RUN_ERROR_CHARS}. The reporter applies it to each error it collects, and the dashboard to what it
- * receives.
+ * {@link MAX_RUN_ERROR_CHARS}, and the worker it came from when Playwright names one. The reporter applies it to each
+ * error it collects, and the dashboard to what it receives.
  */
 import { hideSecretsInError, hideSecretsInText } from './mask';
 import type { WireRunError } from './wire';
@@ -16,6 +16,9 @@ export const MAX_RUN_ERROR_CHARS = 4000;
 
 /** The longest file path a run error's location keeps. */
 const MAX_LOCATION_FILE_CHARS = 1000;
+
+/** The longest Playwright project name a run error keeps. */
+const MAX_PROJECT_CHARS = 1000;
 
 /** The marker that ends a cut text, naming how many characters were cut. */
 const cutMarker = (cut: number) => `\n[truncated ${cut} chars]`;
@@ -31,7 +34,8 @@ function storedText(text: string): string {
   return hidden.slice(0, kept) + cutMarker(hidden.length - kept);
 }
 
-function lineOrColumn(value: unknown): number | null {
+/** A non-negative integer a 32-bit column holds, else null. */
+function index(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2_147_483_647 ? value : null;
 }
 
@@ -39,24 +43,47 @@ function lineOrColumn(value: unknown): number | null {
 function storedLocation(value: unknown): WireRunError['location'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const { file, line, column } = value as { file?: unknown; line?: unknown; column?: unknown };
-  const at = { line: lineOrColumn(line), column: lineOrColumn(column) };
+  const at = { line: index(line), column: index(column) };
   if (typeof file !== 'string' || !file || file.length > MAX_LOCATION_FILE_CHARS) return null;
   if (at.line === null || at.column === null) return null;
   return { file, line: at.line, column: at.column };
 }
 
+/** The worker a run error came from, as a run error carries it. */
+type RunErrorWorker = Pick<WireRunError, 'parallelIndex' | 'shardIndex' | 'playwrightProject'>;
+
+/**
+ * The worker a run error came from read from untrusted input: its lane, then its shard (from 1) and its Playwright
+ * project when each is valid. Nothing without a lane.
+ */
+function storedWorker(lane: unknown, shard: unknown, project: unknown): RunErrorWorker {
+  const parallelIndex = index(lane);
+  if (parallelIndex === null) return {};
+  const shardIndex = index(shard);
+  const name = typeof project === 'string' && project && project.length <= MAX_PROJECT_CHARS ? project : null;
+  return {
+    parallelIndex,
+    ...(shardIndex !== null && shardIndex > 0 && { shardIndex }),
+    ...(name !== null && { playwrightProject: name }),
+  };
+}
+
 /**
  * One run error read from untrusted input, as it is kept: a message (else null), its stack and its location, each
- * text hidden and cut. Pure.
+ * text hidden and cut, and the worker it came from (`storedWorker`), only when it names one. Pure.
  */
 export function sanitizeRunError(value: unknown): WireRunError | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const { message, stack, location } = value as { message?: unknown; stack?: unknown; location?: unknown };
+  const { message, stack, location, parallelIndex, shardIndex, playwrightProject } = value as Record<
+    keyof WireRunError,
+    unknown
+  >;
   if (typeof message !== 'string' || !message.trim()) return null;
   return {
     message: storedText(message),
     stack: typeof stack === 'string' && stack.trim() ? storedText(stack) : null,
     location: storedLocation(location),
+    ...storedWorker(parallelIndex, shardIndex, playwrightProject),
   };
 }
 
@@ -96,11 +123,26 @@ function messageOf(error: ReportedError): string {
 }
 
 /**
- * An error Playwright reported outside any test (`onError`), as the run keeps it ({@link sanitizeRunError}): its
- * message with its causes after it, the frames of its stack, and the place it was thrown, its file named by
- * `fileName` (relative to the Playwright config's folder, as test files are). Null for an error with no message. Pure.
+ * The worker an error outside any test came from, as Playwright names it beside the error (its `WorkerInfo`, Playwright
+ * 1.60 and later: the lane and the project's name), with the shard the run is: each read only when valid.
  */
-export function runErrorOfReported(error: ReportedError, fileName: (file: string) => string): WireRunError | null {
+export interface ReportedWorker {
+  parallelIndex?: unknown;
+  shardIndex?: unknown;
+  playwrightProject?: unknown;
+}
+
+/**
+ * An error Playwright reported outside any test (`onError`), as the run keeps it ({@link sanitizeRunError}): its
+ * message with its causes after it, the frames of its stack, the place it was thrown, its file named by `fileName`
+ * (relative to the Playwright config's folder, as test files are), and the `worker` it came from, if any. Null for an
+ * error with no message. Pure.
+ */
+export function runErrorOfReported(
+  error: ReportedError,
+  fileName: (file: string) => string,
+  worker?: ReportedWorker | null,
+): WireRunError | null {
   let message = messageOf(error);
   let cause = reportedError(error.cause);
   for (let depth = 0; cause && depth < MAX_CAUSES; depth++, cause = reportedError(cause.cause)) {
@@ -112,7 +154,14 @@ export function runErrorOfReported(error: ReportedError, fileName: (file: string
   const at = reportedError(error.location) as { file?: unknown; line?: unknown; column?: unknown } | null;
   const location =
     at && typeof at.file === 'string' && at.file ? { file: fileName(at.file), line: at.line, column: at.column } : null;
-  return sanitizeRunError({ message, stack: frame ? stack.slice(frame.index).trimEnd() : null, location });
+  return sanitizeRunError({
+    message,
+    stack: frame ? stack.slice(frame.index).trimEnd() : null,
+    location,
+    parallelIndex: worker?.parallelIndex,
+    shardIndex: worker?.shardIndex,
+    playwrightProject: worker?.playwrightProject,
+  });
 }
 
 /** A run's errors read from untrusted input, as they are kept: the first {@link MAX_RUN_ERRORS}; null for none. Pure. */

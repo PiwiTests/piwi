@@ -4,6 +4,7 @@ import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/a
 import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { UsualDuration } from '#shared/handlers/stuck-tests';
 import { runningUsualDurationTest, usualDurationKey } from '#shared/stuck-tests';
+import { lockDescription, lockLabel } from '#shared/test-locks';
 import { storedUsualDurationTest } from '~~/server/utils/storable-values';
 import type { SeriesPoint } from '#shared/types';
 import {
@@ -786,9 +787,9 @@ function selectSpanTest(tail: SpanTail): void {
         <UIcon name="i-lucide-lock" class="size-3" />
         Locks
       </span>
-      <span v-for="lock in runLocks" :key="lock" class="inline-flex items-center gap-1">
+      <span v-for="lock in runLocks" :key="lock" class="inline-flex items-center gap-1" :title="lockDescription(lock)">
         <span class="inline-block h-2 w-3 rounded-sm" :style="{ backgroundColor: lockColorMap.get(lock) }" />
-        {{ lock }}
+        {{ lockLabel(lock) }}
       </span>
     </div>
 

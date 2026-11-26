@@ -62,7 +62,7 @@ defineRouteMeta({
               runErrors: {
                 type: 'array',
                 description:
-                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw): the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden. A shard adds its own to the run’s.',
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw): the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden, and an error of a worker with its lane (`parallelIndex`, from 0), its `shardIndex` and its `playwrightProject`. A shard adds its own to the run’s.',
                 items: {
                   type: 'object',
                   properties: {
@@ -77,6 +77,9 @@ defineRouteMeta({
                         column: { type: 'integer' },
                       },
                     },
+                    parallelIndex: { type: 'integer' },
+                    shardIndex: { type: 'integer' },
+                    playwrightProject: { type: 'string' },
                   },
                   required: ['message'],
                 },

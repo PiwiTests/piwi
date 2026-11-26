@@ -14,9 +14,9 @@ the project's latest run, so a project that stopped running keeps its last 30 da
 at the same CI commit, so a failure that stopped before reaching the code its pass ran still counts. Imported runs
 carry no coverage, so they never serve as sources without a rule of their own. PR 2 is built, behind the opt-in `pass-reuse` capability: the reporter's `scm.worktree`,
 the `run_plans` table, the rule in `server/utils/pass-reuse.ts`, the routes under `/api/projects/:id/run-plans`, and
-`piwi plan` with `piwi run --reuse` and `--plan`. A plan names the tests to skip, as Playwright test list lines passed to
-`--test-list-invert`, one per Playwright project the source passed in, so a test the dashboard has not seen runs and a
-shard uses Playwright's own `--shard`. A test in a spec file holding a serial group (`describe.serial`, `configure({ mode: 'serial' })`) is never skipped, and
+`piwi plan` with `piwi run --reuse` and `--plan`. A plan names the tests to skip, as Playwright test list lines, one per
+Playwright project the source passed in, so a test the dashboard has not seen runs and a shard uses Playwright's own
+`--shard`. A test in a spec file holding a serial group (`describe.serial`, `configure({ mode: 'serial' })`) is never skipped, and
 a plan made in one job is used by another only when both checkouts are clean at its commit. It departs from the design
 in four places: the fingerprint is the Playwright
 version and the target environment (the browser revisions and the operating system wait for the wire's `reuse` object
@@ -24,8 +24,12 @@ of PR 3); the check against the source's own coverage is at file level (a change
 a source's coverage blobs are not compared with its commit's, so an application built from another tree than the
 checkout goes unnoticed; and it ships before the safety loop of PR 4 and the recording of PR 3, so nothing yet measures
 a wrong reuse: the capability stays experimental until they land. Changes to documentation files never widen, as in
-impact. PR 3 is built but for carried coverage: `piwi run --plan` sets `PIWI_PLAN`, which
-the reporter records as `metadata.piwiPlan` only when the run passed Playwright the plan's skip list; at finalization a
+impact. PR 3 is built but for carried coverage: `piwi run --plan` sets `PIWI_PLAN`. With
+Playwright 1.62 or later in the project it passes no skip list and sets `PIWI_PLAN_SKIP`: the reporter's `preprocess`
+reads the plan and skips each reused test through `testRun.skip`, with the run of its pass as the reason, so every
+reporter shows it as skipped; Piwi's sends the dashboard none of them, and records the plan as `metadata.piwiPlan` once
+it read it. A reporter that cannot read the plan runs every test, the whole suite in a shard. Below 1.62 the run passes
+Playwright the skip list (`--test-list-invert`), and the reporter records the plan only then; at finalization a
 run that is the plan's own (its commit, its Playwright version, started before it expired, from a clean checkout unless
 the plan was made in a dirty one) records each reused test it did not execute in `reused_results` with
 `test_runs.reused_count`, and any other run that claims a plan gets `reused_count` -1. The run page's header,

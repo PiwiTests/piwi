@@ -538,6 +538,34 @@ describe("a blob report's test output and its errors outside any test", () => {
     expect(parsed.runErrors[1]).toEqual({ message: 'Error: spec 0 did not load', stack: null, location: null });
   });
 
+  test('names the worker an error came from, its lane, its Playwright project and the shard the archive covers', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        shard: { current: 2, total: 3 },
+        runErrors: [{ message: 'Error: global teardown failed' }],
+        workerErrors: [
+          {
+            error: { message: 'Error: worker fixture teardown failed' },
+            workerInfo: { workerIndex: 4, parallelIndex: 1, projectName: 'webkit' },
+          },
+        ],
+        tests: [{ testId: 't', title: 'a', attempts: [{ status: 'passed' }] }],
+      }),
+    );
+
+    expect(parsed.runErrors).toEqual([
+      { message: 'Error: global teardown failed', stack: null, location: null },
+      {
+        message: 'Error: worker fixture teardown failed',
+        stack: null,
+        location: null,
+        parallelIndex: 1,
+        shardIndex: 2,
+        playwrightProject: 'webkit',
+      },
+    ]);
+  });
+
   test('a report with neither keeps no run error, and its executions no output', async () => {
     const parsed = await parse(
       buildBlobReport({ tests: [{ testId: 't', title: 'a', attempts: [{ status: 'passed' }] }] }),

@@ -32,6 +32,7 @@ const CONTEXT_OPTIONS = [
   'colorScheme',
   'reducedMotion',
   'forcedColors',
+  'contrast',
   'storageState',
   'extraHTTPHeaders',
   'httpCredentials',

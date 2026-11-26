@@ -51,9 +51,10 @@ const config: KnipConfig = {
       ],
       // `nitropack` comes with Nuxt; Nuxt Icon loads the installed `@iconify-json/*` collections. `@emnapi/*` keeps
       // the runtime of the WASM fallback bindings (oxc, Tailwind's oxide) in the lockfile, which `npm ci` needs on
-      // every platform.
+      // every platform. `nuxt.config.ts` serves `playwright-core`'s trace viewer, found through `createRequire`.
       ignoreDependencies: [
         'nitropack',
+        'playwright-core',
         '@iconify-json/lucide',
         '@iconify-json/simple-icons',
         '@emnapi/core',

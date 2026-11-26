@@ -21,6 +21,11 @@ describe('classifyLocatorResolution — applicable', () => {
     expect(classifyLocatorResolution(error).kind).toBe('never-resolved');
   });
 
+  test('a described locator, its description in the Locator: header, still waiting → never-resolved', () => {
+    const error = `Error: expect(locator).toHaveText(expected) failed\n\nLocator: Order total\nExpected: "$42.00"\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect "toHaveText" with timeout 5000ms\n  - waiting for getByTestId('order-total')\n${STACK}`;
+    expect(classifyLocatorResolution(error)).toEqual({ kind: 'never-resolved', applicable: true, reason: null });
+  });
+
   test('an explicit "resolved to 0 elements" → zero-elements', () => {
     const error = `Error: expect(locator).toHaveCount(expected) failed\n\nCall log:\n  - waiting for getByRole('row')\n  - locator resolved to 0 elements\n  - unexpected value "0"\n${STACK}`;
     expect(classifyLocatorResolution(error)).toEqual({ kind: 'zero-elements', applicable: true, reason: null });
@@ -52,6 +57,15 @@ describe('classifyLocatorResolution — not applicable', () => {
     const verdict = classifyLocatorResolution(error);
     expect(verdict.kind).toBe('resolved');
     expect(verdict.applicable).toBe(false);
+  });
+
+  test('"locator resolved to <element>" followed by "element is inert" → resolved', () => {
+    const error = `TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay' })\n    - locator resolved to <button type="submit">Pay now</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is inert\n    - retrying click action\n    - waiting 20ms\n${STACK}`;
+    expect(classifyLocatorResolution(error)).toEqual({
+      kind: 'resolved',
+      applicable: false,
+      reason: 'The locator resolved; this is not a locator problem.',
+    });
   });
 
   test('a hidden element ("resolved to <button hidden>", "unexpected value hidden") → resolved', () => {

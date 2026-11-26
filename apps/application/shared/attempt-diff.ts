@@ -15,6 +15,7 @@ import type { ParsedPlaywrightError } from '#shared/error-parse';
 import type { PageStateLike } from '#shared/page-state';
 import { requestRouteKey } from '#shared/utils/route';
 import { SLOWER_FACTOR, isMuchSlower, stepMatchKey } from '#shared/duration-standout';
+import { isConsoleErrorType, isPageErrorType } from '#shared/console-entries';
 
 /** One attempt's evidence, as loaded from its execution row. All fields optional. */
 export interface AttemptEvidence {
@@ -215,7 +216,7 @@ export function diffAttempts(failing: AttemptEvidence, passing: AttemptEvidence)
     diffs.push(entry);
   }
 
-  // ── Console: an error/warning logged on only one attempt ───────────────────
+  // ── Console: an error, warning or uncaught page error on only one attempt ──
   for (const entry of onlyConsoleEntries(failing.consoleLogs ?? [], passing.consoleLogs ?? [], 'failing')) {
     diffs.push(entry);
   }
@@ -336,7 +337,7 @@ function onlyConsoleEntries(
     seen.add(key);
     out.push({
       kind: 'console',
-      summary: `Console ${consoleLevel(e)} on only the ${only} attempt`,
+      summary: `${consoleProblem(e)} on only the ${only} attempt`,
       detail: text,
       only,
       ref: { section: 'console' },
@@ -348,12 +349,13 @@ function onlyConsoleEntries(
 
 function isConsoleProblem(e: AttemptConsoleEntry): boolean {
   const t = (e.type ?? '').toLowerCase();
-  return t === 'error' || t === 'warning' || t === 'warn';
+  return isConsoleErrorType(t) || t === 'warning' || t === 'warn';
 }
 
-function consoleLevel(e: AttemptConsoleEntry): string {
-  const t = (e.type ?? '').toLowerCase();
-  return t === 'error' ? 'error' : 'warning';
+/** A console problem as a diff row names it: `Console error`, `Console warning`, `Uncaught page error`. */
+function consoleProblem(e: AttemptConsoleEntry): string {
+  if (isPageErrorType(e.type)) return 'Uncaught page error';
+  return isConsoleErrorType(e.type) ? 'Console error' : 'Console warning';
 }
 
 /**

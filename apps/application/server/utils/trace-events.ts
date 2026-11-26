@@ -9,6 +9,7 @@
  * We only parse what is useful for the diagnosis context and DOM snapshots.
  */
 import { stripAnsi } from '#shared/error-parse';
+import { pageErrorStackPlace, pageErrorText } from '#shared/error-text';
 import { sameCodeLocation } from '#shared/step-tree';
 import { safeStorageSegment } from './sanitize-filename';
 
@@ -60,11 +61,15 @@ export interface TraceAction {
 }
 
 export interface TraceConsoleEntry {
+  /** The console message's type, or `pageerror` for an uncaught page error. */
   type: string;
   text: string;
   timestamp: number;
-  /** Legacy traces carry a preformatted string; modern ones a structured location. */
-  location?: string | { url?: string; lineNumber?: number; columnNumber?: number };
+  /**
+   * Legacy traces carry a preformatted string; modern ones a structured location (a page error's with `line` and
+   * `column`).
+   */
+  location?: string | { url?: string; lineNumber?: number; columnNumber?: number; line?: number; column?: number };
 }
 
 export interface TraceNetworkRequest {
@@ -259,6 +264,36 @@ export function parseResourceSnapshots(texts: string[]): Map<string, TraceResour
     }
   }
   return map;
+}
+
+/**
+ * A trace's `pageError` event (an exception the page threw and nothing caught) as a console entry, `pageerror`, as the
+ * capture fixtures record it: its error's first stack line, or the value thrown that is no `Error`, and the place it
+ * was thrown (`params.location`, which traces record from Playwright 1.60), else its stack's first frame that names a
+ * URL.
+ */
+function pageErrorEntry(params: unknown, timestamp: number): TraceConsoleEntry | null {
+  if (!params || typeof params !== 'object') return null;
+  const { error, location } = params as {
+    error?: { error?: { name?: unknown; message?: unknown; stack?: unknown }; value?: unknown };
+    location?: { url?: unknown; line?: unknown; column?: unknown };
+  };
+  const thrown = error?.error;
+  const text = thrown ? pageErrorText(thrown) : thrownValueText(error?.value);
+  if (!text) return null;
+  const placed =
+    typeof location?.url === 'string' && location.url
+      ? { url: location.url, line: Number(location.line ?? 0), column: Number(location.column ?? 0) }
+      : pageErrorStackPlace(thrown?.stack);
+  return { type: 'pageerror', text, timestamp, location: placed ?? undefined };
+}
+
+/** A thrown value that is no `Error` as Playwright serializes it (`{ s: 'boom' }`, `{ n: 42 }`), as text. */
+function thrownValueText(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  const { s, n, b, v } = value as { s?: unknown; n?: unknown; b?: unknown; v?: unknown };
+  const plain = s ?? n ?? b ?? v;
+  return plain === undefined ? '' : String(plain);
 }
 
 function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
@@ -462,6 +497,11 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
 
       // Track after-snapshot for nearby context
       if (pointers.afterSnapshot) afterSnapshots.set(callId, pointers.afterSnapshot);
+    }
+
+    if (type === 'event' && evt.method === 'pageError') {
+      const entry = pageErrorEntry(evt.params, (evt.time as number) ?? 0);
+      if (entry) consoleEntries.push(entry);
     }
 
     if (type === 'event') {

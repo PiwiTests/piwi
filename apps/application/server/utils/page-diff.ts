@@ -1,10 +1,12 @@
 /**
  * Page diff — compare a failing execution's ARIA snapshot against the same
  * test's most recent passing execution that carries one (a green sample). The
- * baseline follows the same rule as the environment and visual diffs: same
+ * baseline follows the same rule as the environment and visual diffs (same
  * browser, preferring the same environment, then the same branch, then the most
- * recent. Used by the REST endpoint, the MCP evidence tool and the demo router
- * (browser-safe: drizzle queries plus the pure diff).
+ * recent), with one more preference after the environment: a run on the same
+ * Playwright version, whose ARIA snapshots follow the same rules. Used by the
+ * REST endpoint, the MCP evidence tool and the demo router (browser-safe:
+ * drizzle queries plus the pure diff).
  */
 import { and, eq, desc, isNotNull, or } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
@@ -62,6 +64,7 @@ function selectExecution(db: DrizzleDB, where: ReturnType<typeof and>) {
       runId: testRuns.id,
       runEnvironment: testRuns.environment,
       runBranch: testRuns.branch,
+      runPlaywrightVersion: testRuns.playwrightVersion,
       runMetadata: testRuns.metadata,
       startTime: testRuns.startTime,
     })
@@ -74,7 +77,11 @@ function selectExecution(db: DrizzleDB, where: ReturnType<typeof and>) {
 type ExecutionRow = Awaited<ReturnType<typeof selectExecution>>[number];
 
 function scopeOf(row: ExecutionRow) {
-  return { environment: row.runEnvironment ?? null, branch: row.runBranch ?? resolveRunBranch(row.runMetadata) };
+  return {
+    environment: row.runEnvironment ?? null,
+    branch: row.runBranch ?? resolveRunBranch(row.runMetadata),
+    playwrightVersion: row.runPlaywrightVersion ?? null,
+  };
 }
 
 function commitOf(row: ExecutionRow): string | null {

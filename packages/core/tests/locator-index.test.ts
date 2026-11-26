@@ -67,6 +67,16 @@ describe('extractLocatorExpressions', () => {
     ]);
   });
 
+  test('reads within() and describe() in test code as the chain Playwright reports', () => {
+    const code = `
+      await page.getByRole('button', { name: 'Save' }).within(page.getByRole('dialog')).click();
+      await page.getByTestId('total').describe('Order total').click();`;
+    expect(extractLocatorExpressions(code).map((e) => e.locator)).toEqual([
+      "getByRole('dialog').locator(getByRole('button', { name: 'Save' }))",
+      "getByTestId('total')",
+    ]);
+  });
+
   test('keeps nested locators inside the chain that holds them', () => {
     const found = extractLocatorExpressions(
       "getByRole('listitem').filter({ has: getByRole('link', { name: 'Docs' }) })",

@@ -10,6 +10,7 @@ import { computed } from 'vue';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import { useTimelineModel } from '~/composables/useTimelineModel';
 import { formatTimelineTime, lockColorHex } from '~/utils/timeline';
+import { lockDescription, lockLabel } from '#shared/test-locks';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -103,8 +104,8 @@ function clusterIssue(tc: TestCaseResult) {
       <p v-if="tailLock" class="flex items-start gap-1.5 text-xs text-amber-600 mb-3">
         <UIcon name="i-lucide-alert-triangle" class="size-3.5 shrink-0 mt-0.5" />
         <span>
-          <span class="font-medium">{{ tailLock.lock }}</span> was held for most of the run's tail — its holders run one
-          at a time, so the last workers idle while they wait.
+          <span class="font-medium">{{ lockLabel(tailLock.lock) }}</span> was held for most of the run's tail — its
+          holders run one at a time, so the last workers idle while they wait.
         </span>
       </p>
       <div class="overflow-x-auto">
@@ -128,7 +129,7 @@ function clusterIssue(tc: TestCaseResult) {
                     class="inline-block h-2.5 w-3 rounded-sm shrink-0"
                     :style="{ backgroundColor: lockColor.get(row.lock) }"
                   />
-                  <span class="font-medium">{{ row.lock }}</span>
+                  <span class="font-medium" :title="lockDescription(row.lock)">{{ lockLabel(row.lock) }}</span>
                 </span>
               </td>
               <td class="py-1.5 px-3 text-right tabular-nums">{{ row.testCount }}</td>

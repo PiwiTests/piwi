@@ -5,6 +5,7 @@ import { isFlakyExecution } from '#shared/utils/test-counts';
 import { isEndedAtStop } from '#shared/utils/skip-kind';
 import type { TestCaseResult } from '~~/types/api';
 import { isStuckAttempt } from './test-attempts';
+import { lockDescription, lockLabel } from '#shared/test-locks';
 
 /**
  * One badge on a test row. `BadgeGroup` shows the first three and folds the
@@ -189,11 +190,11 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
   for (const lock of input.locks ?? []) {
     badges.push({
       key: `lock:${lock}`,
-      label: lock,
+      label: lockLabel(lock),
       color: 'warning',
       variant: 'soft',
       icon: 'i-lucide-lock',
-      title: `Lock: only one holder of "${lock}" runs at a time`,
+      title: lockDescription(lock),
     });
   }
   if (meta?.owner) {

@@ -9,6 +9,7 @@
 // The spec records its own outcome in a file the shell names, which comes back
 // to the window as a `repro` event before the run's `exit`.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter as _, Manager as _};
@@ -116,8 +117,11 @@ fn project_flag(args: &[String]) -> Option<String> {
 }
 
 /// The test directory `playwright test --list --reporter=json` reports for the
-/// named project, or for the first one. Output printed before the JSON (a
-/// config that logs) is skipped.
+/// named project, else for the first project it listed tests of, else for the
+/// first one. The report names every project of the config, those that run
+/// only when named (`default: false`) too, and lists the tests of those that
+/// run without `--project` alone. Output printed before the JSON (a config
+/// that logs) is skipped.
 pub(crate) fn test_dir_from_list(stdout: &str, project: Option<&str>) -> Option<PathBuf> {
     let start = stdout
         .find("\n{")
@@ -125,14 +129,45 @@ pub(crate) fn test_dir_from_list(stdout: &str, project: Option<&str>) -> Option<
         .or_else(|| stdout.starts_with('{').then_some(0))?;
     let report: serde_json::Value = serde_json::from_str(stdout[start..].trim()).ok()?;
     let projects = report.get("config")?.get("projects")?.as_array()?;
+    let mut listed = HashSet::new();
+    if let Some(suites) = report.get("suites").and_then(|s| s.as_array()) {
+        listed_project_ids(suites, &mut listed);
+    }
     let chosen = project
         .and_then(|name| {
             projects
                 .iter()
                 .find(|p| p.get("name").and_then(|n| n.as_str()) == Some(name))
         })
+        .or_else(|| {
+            projects.iter().find(|p| {
+                p.get("id")
+                    .and_then(|id| id.as_str())
+                    .is_some_and(|id| listed.contains(id))
+            })
+        })
         .or_else(|| projects.first())?;
     chosen.get("testDir")?.as_str().map(PathBuf::from)
+}
+
+/// Adds to `ids` the project id of each test in `suites` of a JSON report, at
+/// any depth.
+fn listed_project_ids<'a>(suites: &'a [serde_json::Value], ids: &mut HashSet<&'a str>) {
+    for suite in suites {
+        let specs = suite.get("specs").and_then(|s| s.as_array());
+        for spec in specs.into_iter().flatten() {
+            let tests = spec.get("tests").and_then(|t| t.as_array());
+            ids.extend(
+                tests
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|test| test.get("projectId").and_then(|id| id.as_str())),
+            );
+        }
+        if let Some(inner) = suite.get("suites").and_then(|s| s.as_array()) {
+            listed_project_ids(inner, ids);
+        }
+    }
 }
 
 /// The body of a plain HTTP/1.0 response, when its status is 200. Otherwise
@@ -290,6 +325,8 @@ pub async fn desktop_run_repro(
             "test".into(),
             "--list".into(),
             "--reporter=json".into(),
+            // Lists the test directory of a project with no test yet too.
+            "--pass-with-no-tests".into(),
         ])
         .current_dir(&folder)
         .envs(settings.envs())
@@ -324,8 +361,7 @@ pub async fn desktop_run_repro(
         "test".into(),
         repro_file_filter(&request_id),
     ];
-    cmd_args.extend(args);
-    cmd_args.extend(settings.args());
+    cmd_args.extend(settings.args(args));
     let sidecar = app.shell().sidecar(crate::NODE_SIDECAR).map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
@@ -523,6 +559,40 @@ mod tests {
             Some(PathBuf::from("/repo/e2e"))
         );
         assert_eq!(test_dir_from_list("Error: no config", None), None);
+    }
+
+    #[test]
+    fn reads_the_test_directory_of_the_first_project_that_runs_unnamed() {
+        // `api` runs only when named (`default: false`): the report names it, and lists no test of it.
+        let out = r#"{"config":{"projects":[
+            {"id":"api","name":"api","testDir":"/repo/api"},
+            {"id":"setup","name":"setup","testDir":"/repo/setup"},
+            {"id":"chromium","name":"chromium","testDir":"/repo/e2e"}]},
+          "suites":[{"title":"cart","specs":[],"suites":[{"title":"pays","specs":[
+            {"tests":[{"projectId":"chromium","projectName":"chromium"}]}]}]}]}"#;
+        assert_eq!(
+            test_dir_from_list(out, None),
+            Some(PathBuf::from("/repo/e2e"))
+        );
+        assert_eq!(
+            test_dir_from_list(out, Some("api")),
+            Some(PathBuf::from("/repo/api"))
+        );
+        // A project listed first in the config wins among those that run.
+        let both = out.replace(
+            r#""specs":[],"#,
+            r#""specs":[{"tests":[{"projectId":"setup","projectName":"setup"}]}],"#,
+        );
+        assert_eq!(
+            test_dir_from_list(&both, None),
+            Some(PathBuf::from("/repo/setup"))
+        );
+        // No test listed: the first project.
+        let empty = r#"{"config":{"projects":[{"id":"api","name":"api","testDir":"/repo/api"}]},"suites":[]}"#;
+        assert_eq!(
+            test_dir_from_list(empty, None),
+            Some(PathBuf::from("/repo/api"))
+        );
     }
 
     #[test]

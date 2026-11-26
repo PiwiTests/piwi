@@ -50,6 +50,14 @@ describe('locksHeldAcrossShards', () => {
     expect(held).toEqual([]);
   });
 
+  test('never reports the -exclusive- lock, whose holder runs alone in its own shard', () => {
+    const held = locksHeldAcrossShards([
+      holder({ id: 1, shardIndex: 1, startedAt: 0, duration: 100, locks: ['-exclusive-'] }),
+      holder({ id: 2, shardIndex: 2, startedAt: 50, duration: 100, locks: ['-exclusive-'] }),
+    ]);
+    expect(held).toEqual([]);
+  });
+
   test('matches per lock, and returns sorted unique names', () => {
     const held = locksHeldAcrossShards([
       holder({ id: 1, shardIndex: 1, startedAt: 0, duration: 100, locks: ['z', 'a'] }),

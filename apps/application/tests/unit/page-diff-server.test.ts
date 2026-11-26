@@ -53,6 +53,7 @@ async function addExecution(
     startTime: Date;
     environment?: string | null;
     branch?: string | null;
+    playwrightVersion?: string | null;
     aria?: string | null;
     error?: string | null;
     createdAt?: Date;
@@ -65,6 +66,7 @@ async function addExecution(
     startTime: opts.startTime,
     environment: opts.environment ?? null,
     branch: opts.branch ?? null,
+    playwrightVersion: opts.playwrightVersion ?? null,
   });
   const row = await db
     .insert(schema.testRunsCases)
@@ -161,6 +163,78 @@ describe('getPageDiff baseline choice', () => {
     expect(result.status).toBe('ok');
     expect(result.baseline?.runId).toBe(1); // production, not the newer staging run
     expect(result.baselineNote).toBeNull();
+  });
+
+  test('prefers a green sample from the same Playwright version, within the environment', async () => {
+    const db = await freshDb();
+    await db.insert(schema.projects).values({ id: 1, name: 'page-diff-version' });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' });
+    const pass = (runId: number, day: number, environment: string, playwrightVersion: string | null) =>
+      addExecution(db, {
+        runId,
+        projectId: 1,
+        testCaseId: 1,
+        status: 'passed',
+        startTime: new Date(`2026-09-0${day}T10:00:00Z`),
+        environment,
+        playwrightVersion,
+        aria: GREEN_ARIA,
+      });
+    await pass(1, 1, 'production', '1.65.1');
+    await pass(2, 2, 'staging', '1.65.1');
+    await pass(3, 3, 'production', '1.64.1');
+    await pass(4, 4, 'production', null);
+    const failingId = await addExecution(db, {
+      runId: 5,
+      projectId: 1,
+      testCaseId: 1,
+      status: 'failed',
+      startTime: new Date('2026-09-05T10:00:00Z'),
+      environment: 'production',
+      playwrightVersion: '1.65.1',
+      aria: FAILING_ARIA,
+      error: FAILING_ERROR,
+    });
+
+    const result = await getPageDiff(db, failingId);
+    expect(result.baseline?.runId).toBe(1); // same version and environment, over the newer other-version runs
+    expect(result.baselineNote).toBeNull();
+  });
+
+  test('falls back to the most recent green sample when none has the same Playwright version', async () => {
+    const db = await freshDb();
+    await db.insert(schema.projects).values({ id: 1, name: 'page-diff-version-fallback' });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' });
+    for (const [runId, playwrightVersion] of [
+      [1, '1.63.0'],
+      [2, '1.64.1'],
+    ] as const) {
+      await addExecution(db, {
+        runId,
+        projectId: 1,
+        testCaseId: 1,
+        status: 'passed',
+        startTime: new Date(`2026-09-0${runId}T10:00:00Z`),
+        playwrightVersion,
+        aria: GREEN_ARIA,
+      });
+    }
+    const failingId = await addExecution(db, {
+      runId: 3,
+      projectId: 1,
+      testCaseId: 1,
+      status: 'failed',
+      startTime: new Date('2026-09-03T10:00:00Z'),
+      playwrightVersion: '1.65.1',
+      aria: FAILING_ARIA,
+      error: FAILING_ERROR,
+    });
+
+    expect((await getPageDiff(db, failingId)).baseline?.runId).toBe(2);
   });
 
   test('returns no-green-sample when no passing execution carries a snapshot', async () => {

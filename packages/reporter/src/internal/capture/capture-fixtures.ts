@@ -88,7 +88,7 @@ import {
   type FlakeConditions,
 } from '../flake/mode.js';
 import type { FlakePlan } from '@piwitests/core/flake-plan';
-import { joinErrorMessages } from '@piwitests/core/error-text';
+import { joinErrorMessages, pageErrorStackPlace, pageErrorText } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
 import { SECRET_AUTOCOMPLETE, cutText, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
@@ -3127,6 +3127,69 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
 
 /**
+ * A console message's place as `url:line:column`, both 0-based: its `line` and
+ * `column` (Playwright 1.60 and later), else the `lineNumber` and
+ * `columnNumber` an older Playwright gives.
+ */
+function consoleLocation(location: {
+  url: string;
+  line?: number;
+  column?: number;
+  lineNumber?: number;
+  columnNumber?: number;
+}): string {
+  return `${location.url}:${location.line ?? location.lineNumber}:${location.column ?? location.columnNumber}`;
+}
+
+/** What a context's `weberror` hands its listeners: `location()` from Playwright 1.60. */
+interface WebErrorLike {
+  error(): unknown;
+  location?: () => { url: string; line?: number; column?: number } | null | undefined;
+}
+
+/**
+ * Where each uncaught page error was thrown, as `url:line:column` (0-based), by its error: Playwright hands the
+ * context's `weberror` the error first, then the page's `pageerror` the same one.
+ */
+const PAGE_ERROR_LOCATIONS = new WeakMap<object, string>();
+
+/** Keep the place `WebError.location()` gives each uncaught error of a context's pages. */
+function notePageErrorLocations(context: BrowserContext): void {
+  if (typeof context.on !== 'function') return;
+  (context.on as (event: string, handler: (webError: WebErrorLike) => void) => void)('weberror', (webError) => {
+    try {
+      const error = webError.error();
+      const location = typeof webError.location === 'function' ? webError.location() : null;
+      if (error && typeof error === 'object' && location?.url) {
+        PAGE_ERROR_LOCATIONS.set(error, consoleLocation(location));
+      }
+    } catch {
+      /* a context event handler must never throw */
+    }
+  });
+}
+
+/**
+ * Where an uncaught page error was thrown, as `url:line:column` (0-based): the place its `weberror` gave, else the
+ * first frame of its stack that names a URL.
+ */
+function pageErrorLocation(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  return PAGE_ERROR_LOCATIONS.get(error) ?? pageErrorStackPlace((error as { stack?: unknown }).stack);
+}
+
+/** An uncaught page error's text: `TypeError: cart is undefined`, or the value thrown that is no `Error`. */
+function thrownText(error: unknown): string {
+  if (error instanceof Error) return pageErrorText(error) || 'Error';
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
+}
+
+/**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
  * page already reached through another path (browser patch, `page` fixture).
@@ -3279,11 +3342,23 @@ function instrumentPage(page: Page): void {
     });
   }
 
-  // An exception the page threw and nothing caught once a server probe's fault
-  // was applied: its sign the application did not handle the fault.
-  page.on('pageerror', () => {
+  // An exception the page threw and nothing caught: a console entry of its own, `pageerror`, and once a server probe's
+  // fault was applied, its sign the application did not handle the fault.
+  page.on('pageerror', (error: unknown) => {
     const sink = currentSink;
-    if (sink?.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
+    if (!sink) return;
+    if (sink.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
+    if (sink.frozenAt !== null) return;
+    try {
+      sink.consoleEntries.push({
+        type: 'pageerror',
+        text: thrownText(error),
+        timestamp: Date.now(),
+        location: pageErrorLocation(error),
+      });
+    } catch {
+      /* a page event handler must never throw */
+    }
   });
 
   page.on('console', (msg: ConsoleMessage) => {
@@ -3296,7 +3371,7 @@ function instrumentPage(page: Page): void {
         type,
         text: msg.text(),
         timestamp: Date.now(),
-        location: location ? `${location.url}:${location.lineNumber}:${location.columnNumber}` : null,
+        location: location ? consoleLocation(location) : null,
       });
     }
   });
@@ -3551,6 +3626,7 @@ function instrumentContext(context: BrowserContext): void {
     });
   }
   observeOwnApiRequests(context);
+  notePageErrorLocations(context);
   // In a run a person may pause and watch, the context's calls are followed from its start, for a view that comes later.
   if (runChannelOpen() || liveViewMayPause()) listenCalls(context, layersTitleOf);
   // Inspect may trace the context itself: the test's own `tracing.start` stops Piwi's trace first.
@@ -3711,6 +3787,20 @@ function requestDuration(
 }
 
 /**
+ * The ARIA snapshot of the page's body Playwright took as the test's last
+ * failed `expect` found no element (`errorContext` of its error, Playwright 1.60
+ * and later), or null.
+ */
+function expectFailureAria(testInfo: Pick<TestInfo, 'errors'>): string | null {
+  const errors = testInfo.errors ?? [];
+  for (let i = errors.length - 1; i >= 0; i--) {
+    const aria = (errors[i] as { errorContext?: unknown }).errorContext;
+    if (typeof aria === 'string' && aria.trim()) return aria;
+  }
+  return null;
+}
+
+/**
  * Drain in-flight capture work and attach the collected `piwi-*` data to the
  * test, sourced from the sink so it works regardless of how the test's pages
  * were made.
@@ -3851,15 +3941,18 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     try {
       // Prefer a live read; fall back to the snapshot the close wrappers
       // stashed — the standard test page is already closed when this auto
-      // fixture tears down.
-      const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
+      // fixture tears down — and, with neither, to the one Playwright took as
+      // a failed `expect` found nothing. The JSON tree goes only with a read
+      // of the fixtures' own.
+      const own = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
+      const snapshot = own ?? expectFailureAria(testInfo);
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: ARIA_SNAPSHOT_CONTENT_TYPE,
           body: snapshot,
         });
 
-        const snapshotJson = (live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = own ? ((live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson) : null;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',

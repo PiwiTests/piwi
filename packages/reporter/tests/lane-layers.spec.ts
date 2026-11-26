@@ -98,9 +98,10 @@ describe('the page’s text of a lane', () => {
       const page = await context.newPage();
       await page.setContent('<label>Phrase <input id="p" type="password"></label>');
       await page.locator('#p').fill('hunter2xyz');
-      await sleep(300);
-      const first = textOf(await takeLaneText(page, [], false));
-      expect(first).toMatch(/textbox "Phrase": <hidden>/);
+      // The runner writes the trace's snapshot of the fill after the call returns.
+      await expect
+        .poll(async () => textOf(await takeLaneText(page, [], false)), { timeout: 5000 })
+        .toMatch(/textbox "Phrase": <hidden>/);
       // The field turns plain: a read now finds no secret, and the trace's snapshot still shows its value.
       await page.locator('#p').evaluate((field) => {
         (field as unknown as { type: string }).type = 'text';

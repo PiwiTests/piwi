@@ -37,7 +37,7 @@ without it.
 | **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
 | **Incidental catch**<br>`incidental-catch` | fragile | a failure cluster whose recorded fix changed one to three files, no test file among them, that none of the tests it failed is about by name or reaches | [source control](/guide/source-control) | 0.45 | `src/pricing/rounding.ts is caught only incidentally` |
 | **Not noticed**<br>`not-noticed` | false-comfort | a route a probe broke while no test noticed (a delay never counts) | [probes](/features/probes) | 0.8 | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
-| **Passed with errors**<br>`passed-with-errors` | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | 0.6 | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
+| **Passed with errors**<br>`passed-with-errors` | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error or uncaught page error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | 0.6 | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
 | **Assertion-light**<br>`assertion-light` | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | 0.4 | `2 tests assert on this page, only that elements are present` |
 | **Catalog method, no test calls**<br>`catalog-method-no-test-calls` | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | 0.5 | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
 | **Code nobody executes**<br>`code-not-executed` | blind-spot | the functions of a file no suite ran in the default branch's newest [combined coverage](/features/combined-coverage), or a file recorded by line none of whose lines ran; the 30 files with the most, one gap each | a coverage report or run coverage | 0.4 plus 0.3 times the share of its functions not run; 0.6 for a whole file | `Functions at lines 12–20, 22–30 · no suite ran them at 9a8b7c6` |
@@ -50,9 +50,9 @@ without it.
 and a brace inside a string can end a `catch` block early. It runs on **Recompute** and the nightly sweep, which read
 the files through the source control connection; a file the provider cannot serve keeps its gap as it was.
 
-*Passed with errors* leaves out a console line from another origin's script and the browser's own *Failed to load
-resource* line. A response no server sent, such as one the test's route handler fulfilled, is no 5xx of the
-application, and a test that fulfills a failing response means to see the page fail, so its console errors do not
+*Passed with errors* leaves out a console line or an uncaught error from another origin's script and the browser's own
+*Failed to load resource* line. A response no server sent, such as one the test's route handler fulfilled, is no 5xx of
+the application, and a test that fulfills a failing response means to see the page fail, so its page's errors do not
 count either.
 *Assertion-light* counts any other matcher (a text, a count, a value, an attribute) as a value check, and so is a read
 of an element the index cannot name, or a visible element found by a text holding a number

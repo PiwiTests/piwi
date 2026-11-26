@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FullConfig } from '@playwright/test/reporter';
 import {
+  failsOnFlakyTests,
   MetadataCollector,
+  ranProjectNames,
   resolveRunOrigin,
   resolveRunRef,
   resolveScmBaseBranch,
@@ -112,13 +114,27 @@ describe('MetadataCollector.getSuiteInfo', () => {
     expect(info.suiteConfig[0].annotations).toEqual([{ type: 'issue', description: 'PAY-1' }, { type: 'skip' }]);
   });
 
-  it('defaults unknown mode to "default"', () => {
+  it('reads "default" where no level, file or project sets a mode', () => {
     const mc = new MetadataCollector();
-    const { outer } = fakeSuiteChain({ parallelMode: undefined, titles: ['Solo'] });
+    const project = { type: 'project', title: 'chromium', parent: undefined, _parallelMode: 'none' };
+    const outer = { type: 'describe', title: 'Outer', parent: project, _parallelMode: 'none', _staticAnnotations: [] };
     const inner = { type: 'describe', title: 'Inner', parent: outer, _parallelMode: undefined, _staticAnnotations: [] };
-    const test = { parent: inner } as any;
-    const info = mc.getSuiteInfo(test);
-    expect(info.suiteConfig[info.suiteConfig.length - 1].mode).toBe('default');
+    expect(mc.getSuiteInfo({ parent: inner } as any).suiteConfig.map((level) => level.mode)).toEqual([
+      'default',
+      'default',
+    ]);
+  });
+
+  it('gives a level that sets no mode the one of the nearest level above it that does, its project’s included', () => {
+    const mc = new MetadataCollector();
+    const project = { type: 'project', title: 'fully', parent: undefined, _parallelMode: 'parallel' };
+    const file = { type: 'file', title: 'a.spec.ts', parent: project, _parallelMode: 'none' };
+    const serial = { type: 'describe', title: 'Serial', parent: file, _parallelMode: 'serial', _staticAnnotations: [] };
+    const nested = { type: 'describe', title: 'Nested', parent: serial, _parallelMode: 'none', _staticAnnotations: [] };
+    const loose = { type: 'describe', title: 'Loose', parent: file, _parallelMode: 'none', _staticAnnotations: [] };
+    const modes = (parent: unknown) => mc.getSuiteInfo({ parent } as any).suiteConfig.map((level) => level.mode);
+    expect(modes(nested)).toEqual(['serial', 'serial']);
+    expect(modes(loose)).toEqual(['parallel']);
   });
 
   it('skips suites with empty titles', () => {
@@ -138,6 +154,52 @@ describe('MetadataCollector.getSuiteInfo', () => {
     const info = mc.getSuiteInfo(test);
     expect(info.suitePath).toEqual([]);
     expect(info.suiteConfig).toEqual([]);
+  });
+});
+
+describe('MetadataCollector.readSuiteModes', () => {
+  /** A file suite holding one describe, which sets no mode of its own. */
+  function chain() {
+    const file: any = { type: 'file', title: 'a.spec.ts', parent: undefined, _parallelMode: 'none' };
+    const describe: any = { type: 'describe', title: 'Checkout', parent: file, suites: [], _parallelMode: 'none' };
+    file.suites = [describe];
+    return { file, describe, test: { parent: describe } as any };
+  }
+
+  it("reads each suite's mode from Playwright's TestRun, ahead of the private field", () => {
+    const mc = new MetadataCollector();
+    const { file, describe, test } = chain();
+    const asked: unknown[] = [];
+    const testRun = {
+      mode(this: unknown, suite: unknown) {
+        // Playwright's mode reads its own state: it is called on the TestRun.
+        if (this !== testRun) throw new Error('called off its TestRun');
+        asked.push(suite);
+        return suite === describe ? 'serial' : 'default';
+      },
+    };
+    mc.readSuiteModes(file, testRun);
+    expect(asked).toEqual([file, describe]);
+    expect(mc.getSuiteInfo(test).suiteConfig[0]!.mode).toBe('serial');
+  });
+
+  it('reads nothing from a TestRun without mode, or one whose mode throws, and never throws itself', () => {
+    const { file, test } = chain();
+    file._parallelMode = 'parallel';
+    for (const testRun of [
+      {},
+      null,
+      {
+        mode: () => {
+          throw new Error('TestRun.mode() can only be called from Reporter.preprocess().');
+        },
+      },
+      { mode: () => 'none' },
+    ]) {
+      const mc = new MetadataCollector();
+      expect(() => mc.readSuiteModes(file, testRun as any)).not.toThrow();
+      expect(mc.getSuiteInfo(test).suiteConfig[0]!.mode).toBe('parallel');
+    }
   });
 });
 
@@ -625,6 +687,38 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     expect(projects.map((p: any) => p.use.browserName)).toEqual(['firefox', 'webkit', 'firefox', 'chromium']);
   });
 
+  it("records whether Playwright fails a run on flaky tests: the config's resolved value, else Piwi's option", () => {
+    const mc = new MetadataCollector();
+    const failsOnFlaky = (config: object, options: object) =>
+      (mc.collect({ ...fakeConfig(), ...config } as FullConfig, undefined as any, options).htmlReport as any)
+        .failOnFlakyTests;
+    // Playwright 1.61 and later: the command line's --fail-on-flaky-tests, or a config wrapConfig did not wrap.
+    expect(failsOnFlaky({ failOnFlakyTests: true }, {})).toBe(true);
+    expect(failsOnFlaky({ failOnFlakyTests: false }, { failOnFlakyTests: true })).toBe(false);
+    // Earlier: the option wrapConfig passes on.
+    expect(failsOnFlaky({}, { failOnFlakyTests: true })).toBe(true);
+    expect(failsOnFlaky({}, {})).toBe(false);
+    expect(failsOnFlakyTests({ failOnFlakyTests: 'yes' }, { failOnFlakyTests: 'yes' })).toBe(false);
+  });
+
+  it('records the projects the run ran, which --project narrows, beside every project its config lists', () => {
+    const mc = new MetadataCollector();
+    const projects = [
+      { name: 'setup', testDir: 'tests', use: {} },
+      { name: 'chromium', testDir: 'tests', use: {}, dependencies: ['setup'] },
+      { name: 'firefox', testDir: 'tests', use: { browserName: 'firefox' }, dependencies: ['setup'] },
+    ];
+    const html = (config: object) =>
+      mc.collect({ ...fakeConfig(), projects, ...config } as unknown as FullConfig, undefined as any, {})
+        .htmlReport as any;
+    const argv = ['node', 'playwright', 'test', '--project', 'firefox'];
+    expect(html({ argv }).projects.map((p: any) => p.name)).toEqual(['setup', 'chromium', 'firefox']);
+    expect(html({ argv }).ranProjects).toEqual(['setup', 'firefox']);
+    // Playwright 1.64 and later name them, by the same objects as the config's.
+    expect(html({ filteredProjects: [projects[1]] }).ranProjects).toEqual(['setup', 'chromium']);
+    expect(html({}).ranProjects).toEqual(['setup', 'chromium', 'firefox']);
+  });
+
   it('copies config.metadata through as playwrightConfig', () => {
     const mc = new MetadataCollector();
     const config = { ...fakeConfig(), metadata: { custom: true } } as unknown as FullConfig;
@@ -677,5 +771,37 @@ describe('MetadataCollector.collect — the pass reuse plan', () => {
   it('records no plan for a run of this process, which passed Playwright no skip list', () => {
     process.env.PIWI_PLAN = '9';
     expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).piwiPlan).toBeUndefined();
+  });
+
+  it("reads the skip list off Playwright's snapshot of the runner's command line", () => {
+    process.env.PIWI_PLAN = '9';
+    const argv = ['node', 'playwright', 'test', '--test-list-invert', '.piwi/plan-9.txt'];
+    const config = { ...fakeConfig(), argv } as unknown as FullConfig;
+    expect(new MetadataCollector().collect(config, undefined as any, {}).piwiPlan).toEqual({ id: 9 });
+  });
+});
+
+describe('ranProjectNames', () => {
+  const setup = { name: 'setup' };
+  const chromium = { name: 'chromium', dependencies: ['setup'] };
+  const webkit = { name: 'webkit', dependencies: ['setup'] };
+  const NODE = ['/usr/bin/node', '/path/to/playwright'];
+
+  it("is Playwright's filteredProjects with the projects they depend on, unless --no-deps", () => {
+    const config = { projects: [setup, chromium, webkit], filteredProjects: [webkit] };
+    expect(ranProjectNames(config, [...NODE, 'test'])).toEqual(['setup', 'webkit']);
+    expect(ranProjectNames(config, [...NODE, 'test', '--no-deps'])).toEqual(['webkit']);
+  });
+
+  it('reads --project off the command line where Playwright names no selection (before 1.64, merge-reports)', () => {
+    for (const filteredProjects of [undefined, []]) {
+      const config = { projects: [setup, chromium, webkit], filteredProjects };
+      expect(ranProjectNames(config, [...NODE, 'test', '--project=chrom*'])).toEqual(['setup', 'chromium']);
+      expect(ranProjectNames(config, [...NODE, 'merge-reports', './blob-report'])).toEqual([
+        'setup',
+        'chromium',
+        'webkit',
+      ]);
+    }
   });
 });

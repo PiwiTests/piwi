@@ -90,7 +90,7 @@ second, and 16 MB of pages and resources a second from the run's workers togethe
 Inspect says why:
 
 - **The project masks elements.** When the worker's reporter cannot read the masks, Inspect asks to update it.
-- **The trace takes no DOM snapshots** (`snapshots` off, or in Playwright 1.64 an object without `dom`), the browser
+- **The trace takes no DOM snapshots** (`snapshots` off, or from Playwright 1.63 an object without `dom`), the browser
   keeps no trace folder, or the test traces itself: open Inspect again once its trace stopped.
 - **A page not sent**: its secret fields or its snapshot could not be read, it passes 4 MB, Inspect fell behind the
   test's calls (16 MB waiting), or the page's full snapshots alone pass 16 MB. Most say Inspect sends it again from

@@ -1,16 +1,21 @@
 //! The test filters of a run the shell starts in a folder it knows, anchored at that folder.
 
-/// The options of `ALLOWED_FLAGS` that take a value, which an argument may give apart (`--project x`).
-const VALUE_FLAGS: [&str; 8] = [
+/// The options of `ALLOWED_FLAGS` that take a value, which an argument may give apart (`--project x`, `-G x`).
+pub(crate) const VALUE_FLAGS: [&str; 9] = [
     "--trace",
     "--repeat-each",
     "--project",
     "--grep",
+    "-G",
     "--workers",
     "--retries",
     "--max-failures",
     "--timeout",
 ];
+
+/// The options of `ALLOWED_FLAGS` whose value is optional: Playwright takes the next argument as their value when it
+/// is no option (`--shuffle 42`).
+const OPTIONAL_VALUE_FLAGS: [&str; 1] = ["--shuffle"];
 
 /// The ASCII characters Node's `pathToFileURL` may percent-encode in a Windows path, which a filter of the `file:` URL
 /// matches written either way.
@@ -27,12 +32,16 @@ const URL_ENCODED: &str = " \"#%<>?[]^`{|}~";
 pub(crate) fn anchored_filters(folder: &str, args: &[String], windows: bool) -> Vec<String> {
     let mut out = Vec::with_capacity(args.len());
     let mut value_next = false;
+    let mut optional_value_next = false;
     for arg in args {
-        if value_next {
+        if value_next || (optional_value_next && !arg.starts_with('-')) {
             value_next = false;
+            optional_value_next = false;
             out.push(arg.clone());
         } else if arg.starts_with('-') {
-            value_next = !arg.contains('=') && VALUE_FLAGS.contains(&arg.as_str());
+            let apart = !arg.contains('=');
+            value_next = apart && VALUE_FLAGS.contains(&arg.as_str());
+            optional_value_next = apart && OPTIONAL_VALUE_FLAGS.contains(&arg.as_str());
             out.push(arg.clone());
         } else if arg.starts_with('^') || arg.starts_with('/') {
             out.push(arg.clone());
@@ -181,6 +190,41 @@ mod tests {
                 "chromium",
                 "--grep=pays",
                 "--headed"
+            ])
+        );
+    }
+
+    #[test]
+    fn leaves_the_value_of_a_short_option_and_a_shuffle_seed_given_apart() {
+        let out = anchored_filters(
+            "/repo",
+            &args(&[
+                "-G",
+                "slow",
+                "--shuffle",
+                "42",
+                "tests/a.spec.ts",
+                "--shuffle",
+                "-x",
+                "tests/b.spec.ts",
+                "--shuffle=7",
+                "tests/c.spec.ts",
+            ]),
+            false,
+        );
+        assert_eq!(
+            out,
+            args(&[
+                "-G",
+                "slow",
+                "--shuffle",
+                "42",
+                "^/repo/tests/a.spec.ts$",
+                "--shuffle",
+                "-x",
+                "^/repo/tests/b.spec.ts$",
+                "--shuffle=7",
+                "^/repo/tests/c.spec.ts$",
             ])
         );
     }

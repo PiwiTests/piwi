@@ -40,7 +40,7 @@ const LOOK_MS = 300;
 /**
  * A page of the app: `/k` fetches its answers one after another, then says so in its title; `/h` asks every 100 ms
  * whether its failure is held, and once it is, fetches again and logs an error. Every page says when the pause bar
- * shows, and plays a person's part in the element picker, picking the region on `/r` and `/big` and the button
+ * shows, by a beacon, which no list of kept responses holds, and plays a person's part in the element picker, picking the region on `/r` and `/big` and the button
  * elsewhere. The region holds a password field with its value, one in a shadow root, a one-time code's field and a link
  * with a token; on `/big`, text past what a region's snapshot may hold.
  */
@@ -63,12 +63,12 @@ const PICK = location.pathname === '/r' || location.pathname === '/big' ? 'secti
 new MutationObserver(() => {
   if (document.querySelector('[data-piwi-stop-highlight]') && !window.__glassSaid) {
     window.__glassSaid = true;
-    fetch('/glass', { method: 'POST', body: location.pathname });
+    navigator.sendBeacon('/glass', location.pathname);
   }
   const bar = document.getElementById('__piwi-pause-bar');
   if (!bar || bar.dataset.seen) return;
   bar.dataset.seen = '1';
-  fetch('/bar', { method: 'POST', body: bar.children[0].textContent });
+  navigator.sendBeacon('/bar', bar.children[0].textContent);
 }).observe(document.documentElement, { childList: true, subtree: true });
 setInterval(() => {
   if (document.getElementById('__piwi_picker_banner') && window.__piwiPickState === undefined) {

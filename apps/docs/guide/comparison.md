@@ -63,7 +63,7 @@ Start with SQLite; switch to PostgreSQL when you want concurrent write headroom 
 
 ### Which Node version does the dashboard need?
 
-Node 22 or newer, and only for `npx @piwitests/server`: the Docker image and the desktop app bundle their own runtime. The reporter in your test project needs Node 20 or later.
+Node 22 or newer, and only for `npx @piwitests/server`: the Docker image and the desktop app bundle their own runtime. The reporter in your test project needs Node 22 or later too.
 
 ### Can I use it with Cypress / Jest / other frameworks?
 

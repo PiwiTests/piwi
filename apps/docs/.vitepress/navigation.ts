@@ -205,7 +205,7 @@ export const guideSidebar: SidebarGroup[] = [
   {
     text: 'Set up',
     items: [
-      { text: 'Reporter', link: '/guide/reporter' },
+      { text: 'Reporter', link: '/guide/reporter', items: [{ text: 'Bun', link: '/guide/bun' }] },
       { text: 'Capture fixtures', link: '/guide/capture-fixtures' },
       { text: 'CI & sharding', link: '/guide/ci' },
       { text: 'Source control', link: '/guide/source-control' },

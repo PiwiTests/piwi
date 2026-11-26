@@ -739,7 +739,7 @@ export const HELP_TOPICS = {
   },
   'run.errors': {
     title: 'Errors outside the tests',
-    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden. Collapse folds them to one line so the tab below, the Video tab’s video among them, keeps its height; this browser remembers the choice.',
+    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. An error of a worker names it below: its lane, its shard and its Playwright project. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden. Collapse folds them to one line so the tab below, the Video tab’s video among them, keeps its height; this browser remembers the choice.',
     doc: 'reference/test-metadata#errors-outside-the-tests',
   },
   'run.externalIdDuplicates': {
@@ -1072,7 +1072,7 @@ export const HELP_TOPICS = {
   },
   'case.console': {
     title: 'Console output',
-    text: 'Browser console messages logged while this test ran — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to the connect wizard), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
+    text: 'Browser console warnings and errors logged while this test ran, and each exception the page threw and nothing caught, marked page error with the place it was thrown — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to the connect wizard), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
     doc: 'guide/capture-fixtures',
   },
   'case.output': {
@@ -1711,7 +1711,7 @@ export const HELP_TOPICS = {
   // ── Page diff ────────────────────────────────────────────────────────────
   'case.page-diff': {
     title: 'Page diff',
-    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
+    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment, then the same Playwright release, then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
   },
 
   // ── Page state ───────────────────────────────────────────────────────────

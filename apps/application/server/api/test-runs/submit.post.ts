@@ -50,7 +50,7 @@ defineRouteMeta({
               runErrors: {
                 type: 'array',
                 description:
-                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw), each `{ message, stack?, location? }`: the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw), each `{ message, stack?, location?, parallelIndex?, shardIndex?, playwrightProject? }`, the last three naming the worker it came from: the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
                 items: { type: 'object' },
               },
               replacesRun: {

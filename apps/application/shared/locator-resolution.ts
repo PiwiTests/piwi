@@ -42,6 +42,7 @@ const RESOLVED_STATES = new Set<ParsedPlaywrightError['lastState']>([
   'not-visible',
   'not-enabled',
   'not-editable',
+  'inert',
   'not-stable',
   'outside-viewport',
   'intercepts-pointer',
