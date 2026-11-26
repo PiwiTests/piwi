@@ -6,6 +6,7 @@ import {
 } from '#shared/ai-context-limits';
 import type { ContextLimits } from '#shared/ai-context-limits';
 import type { DbClient } from '../database';
+import { getAppSetting } from './app-settings';
 
 function parseEnvInt(name: string): number | null {
   const raw = process.env[name];

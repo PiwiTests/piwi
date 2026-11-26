@@ -1096,7 +1096,8 @@ export const PIWI_ENV_VARS = {
     max: 50000,
   },
   PIWI_AI_IMAGE_MAX_EDGE: {
-    description: 'Screenshots are downscaled to at most this many pixels on the long edge before being sent.',
+    description:
+      'Screenshots are downscaled to at most this many pixels on the long edge before being sent to the model or to an MCP client.',
     category: 'ai-limits',
     type: 'number',
     default: '1920',

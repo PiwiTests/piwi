@@ -173,6 +173,8 @@ import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { caseOutput, inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
+import { resolveContextLimits } from '../ai-context-limits';
+import { fitImageForAgent, toolImagesOf, withToolImages, type FittedImage, type ToolImage } from './images';
 import { executionFailed, failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
 import { readProjectRepositoryUrl } from '../scm/project-repository';
@@ -502,8 +504,44 @@ export interface McpTool extends McpToolDef {
 
 // ── Tool content wrapper ─────────────────────────────────────────────────────
 
-export function toContent(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
-  return { content: [{ type: 'text', text: JSON.stringify(data, null, 0) }] };
+type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
+
+/** A handler's result as MCP content: its JSON, then each image `withToolImages` attached, after its caption. */
+export function toContent(data: unknown): { content: ToolContent[] } {
+  return {
+    content: [
+      { type: 'text', text: JSON.stringify(data, null, 0) },
+      ...toolImagesOf(data).flatMap((img): ToolContent[] => [
+        { type: 'text', text: img.caption },
+        { type: 'image', data: img.data, mimeType: img.mimeType },
+      ]),
+    ],
+  };
+}
+
+/** The most bytes a screenshot `get_case_screenshots` sends may take; a larger one is re-encoded. */
+const SCREENSHOT_MAX_BYTES = 512 * 1024;
+
+/** A screenshot as `get_case_screenshots` lists it: the stored file, and the image sent with `content: true`. */
+interface ScreenshotItem {
+  name: string;
+  mediaType: string;
+  dataLength: number;
+  atFailure?: true;
+  width?: number;
+  height?: number;
+  sentAs?: { mediaType: string; width: number | null; height: number | null; dataLength: number };
+  notSent?: string;
+}
+
+/** The line sent before a screenshot's image block. */
+function screenshotCaption(name: string, atFailure: boolean, fitted: FittedImage): string {
+  const what = `Screenshot ${name}${atFailure ? ', the page the test failed on' : ''}`;
+  if (!fitted.reencoded || !fitted.original) return `${what}:`;
+  const { width, height } = fitted.original;
+  return width === fitted.width && height === fitted.height
+    ? `${what}, re-encoded as JPEG to fit the size limit:`
+    : `${what}, downscaled from ${width}×${height} to ${fitted.width}×${fitted.height}:`;
 }
 
 /** Compact a resolution into the agent-facing shape (bounded test sample). */
@@ -1350,41 +1388,61 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const screenshotRows = withContent ? allRows.slice(0, 3) : allRows;
 
     const storage = getStorage();
-    const results: Array<{ name: string; mediaType: string; dataLength: number; atFailure?: true; data?: string }> = [];
+    const limits = withContent
+      ? { maxEdge: (await resolveContextLimits(db)).imageMaxEdge, maxBytes: SCREENSHOT_MAX_BYTES }
+      : null;
+    const results: ScreenshotItem[] = [];
+    const images: ToolImage[] = [];
 
     for (const f of screenshotRows) {
+      let buf: Buffer;
       try {
-        const buf = await storage.readFile(f.path);
-        const ext = f.path.toLowerCase().split('.').pop() || 'png';
-        const mediaType =
-          ext === 'jpg' || ext === 'jpeg'
-            ? 'image/jpeg'
-            : ext === 'gif'
-              ? 'image/gif'
-              : ext === 'webp'
-                ? 'image/webp'
-                : 'image/png';
-
-        const entry: any = {
-          name: f.path.split('/').pop() || 'screenshot',
-          mediaType,
-          dataLength: buf.length,
-          ...(f === atFailure ? { atFailure: true } : {}),
-        };
-
-        if (withContent) {
-          const maxBytes = 100 * 1024; // ~100 KB cap per image
-          const slice = buf.length > maxBytes ? buf.subarray(0, maxBytes) : buf;
-          entry.data = Buffer.from(slice).toString('base64');
-          if (buf.length > maxBytes) entry.truncated = true;
-        }
-
-        results.push(entry);
+        buf = await storage.readFile(f.path);
       } catch {
-        // skip inaccessible files
+        continue; // skip inaccessible files
       }
+      const ext = f.path.toLowerCase().split('.').pop() || 'png';
+      const mediaType =
+        ext === 'jpg' || ext === 'jpeg'
+          ? 'image/jpeg'
+          : ext === 'gif'
+            ? 'image/gif'
+            : ext === 'webp'
+              ? 'image/webp'
+              : 'image/png';
+
+      const entry: ScreenshotItem = {
+        name: f.path.split('/').pop() || 'screenshot',
+        mediaType,
+        dataLength: buf.length,
+        ...(f === atFailure ? { atFailure: true } : {}),
+      };
+
+      if (limits) {
+        const fitted = await fitImageForAgent(buf, mediaType, limits);
+        if (!fitted) {
+          entry.notSent = 'The stored file could not be decoded, or made small enough to send.';
+        } else {
+          if (fitted.original) Object.assign(entry, fitted.original);
+          if (fitted.reencoded) {
+            entry.sentAs = {
+              mediaType: fitted.mimeType,
+              width: fitted.width,
+              height: fitted.height,
+              dataLength: fitted.data.length,
+            };
+          }
+          images.push({
+            caption: screenshotCaption(entry.name, f === atFailure, fitted),
+            data: fitted.data.toString('base64'),
+            mimeType: fitted.mimeType,
+          });
+        }
+      }
+
+      results.push(entry);
     }
-    return { items: results };
+    return withToolImages({ items: results }, images);
   },
 
   // ── get_cluster_context ────────────────────────────────────────────────────
