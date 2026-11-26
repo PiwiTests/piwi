@@ -149,11 +149,11 @@ Playwright test
                                 └─ visible on the execution page + AI diagnosis
 ```
 
-The plugin wraps Nitro's root H3 handler and uses three mechanisms:
+The plugin wraps the entry every request goes through, Nitro 2's root H3 handler or Nitro 3's `fetch`, and uses three mechanisms:
 
 1. **`event.context._piwiLogs`** — a plain per-request array attached to the H3 event as the wrapped handler starts; everything captured for the request accumulates here.
 2. **`AsyncLocalStorage.run()`** — scopes that buffer around the entire downstream chain (hooks, middleware, route handlers), so the process-global `consola` reporter always appends to the correct request's buffer.
-3. **A patched `res.end`** — the header is written just before the response goes out, which covers **every** response, including H3 error responses that bypass Nitro's `beforeResponse` hook. Right before writing, unhandled errors are drained from `event.context.nitro.errors`, so thrown errors appear even when nothing logged via consola.
+3. **The header goes on the response itself** — on Nitro 2 through a patched `res.end`, on Nitro 3 on the `Response` the app returns, so it covers **every** response, H3 error responses included. Right before writing, unhandled errors are drained from `event.context.nitro.errors`, so thrown errors appear even when nothing logged via consola.
 
 ## Server probes — the `X-Piwi-Probe` header
 
@@ -174,9 +174,9 @@ capture** (`NODE_ENV` and `PIWI_TEST_LOGS_DISABLED`), and only when a shared sec
 **Faults applied** (to the one request the probe run signs — the reporter picks
 the Nth match and signs that request, so the plugin applies the fault to any
 request the header matches and the single-use nonce keeps it from repeating;
-gated per project on the dashboard side): `throw`, `status`/`auth` (run the
-server's error path with a
-500/401), `delay`/`slow`/`slow-first` (+5s), `extreme` (empty default),
+gated per project on the dashboard side): `throw`, `status`/`auth` (a
+500/401: through the server's error path on Nitro 2, a JSON error answered
+before the route on Nitro 3), `delay`/`slow`/`slow-first` (+5s), `extreme` (empty default),
 `data`/`drop-field`/`empty-body` (mutate the response before serialization), and
 `dependency` (fail one outbound `$fetch` whose URL names the targeted
 dependency; when no call matches, nothing is applied). The plugin reports
@@ -216,11 +216,12 @@ route to its handler by observation rather than by convention.
 
 ## Peer dependencies
 
-| Package     | Version   |
-|-------------|-----------|
-| `nitropack` | `>=2.0.0` |
-| `h3`        | `>=1.0.0` |
-| `consola`   | `>=3.0.0` |
+| Package     | Version                                  |
+|-------------|------------------------------------------|
+| `nitropack` | `>=2.0.0` (Nitro 2), or                  |
+| `nitro`     | `>=3.0.261103-rc` (Nitro 3)              |
+| `h3`        | `>=1.0.0`                                |
+| `consola`   | `>=3.0.0`                                |
 
 These are already installed in any Nuxt project — no extra installs needed.
 

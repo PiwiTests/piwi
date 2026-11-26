@@ -108,7 +108,10 @@ const config: KnipConfig = {
       // `nuxt typecheck` runs `vue-tsc`.
       ignoreDependencies: ['vue-tsc'],
     },
-    'integrations/nitro': {},
+    'integrations/nitro': {
+      // An optional peer: the plugin runs on Nitro 2 (`nitropack`, whose types the module reads) or Nitro 3 (`nitro`).
+      ignoreDependencies: ['nitropack'],
+    },
   },
 };
 
