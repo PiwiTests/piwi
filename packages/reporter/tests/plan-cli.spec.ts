@@ -205,10 +205,10 @@ describe('planned runs', () => {
   it('runs the selection plain when the plan reuses nothing', async () => {
     dashboard({ skip: [] });
     expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
-    expect(spawned()[0]!.args).toEqual([]);
+    expect(spawned()[0]!.args).toEqual(['--pass-with-no-tests']);
   });
 
-  it('passes --pass-with-no-tests to each shard of a plan that reuses nothing, once', async () => {
+  it('passes --pass-with-no-tests to every run of a plan that reuses nothing, sharded or not, once', async () => {
     dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
     expect(await runPlannedRun(['--plan', '9', '--shard', '1/2'], env)).toBe(0);
     expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--shard=1/2', '--pass-with-no-tests']);
@@ -221,7 +221,12 @@ describe('planned runs', () => {
     vi.mocked(spawn).mockClear();
     dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
     expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
-    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3']);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--pass-with-no-tests']);
+
+    vi.mocked(spawn).mockClear();
+    dashboard({ skip: [], args: ['tests/a.spec.ts:3'] });
+    expect(await runPlannedRun(['--plan', '9', '--', '--pass-with-no-tests'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual(['tests/a.spec.ts:3', '--pass-with-no-tests']);
   });
 
   it('runs the whole suite in a shard whose checkout is not at the plan’s commit', async () => {

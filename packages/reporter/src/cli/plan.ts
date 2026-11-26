@@ -278,14 +278,13 @@ export function isPlannedRun(argv: string[]): boolean {
 }
 
 /**
- * Playwright's arguments for one shard of a plan: `--shard`, with `--pass-with-no-tests` unless `others` pass it, so a
- * shard passes when no test the plan names is left (Playwright 1.65 and later fail a sharded run whose whole selection
- * is empty). None for a run that is not sharded.
+ * Playwright's arguments for a run of a plan, sharded or not: `--shard` for a shard, and `--pass-with-no-tests` unless
+ * `others` pass it, so a run passes when no test the plan names is left (Playwright fails a run whose whole selection is
+ * empty, a sharded one from 1.65).
  */
-function planShardArgs(shard: string | null, others: string[]): string[] {
-  if (!shard) return [];
+function planRunArgs(shard: string | null, others: string[]): string[] {
   const passWithNoTests = others.includes('--pass-with-no-tests') ? [] : ['--pass-with-no-tests'];
-  return [`--shard=${shard.replace(/\s+/g, '')}`, ...passWithNoTests];
+  return [...(shard ? [`--shard=${shard.replace(/\s+/g, '')}`] : []), ...passWithNoTests];
 }
 
 /** `argv` without `--reuse`, for the run a failed plan falls back to. */
@@ -330,7 +329,7 @@ async function runStoredPlan(
   if (planned && named && planned.toLowerCase() !== named.toLowerCase()) {
     throw new Error(`plan ${planId} was made for the environment ${planned}, and this run names ${named}`);
   }
-  const shardArgs = planShardArgs(args.shard, [...plan.args, ...args.extra]);
+  const runArgs = planRunArgs(args.shard, [...plan.args, ...args.extra]);
   console.error(
     `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
@@ -342,10 +341,10 @@ async function runStoredPlan(
     [PIWI_PLAN_SKIP_ENV]: undefined,
   };
   if (plan.skip.length === 0) {
-    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], planEnv);
+    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...runArgs, ...args.extra], planEnv);
   }
   if (playwrightVersionAtLeast(readInstalledPlaywrightVersion(process.cwd()), REPORTER_SKIPS_SINCE)) {
-    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], {
+    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...runArgs, ...args.extra], {
       ...planEnv,
       [PIWI_PLAN_SKIP_ENV]: 'true',
     });
@@ -356,7 +355,7 @@ async function runStoredPlan(
     writePrivateFile(list, `${plan.skip.join('\n')}\n`);
     return await spawnPlaywrightForRun(
       args.pkgRunner,
-      [...plan.args, '--test-list-invert', list, ...shardArgs, ...args.extra],
+      [...plan.args, '--test-list-invert', list, ...runArgs, ...args.extra],
       planEnv,
     );
   } finally {
