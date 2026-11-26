@@ -502,6 +502,19 @@ ${STACK}`);
     expect(parsed.leafLocator).toBeNull();
   });
 
+  test("the call log's Expect line gives the matcher and the timeout, with or without the locator in it", () => {
+    for (const line of [
+      'Expect "toBeVisible" with timeout 1000ms',
+      'Expect "toBeVisible" Place order button with timeout 1000ms',
+      `Expect "toBeVisible" getByRole('button', { name: 'Place order' }) with timeout 1000ms`,
+    ]) {
+      const parsed = parsePlaywrightError(
+        `Error: Place order is offered\n\nCall log:\n  - ${line}\n  - waiting for getByRole('button', { name: 'Place order' })\n`,
+      );
+      expect(parsed, line).toMatchObject({ assertion: 'toBeVisible', timeoutMs: 1000 });
+    }
+  });
+
   test('a header that holds a chain wins over the call log', () => {
     const parsed = parsePlaywrightError(`Error: expect(locator).toBeVisible() failed
 

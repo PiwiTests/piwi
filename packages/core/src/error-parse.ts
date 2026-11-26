@@ -469,7 +469,8 @@ function readCallLog(text: string): CallLogRead {
     const before = read.state;
     const lower = line.toLowerCase();
     const count = /^locator resolved to (\d+) elements?/.exec(line);
-    const expectLine = /^Expect "(\w+)" with timeout (\d+)ms/.exec(line);
+    // `Expect "toBeVisible" with timeout 5000ms`, the locator or its description before `with` from Playwright 1.65.
+    const expectLine = /^Expect "(\w+)"(?: .*)? with timeout (\d+)ms/.exec(line);
     const navTo = /navigat(?:ing|ion|ed) to "([^"]+)"/.exec(line);
     if (expectLine) {
       read.matcher = expectLine[1]!;
