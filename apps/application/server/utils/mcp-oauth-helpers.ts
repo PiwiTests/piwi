@@ -66,7 +66,7 @@ export function protectedResourceMetadata(baseUrl: string) {
     authorization_servers: [urls.issuer],
     scopes_supported: [MCP_OAUTH_SCOPE],
     bearer_methods_supported: ['header'],
-    resource_name: 'Piwi Dashboard MCP server',
+    resource_name: 'Piwi MCP server',
   };
 }
 

@@ -75,7 +75,7 @@ export function emailLayout(title: string, body: string, siteUrl: string, frame:
       <table width="${width}" cellpadding="0" cellspacing="0" style="width:100%;max-width:${width}px;">
         <tr><td style="padding:0 4px 14px;">
           <img src="${markSrc}" width="17" height="20" alt="" style="vertical-align:-4px;border:0;">
-          <span style="margin-left:6px;font-size:15px;font-weight:700;color:#0d1d47;">Piwi Dashboard</span>
+          <span style="margin-left:6px;font-size:15px;font-weight:700;color:#0d1d47;">Piwi</span>
         </td></tr>
       </table>
       <table width="${width}" cellpadding="0" cellspacing="0" style="width:100%;max-width:${width}px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;overflow:hidden;">

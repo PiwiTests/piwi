@@ -16,7 +16,7 @@ const {
 // The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
 const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
-useHead({ title: () => `${snapshot.value?.title ?? 'Quality report'} - Piwi Dashboard` });
+useHead({ title: () => `${snapshot.value?.title ?? 'Quality report'} - Piwi` });
 
 const offersShareLinks = await useShareLinksOffered();
 

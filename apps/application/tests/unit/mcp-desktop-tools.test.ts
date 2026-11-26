@@ -94,8 +94,8 @@ describe("the run tools of the desktop app's runs", () => {
 
 describe('mcpServerInfo', () => {
   it('names the desktop build apart so both can coexist', () => {
-    expect(mcpServerInfo('1.0.0').name).toBe('piwi-dashboard');
-    expect(mcpServerInfo('1.0.0', { desktop: false }).name).toBe('piwi-dashboard');
+    expect(mcpServerInfo('1.0.0').name).toBe('piwi');
+    expect(mcpServerInfo('1.0.0', { desktop: false }).name).toBe('piwi');
     expect(mcpServerInfo('1.0.0', { desktop: true }).name).toBe('piwi-desktop');
     expect(mcpServerInfo('9.9.9', { desktop: true }).version).toBe('9.9.9');
   });

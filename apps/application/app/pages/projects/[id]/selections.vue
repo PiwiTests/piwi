@@ -35,7 +35,7 @@ const { data: list, refresh, status } = await useFetch<{ items: Selection[] }>(`
 
 useHead(
   computed(() => ({
-    title: `Selections — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Selections — ${project.value?.label || project.value?.name || 'Project'} — Piwi`,
   })),
 );
 

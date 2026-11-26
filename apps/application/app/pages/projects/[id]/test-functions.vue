@@ -26,7 +26,7 @@ const {
 
 useHead(
   computed(() => ({
-    title: `Test functions — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Test functions — ${project.value?.label || project.value?.name || 'Project'} — Piwi`,
   })),
 );
 

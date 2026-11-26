@@ -112,9 +112,7 @@ const hasTrace = computed(() => (traceData.value?.length ?? 0) > 0);
 
 useHead(
   computed(() => ({
-    title: testCase.value?.title
-      ? `${testCase.value.title} — execution — Piwi Dashboard`
-      : `Execution #${testCaseId} — Piwi Dashboard`,
+    title: testCase.value?.title ? `${testCase.value.title} — execution — Piwi` : `Execution #${testCaseId} — Piwi`,
   })),
 );
 

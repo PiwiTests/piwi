@@ -82,7 +82,7 @@ export function buildSetupPiwiMessages(input: SetupPiwiInput): PromptResult {
     : 'none yet';
 
   const text = [
-    `Set up this Playwright project to report its test results to the Piwi Dashboard at ${baseUrl}.`,
+    `Set up this Playwright project to report its test results to the Piwi instance at ${baseUrl}.`,
     '',
     'Facts about this dashboard (already resolved — do not ask the user for them):',
     `- URL: ${baseUrl}`,

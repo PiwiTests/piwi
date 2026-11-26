@@ -76,7 +76,7 @@ const describable = computed(() => ({
 const clusterName = computed(() => (cluster.value ? describeCluster(describable.value) : 'Failure cluster'));
 const signatureLine = computed(() => (cluster.value ? clusterSignatureLine(describable.value) : null));
 
-useHead(computed(() => ({ title: `${clusterName.value} — Piwi Dashboard` })));
+useHead(computed(() => ({ title: `${clusterName.value} — Piwi` })));
 
 // ── Selected affected execution ─────────────────────────────────────────────
 // The evidence and the clues are shown for one affected test at a time; the

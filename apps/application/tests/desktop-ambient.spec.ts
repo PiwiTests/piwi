@@ -64,15 +64,15 @@ test.describe('Desktop notifications from the page', () => {
     expect(permission).toBe('granted');
 
     await page.evaluate(() => {
-      new Notification('Piwi Dashboard', { body: 'acme-web on main: 3/120 tests failed' });
-      new Notification('Piwi Dashboard', { body: 'acme-web: new failure cluster' });
+      new Notification('Piwi', { body: 'acme-web on main: 3/120 tests failed' });
+      new Notification('Piwi', { body: 'acme-web: new failure cluster' });
     });
 
     const invocations = await page.evaluate(() => window.__piwiAmbientInvocations);
     const notifies = invocations.filter((i) => i.cmd === 'desktop_notify');
     expect(notifies.map((i) => [i.args?.title, i.args?.body])).toEqual([
-      ['Piwi Dashboard', 'acme-web on main: 3/120 tests failed'],
-      ['Piwi Dashboard', 'acme-web: new failure cluster'],
+      ['Piwi', 'acme-web on main: 3/120 tests failed'],
+      ['Piwi', 'acme-web: new failure cluster'],
     ]);
   });
 
@@ -83,9 +83,9 @@ test.describe('Desktop notifications from the page', () => {
 
     const clicks = await page.evaluate(() => {
       const opened: string[] = [];
-      const first = new Notification('Piwi Dashboard', { body: 'acme-web on main: 3/120 tests failed' });
+      const first = new Notification('Piwi', { body: 'acme-web on main: 3/120 tests failed' });
       first.onclick = () => opened.push('run');
-      const second = new Notification('Piwi Dashboard', { body: 'acme-web: new failure cluster' });
+      const second = new Notification('Piwi', { body: 'acme-web: new failure cluster' });
       second.addEventListener('click', () => opened.push('cluster'));
       const ids = window.__piwiAmbientInvocations
         .filter((i) => i.cmd === 'desktop_notify')

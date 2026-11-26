@@ -14,7 +14,7 @@ if (projectError.value) showPageLoadError(projectError.value, 'project');
 
 useHead(
   computed(() => ({
-    title: `Import runs — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Import runs — ${project.value?.label || project.value?.name || 'Project'} — Piwi`,
   })),
 );
 

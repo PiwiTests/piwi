@@ -29,7 +29,7 @@ export default eventHandler(async (event) => {
   const { html, text } = renderVerifyEmail(token);
 
   try {
-    await sendEmail({ to: user.email, subject: 'Verify your email — Piwi Dashboard', html, text });
+    await sendEmail({ to: user.email, subject: 'Verify your email — Piwi', html, text });
     return { success: true };
   } catch {
     throw apiError({ statusCode: 500, message: 'Failed to send verification email' });

@@ -6,7 +6,7 @@
  */
 import type { DashboardSummary, DashboardView } from '#shared/handlers/dashboards';
 
-useHead({ title: 'Dashboards - Analytics - Piwi Dashboard' });
+useHead({ title: 'Dashboards - Analytics - Piwi' });
 
 const toast = useToast();
 const { data: list, refresh } = await useDashboardList();

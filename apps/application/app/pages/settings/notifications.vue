@@ -314,7 +314,7 @@ const eventLabel = notificationEventLabel;
               code="PIWI_SMTP_HOST=smtp.example.com
 PIWI_SMTP_PORT=465
 PIWI_SMTP_FROM=noreply@example.com
-PIWI_SMTP_FROM_NAME=Piwi Dashboard
+PIWI_SMTP_FROM_NAME=Piwi
 PIWI_SMTP_USER=user@example.com
 PIWI_SMTP_PASS=secret"
               lang="bash"

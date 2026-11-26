@@ -59,7 +59,7 @@ export default eventHandler(async (event) => {
   const { html, text } = renderTestEmail(to);
 
   try {
-    await sendEmail({ to, subject: 'Test email — Piwi Dashboard', html, text });
+    await sendEmail({ to, subject: 'Test email — Piwi', html, text });
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -64,13 +64,11 @@ describe('finishedRunTabIndicator', () => {
 describe('tabRunTitle', () => {
   test('leads the title with the progress, in the desktop window title format', () => {
     const indicator = liveRunTabIndicator({ done: 3, total: 12, failed: 0 });
-    expect(tabRunTitle('Test run #4 — Piwi Dashboard', indicator)).toBe(
-      '▶ Running 3/12… · Test run #4 — Piwi Dashboard',
-    );
+    expect(tabRunTitle('Test run #4 — Piwi', indicator)).toBe('▶ Running 3/12… · Test run #4 — Piwi');
   });
 
   test('leaves the title alone with no run to show', () => {
-    expect(tabRunTitle('Test run #4 — Piwi Dashboard', null)).toBe('Test run #4 — Piwi Dashboard');
+    expect(tabRunTitle('Test run #4 — Piwi', null)).toBe('Test run #4 — Piwi');
   });
 });
 

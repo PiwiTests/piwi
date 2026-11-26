@@ -8,7 +8,7 @@ import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInsp
 import { foldText } from '#shared/utils/fold-text';
 import { describeProjectRunScope } from '#shared/project-run-scope';
 
-useHead({ title: 'Projects — Piwi Dashboard' });
+useHead({ title: 'Projects — Piwi' });
 
 // Share the projects data already fetched by the layout (same key → single HTTP request, single SSE subscription).
 // `lazy` so navigating to Projects is instant — a skeleton shows instead of blocking on the fetch.

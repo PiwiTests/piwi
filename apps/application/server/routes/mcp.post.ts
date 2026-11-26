@@ -185,7 +185,7 @@ function instructions(event: H3Event): string {
   // `?runs=off` lists no run tool, so the instructions name none.
   const runsOff = getRequestURL(event).searchParams.get('runs') === 'off';
   return (
-    `${IS_DESKTOP ? 'Piwi desktop app' : 'Piwi Dashboard'} MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ` +
+    `${IS_DESKTOP ? 'Piwi desktop app' : 'Piwi'} MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ` +
     'Start with list_projects to discover project IDs. ' +
     'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
     'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +

@@ -1,5 +1,5 @@
 /**
- * Shared test fixtures for the Piwi Dashboard test suite: Playwright's `test` with the reporter's capture fixtures
+ * Shared test fixtures for the dashboard's test suite: Playwright's `test` with the reporter's capture fixtures
  * (`extendPiwiFixtures`), as a project set up by `npx @piwitests/reporter init` has. The suite records what any
  * project records (network timing, Web Vitals, ARIA and locator snapshots, code reach, the resource census), and its
  * workers join the run channel of the editor or the desktop app that started the run, where a running test can be

@@ -43,7 +43,7 @@ export const MCP_PROMPT_DEFS = [
   {
     name: 'setup_piwi',
     description:
-      "Set up the current Playwright project to report to this Piwi Dashboard: install the reporter, wrap the config, add the capture fixtures, and verify a run lands. Server-aware — fills in this dashboard's URL, whether authentication is required, and the projects that already exist.",
+      "Set up the current Playwright project to report to this Piwi instance: install the reporter, wrap the config, add the capture fixtures, and verify a run lands. Server-aware — fills in this dashboard's URL, whether authentication is required, and the projects that already exist.",
     arguments: [
       {
         name: 'projectName',
@@ -56,7 +56,7 @@ export const MCP_PROMPT_DEFS = [
     name: 'investigate_failure',
     skill: 'investigate-failure',
     description:
-      'Investigate a failed test run recorded in Piwi Dashboard and propose a fix grounded in its evidence — error, steps, console, network, locator suggestion, and the diff since the last green run. Use when the user asks "why did the last run fail", "what broke in CI", "diagnose this failure", or points at a Piwi run/cluster.',
+      'Investigate a failed test run recorded in Piwi and propose a fix grounded in its evidence — error, steps, console, network, locator suggestion, and the diff since the last green run. Use when the user asks "why did the last run fail", "what broke in CI", "diagnose this failure", or points at a Piwi run/cluster.',
     arguments: [FOCUS_ARG],
   },
   {

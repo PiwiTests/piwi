@@ -149,7 +149,7 @@ describe('a test message through the Web API', () => {
   test('posts the test text to the channel', async () => {
     await deliverChannelTest(unsavedTestTarget('slack', { token: TOKEN, channelId: CHANNEL_ID }));
     expect(slack.calls[0]!.body).toEqual({
-      text: ':bell: Test notification from Piwi Dashboard',
+      text: ':bell: Test notification from Piwi',
       channel: CHANNEL_ID,
     });
   });
