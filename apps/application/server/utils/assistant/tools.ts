@@ -29,7 +29,6 @@ import type { DbClient } from '../../database';
 import type { AiToolCall, AiToolDef } from '../ai-tool-calls';
 import { toolsForCaller } from '../mcp/catalog';
 import type { McpContext, McpTool } from '../mcp/tools';
-import { toolImagesOf } from '../mcp/images';
 import { BLOCK_TOOL_DEFS, FIND_ANCHORS, runBlockTool } from './blocks';
 import { AssistantEntitySet, extractEntities } from './entities';
 import { findAnchors, loadAnchorFacts, readProjectStates, type AnswerAnchorFacts } from './guides';
@@ -223,13 +222,6 @@ export function toolCallSummary(name: string, args: Record<string, unknown>): st
   return shown.length > 0 ? `${line} (${shown.join(', ')})` : line;
 }
 
-/** The note telling the model a result's images are not in its text (`withToolImages`), empty without any. */
-function imagesLeftOut(data: unknown): string {
-  const count = toolImagesOf(data).length;
-  if (count === 0) return '';
-  return `\n(${count} ${count === 1 ? 'image' : 'images'} left out: you read tool results as text only.)`;
-}
-
 /** A tool's result as the model reads it, cut at {@link MAX_TOOL_RESULT_CHARS}. */
 export function capToolResult(text: string): string {
   if (text.length <= MAX_TOOL_RESULT_CHARS) return text;
@@ -301,7 +293,7 @@ export function createAssistantToolbox(opts: {
       }
       const tool = offered().has(call.name) ? byName.get(call.name) : undefined;
       if (!tool) return { data: null, error: `Unknown tool: ${call.name}. Call find_tools to look for one.` };
-      return { data: await tool.handler(opts.db, call.arguments, opts.ctx) };
+      return { data: await tool.handler(opts.db, call.arguments, { ...opts.ctx, textOnly: true }) };
     } catch (err) {
       return { data: null, error: errorText(err) };
     }
@@ -388,7 +380,7 @@ export function createAssistantToolbox(opts: {
         record.entities = found.map(({ type, id, label }) => ({ type, id, label }));
       }
       const content = data === null ? 'Not found, or not visible to this user.' : JSON.stringify(data);
-      return { content: capToolResult(content) + imagesLeftOut(data), isError: false, record };
+      return { content: capToolResult(content), isError: false, record };
     },
     extraTools() {
       return [...extra];

@@ -18,6 +18,12 @@ import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 import { REPORT_LANGUAGES } from './reports/languages';
 import { CLUSTER_STATUSES } from './inbox-queues';
 
+/** The longest edge, in pixels, of an image `get_case_screenshots` sends; a larger one is downscaled. */
+export const MCP_SCREENSHOT_MAX_EDGE = 1920;
+
+/** The most bytes an image `get_case_screenshots` sends may take; a larger one is re-encoded. */
+export const MCP_SCREENSHOT_MAX_BYTES = 512 * 1024;
+
 export interface PaginatedResponse<T> {
   items: T[];
   nextCursor: string | null;
@@ -446,7 +452,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'List an execution’s screenshots, the page the test failed on first, and return the image data of the first three on request.',
       'By default it returns metadata only (file name, media type, size) for every screenshot. Call it that way first, then set `content: true` to get the first three only, each as an image after a line naming it, with its `width` and `height`.',
-      'An image wider or taller than the screenshot edge of the AI settings (1920 px by default), or over 512 KB, is sent as a smaller JPEG: its `sentAs` gives the size sent. `notSent` says why an image is missing.',
+      `A PNG, JPEG, GIF or WebP image goes as stored when it is at most ${MCP_SCREENSHOT_MAX_EDGE} px on its long edge and ${MCP_SCREENSHOT_MAX_BYTES / 1024} KB, else as a smaller JPEG, whose size \`sentAs\` gives. \`notSent\` says why a listed screenshot has no image (another format, or a file that does not decode).`,
       'The screenshot of the page the test failed on comes first, flagged `atFailure`, when it is known: the capture fixtures’ screenshot of the page the test last acted on, or, for an execution that failed, the only screenshot. Without the fixtures, Playwright takes one per page still open at the failure and one per page of each context the test closed before, so none of several is flagged.',
     ),
     inputSchema: {

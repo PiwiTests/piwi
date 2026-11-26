@@ -124,7 +124,12 @@ import { projects, testRuns, testRunsCases, testCases, failureClusters, failureD
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
-import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import {
+  MCP_TOOL_DEFS,
+  DESKTOP_MCP_TOOL_DEFS,
+  MCP_SCREENSHOT_MAX_BYTES,
+  MCP_SCREENSHOT_MAX_EDGE,
+} from '#shared/mcp-tools';
 import { collectReportBundle } from '#shared/reports/collect';
 import { assertDashboardScope } from '#shared/reports/request';
 import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
@@ -173,9 +178,15 @@ import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { caseOutput, inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
-import { resolveContextLimits } from '../ai-context-limits';
-import { fitImageForAgent, toolImagesOf, withToolImages, type FittedImage, type ToolImage } from './images';
-import { executionFailed, failurePageScreenshot } from '#shared/file-classify';
+import {
+  fitImageForAgent,
+  imageMediaTypeOf,
+  toolImagesOf,
+  withToolImages,
+  type FittedImage,
+  type ToolImage,
+} from './images';
+import { contentTypeForPath, executionFailed, failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
 import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
@@ -380,6 +391,8 @@ export interface McpContext {
   scope: ProjectScope;
   /** The API key the request was made with; null for a session or with authentication off. */
   apiKeyId?: number | null;
+  /** The caller reads tool results as text only, as the in-app assistant does: a handler attaches no image. */
+  textOnly?: boolean;
 }
 
 /** The caller of a write tool, as the reporter of a hand-back outcome. */
@@ -518,9 +531,6 @@ export function toContent(data: unknown): { content: ToolContent[] } {
     ],
   };
 }
-
-/** The most bytes a screenshot `get_case_screenshots` sends may take; a larger one is re-encoded. */
-const SCREENSHOT_MAX_BYTES = 512 * 1024;
 
 /** A screenshot as `get_case_screenshots` lists it: the stored file, and the image sent with `content: true`. */
 interface ScreenshotItem {
@@ -1388,9 +1398,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const screenshotRows = withContent ? allRows.slice(0, 3) : allRows;
 
     const storage = getStorage();
-    const limits = withContent
-      ? { maxEdge: (await resolveContextLimits(db)).imageMaxEdge, maxBytes: SCREENSHOT_MAX_BYTES }
-      : null;
+    const limits = { maxEdge: MCP_SCREENSHOT_MAX_EDGE, maxBytes: MCP_SCREENSHOT_MAX_BYTES };
     const results: ScreenshotItem[] = [];
     const images: ToolImage[] = [];
 
@@ -1401,27 +1409,20 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       } catch {
         continue; // skip inaccessible files
       }
-      const ext = f.path.toLowerCase().split('.').pop() || 'png';
-      const mediaType =
-        ext === 'jpg' || ext === 'jpeg'
-          ? 'image/jpeg'
-          : ext === 'gif'
-            ? 'image/gif'
-            : ext === 'webp'
-              ? 'image/webp'
-              : 'image/png';
 
       const entry: ScreenshotItem = {
         name: f.path.split('/').pop() || 'screenshot',
-        mediaType,
+        mediaType: imageMediaTypeOf(buf) ?? contentTypeForPath(f.path, f.label),
         dataLength: buf.length,
         ...(f === atFailure ? { atFailure: true } : {}),
       };
 
-      if (limits) {
-        const fitted = await fitImageForAgent(buf, mediaType, limits);
-        if (!fitted) {
-          entry.notSent = 'The stored file could not be decoded, or made small enough to send.';
+      if (withContent && ctx.textOnly) {
+        entry.notSent = 'Images are not sent to a caller that reads tool results as text only.';
+      } else if (withContent) {
+        const fitted = await fitImageForAgent(buf, limits);
+        if ('notSent' in fitted) {
+          entry.notSent = fitted.notSent;
         } else {
           if (fitted.original) Object.assign(entry, fitted.original);
           if (fitted.reencoded) {

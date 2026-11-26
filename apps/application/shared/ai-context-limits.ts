@@ -285,8 +285,7 @@ export const CONTEXT_LIMIT_FIELDS: ContextLimitField[] = [
     key: 'imageMaxEdge',
     label: 'Screenshot max edge (px)',
     envVar: 'PIWI_AI_IMAGE_MAX_EDGE',
-    description:
-      'Screenshots are downscaled to at most this many pixels on the long edge before being sent to the model or to an MCP client.',
+    description: 'Screenshots are downscaled to at most this many pixels on the long edge before being sent.',
     min: 512,
     max: 8192,
   },
