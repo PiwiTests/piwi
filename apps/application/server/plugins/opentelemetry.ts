@@ -1,6 +1,7 @@
 import type { Tracer } from '@opentelemetry/api';
 import { appendResponseHeader } from 'h3';
 import { isOtelTracingEnabled, startOtelTracing, stopOtelTracing } from '../utils/otel';
+import { dashboardVersion } from '../utils/app-version';
 
 /**
  * With OpenTelemetry tracing on (`server/utils/otel.ts`), every request runs
@@ -16,7 +17,7 @@ export default defineNitroPlugin((nitroApp) => {
   if (!isOtelTracingEnabled()) return;
 
   let otel: { api: typeof import('@opentelemetry/api'); tracer: Tracer } | null = null;
-  Promise.all([import('@opentelemetry/api'), startOtelTracing(String(useRuntimeConfig().public.appVersion ?? ''))])
+  Promise.all([import('@opentelemetry/api'), startOtelTracing(dashboardVersion())])
     .then(([api, tracer]) => {
       otel = { api, tracer };
     })

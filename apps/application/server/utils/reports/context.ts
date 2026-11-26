@@ -19,6 +19,7 @@ import { isAdministrator } from '#shared/permissions';
 import type { GenerateContext } from '#shared/handlers/reports';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
 import { mintShareLink, shareLinksEnabled } from '../share-links';
+import { dashboardVersion } from '../app-version';
 
 /** The instance time zone, or UTC when the instance leaves it to each browser. */
 export async function reportScheduleTimeZone(db: DbClient): Promise<string> {
@@ -40,7 +41,7 @@ export function reportBaseUrl(): string {
 }
 
 export function reportPiwiVersion(): string | null {
-  return ((useRuntimeConfig().public as { appVersion?: string })?.appVersion as string) || null;
+  return dashboardVersion() || null;
 }
 
 export async function reportActor(event: H3Event, user: User): Promise<ReportActor> {

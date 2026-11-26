@@ -9,8 +9,7 @@ import type { ChangelogPage } from '#shared/changelog';
 import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 
 const { open } = useChangelog();
-const config = useRuntimeConfig();
-const appVersion = config.public.appVersion as string;
+const appVersion = useAppVersion();
 
 const pages = ref<ChangelogPage[]>([]);
 const loading = ref(false);
@@ -20,7 +19,7 @@ const openReleases = ref<string[]>([]);
 const lastPage = computed(() => pages.value[pages.value.length - 1] ?? null);
 const total = computed(() => lastPage.value?.total ?? 0);
 const releases = computed(() =>
-  pages.value.flatMap((page) => page.releases.map((release) => changelogReleaseItem(release, appVersion))),
+  pages.value.flatMap((page) => page.releases.map((release) => changelogReleaseItem(release, appVersion.value))),
 );
 
 async function load(cursor: string | null) {
@@ -31,7 +30,7 @@ async function load(cursor: string | null) {
     const page = await $fetch<ChangelogPage>('/api/changelog', { query: cursor ? { cursor } : {} });
     pages.value = [...pages.value, page];
     if (!cursor) {
-      const first = page.releases.map((release) => changelogReleaseItem(release, appVersion));
+      const first = page.releases.map((release) => changelogReleaseItem(release, appVersion.value));
       const shown = first.find((release) => release.current) ?? first[0];
       openReleases.value = shown ? [shown.key] : [];
     }

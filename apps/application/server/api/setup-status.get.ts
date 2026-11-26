@@ -1,6 +1,7 @@
 import { getDatabase } from '../database';
 import { requireAuth } from '../utils/auth';
 import { getSetupStatus } from '#shared/handlers/setup-status';
+import { dashboardVersion } from '../utils/app-version';
 
 defineRouteMeta({
   openAPI: {
@@ -17,6 +18,6 @@ export default eventHandler(async (event) => {
   // this instance is configured.
   await requireAuth(event);
   const db = await getDatabase();
-  const appVersion = useRuntimeConfig(event).public.appVersion as string | undefined;
+  const appVersion = dashboardVersion(event) || undefined;
   return getSetupStatus(db, appVersion);
 });

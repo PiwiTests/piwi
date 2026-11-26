@@ -277,6 +277,15 @@ export async function clearUserSession(event: H3Event): Promise<void> {
   await h3ClearSession(event, sessionOptions(config));
 }
 
+/**
+ * The user an API key or a session signs in, refusing no one: null for a caller signed in by neither, for a route
+ * that tells a visitor less rather than nothing.
+ */
+export async function optionalCaller(event: H3Event): Promise<User | null> {
+  const key = extractApiKey(event);
+  return key ? getUserByApiKey(key) : getCurrentUser(event);
+}
+
 // Get current user from session
 export async function getCurrentUser(event: H3Event): Promise<User | null> {
   const session = await getUserSession(event);

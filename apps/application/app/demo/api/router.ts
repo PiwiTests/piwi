@@ -570,6 +570,7 @@ import {
   apiGetLocale,
   apiPutLocale,
 } from './settings';
+import { version as demoAppVersion } from '../../../package.json';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -4655,15 +4656,14 @@ const routes: RouteEntry[] = [
 
   // Version — demo runs entirely client-side (sql.js in the browser, no Node
   // server), so `node`/`dbBackend` describe that rather than a real backend.
-  // `appVersion`/`buildSha`/`buildTime` are already available via
-  // `config.public` in the demo build; this mirrors the server shape for
-  // parity with any caller that hits the endpoint directly.
+  // `appVersion` is the version the demo was built from, which the sidebar,
+  // the changelog and Settings → About read here.
   {
     method: 'GET',
     pattern: /^\/api\/version$/,
     handler: () =>
       Promise.resolve({
-        appVersion: null,
+        appVersion: demoAppVersion,
         buildSha: null,
         buildTime: null,
         node: 'N/A (browser demo)',

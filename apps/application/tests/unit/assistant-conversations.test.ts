@@ -13,7 +13,7 @@ import { openTempDb, type TempDb } from './temp-db';
 import type { AssistantBlock } from '#shared/assistant';
 
 delete process.env.PIWI_DATABASE_URL;
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, appVersion: '0.59.0', public: {} }));
 
 const handlers = await import('#shared/handlers/assistant');
 const { getAiUsageSummary } = await import('#shared/handlers/ai-usage');

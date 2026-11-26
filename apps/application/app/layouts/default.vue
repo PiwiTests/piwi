@@ -482,7 +482,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
 
 const isDemo = config.public.demoMode;
 const demoDataVersion = config.public.demoDataVersion as string;
-const appVersion = config.public.appVersion as string;
+const appVersion = useAppVersion();
 
 const { resetDemo } = useDemoReset();
 
@@ -593,7 +593,7 @@ onMounted(async () => {
           <DesktopLocalRunsIndicator :collapsed="collapsed" />
           <UserMenu :collapsed="collapsed" />
           <ULink
-            v-if="!collapsed"
+            v-if="!collapsed && appVersion"
             to="/settings/about"
             data-tour="app-version"
             class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-center"

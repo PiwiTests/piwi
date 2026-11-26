@@ -120,10 +120,11 @@ Three ways, in increasing order of automation:
 - **Settings → About** shows the running version, the build SHA, the Node.js version, the database backend, the
   operating system, and the latest run's reporter and Playwright versions.
 - The version endpoint returns the version, build SHA, database backend, platform and architecture as JSON, along
-  with the Node.js version actually running — no authentication required:
+  with the Node.js version actually running. With authentication on, it tells them only to a caller signed in, here
+  with an API key; anyone else gets every field `null`:
 
   ```bash
-  curl -s http://localhost:3000/api/version
+  node -e "fetch('http://localhost:3000/api/version',{headers:{'X-API-Key':'pd_your_key'}}).then(r=>r.text()).then(console.log)"
   ```
 
 - `GET /api/health` is the readiness probe — it verifies database connectivity and returns 503 when

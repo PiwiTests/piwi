@@ -215,6 +215,12 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
+    // What the dashboard is and what it runs on, kept out of the public settings every page carries: a visitor not
+    // signed in learns none of it. The server reads it through `server/utils/app-version.ts`; a page asks
+    // `/api/version`. The dashboard version is read from the committed package.json (release-please-maintained).
+    appVersion: pkg.version as string,
+    buildSha: process.env.PIWI_BUILD_SHA || '',
+    buildTime: new Date().toISOString(),
     // Allowlist of glob patterns (comma/newline separated) for wait steps counted
     // as "wasted time". When set, locks the in-app "Wasted time" setting.
     wastedWaitPatterns: process.env.PIWI_WASTED_WAIT_PATTERNS || '',
@@ -277,13 +283,6 @@ export default defineNuxtConfig({
       authEnabled: process.env.PIWI_AUTH_ENABLED === 'true' || isDemo,
       demoMode: process.env.PIWI_DEMO_MODE === 'true',
       demoDataVersion,
-      // Authoritative dashboard version — read from the committed package.json
-      // (release-please-maintained), so it works even in the static demo build
-      // with no server round-trip.
-      appVersion: pkg.version as string,
-      buildSha: process.env.PIWI_BUILD_SHA || '',
-      buildTime: new Date().toISOString(),
-      nodeVersion: process.version,
       // True only in the Tauri desktop build — the launcher starts the bundled
       // server with NUXT_PUBLIC_DESKTOP=true (desktop/src-tauri/src/lib.rs),
       // which Nuxt maps onto this key. Gates desktop-only UI (see useIsDesktop):
@@ -404,7 +403,7 @@ export default defineNuxtConfig({
           },
         },
         // Default security requirement for all endpoints.
-        // Override with `security: []` on auth endpoints (login, oauth, ai/status).
+        // Override with `security: []` on public endpoints (login, oauth, version).
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       } as any,
       // The reference UI is rendered in-app by app/pages/settings/api.vue from the

@@ -33,13 +33,14 @@ const { data: precisionProjects } = useFetch('/api/gaps/precision', {
     r.items,
 });
 
-const appVersion = config.public.appVersion as string;
-const buildSha = config.public.buildSha as string;
-const buildTime = config.public.buildTime as string;
-const nodeVersion = config.public.nodeVersion as string;
+// What the instance runs comes from `/api/version`: the public settings every page carries hold none of it.
+const appVersion = computed(() => versionInfo.value?.appVersion ?? '');
+const buildSha = computed(() => versionInfo.value?.buildSha ?? '');
+const buildTime = computed(() => versionInfo.value?.buildTime ?? '');
+const nodeVersion = computed(() => versionInfo.value?.node ?? '');
 const authEnabled = config.public.authEnabled as boolean;
 
-const shortSha = computed(() => (buildSha ? buildSha.slice(0, 7) : null));
+const shortSha = computed(() => (buildSha.value ? buildSha.value.slice(0, 7) : null));
 
 // The reporter and Playwright of the newest run that reported them: what a bug
 // report asks for beside the dashboard's version. Loaded after the page shows.
@@ -79,7 +80,7 @@ const activityHint = computed(() => {
 function runVersionHint(version: string | null, comparedToApp: boolean): string | undefined {
   if (!runsLoaded.value) return undefined;
   if (!version) return 'No run reported it yet';
-  return comparedToApp && compareVersions(version, appVersion) < 0
+  return comparedToApp && compareVersions(version, appVersion.value) < 0
     ? 'Latest run · older than this dashboard'
     : 'Latest run';
 }
