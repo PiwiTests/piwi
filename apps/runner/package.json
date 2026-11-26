@@ -23,7 +23,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@nuxt/ui": "^4.12.0",
+    "@nuxt/ui": "^4.13.0",
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@vueuse/nuxt": "^15.0.0",
@@ -31,8 +31,8 @@
   },
   "devDependencies": {
     "@nuxt/kit": "^4.6.4",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.1",
     "esbuild": "^0.28.2",
-    "vue-tsc": "3.3.11"
+    "vue-tsc": "3.3.14"
   }
 }
