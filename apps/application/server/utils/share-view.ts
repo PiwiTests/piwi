@@ -22,7 +22,7 @@ import {
 import { publicBaseUrl } from './public-base-url';
 import { getUserAccessCached, isAuthEnabled } from './auth';
 import { TtlCache } from './ttl-cache';
-import { reportBaseUrl, reportPiwiVersion, reportScheduleTimeZone } from './reports/context';
+import { reportBaseUrl, reportScheduleTimeZone } from './reports/context';
 import {
   DashboardError,
   dashboardActorFor,
@@ -183,7 +183,7 @@ async function liveDashboardBundle(db: DbClient, link: ShareLink): Promise<Repor
     access: minter.access,
     timeZone,
     baseUrl: reportBaseUrl(),
-    piwiVersion: reportPiwiVersion(),
+    piwiVersion: null,
   });
   liveBundles.set(String(link.id), bundle);
   return bundle;
@@ -200,7 +200,8 @@ export async function shareLinkReport(
 ): Promise<{ bundle: ReportBundle; live: boolean } | null> {
   if (link.entityKind === 'report') {
     const snapshot = await loadSnapshotForDelivery(db as any, link.entityId);
-    return snapshot ? { bundle: snapshot.bundle, live: false } : null;
+    // A link opens without signing in: its document names no Piwi version.
+    return snapshot ? { bundle: { ...snapshot.bundle, piwiVersion: null }, live: false } : null;
   }
   if (link.entityKind === 'dashboard') {
     const bundle = await liveDashboardBundle(db, link);

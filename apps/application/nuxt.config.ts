@@ -215,9 +215,9 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
-    // What the dashboard is and what it runs on, kept out of the public settings every page carries: a visitor not
-    // signed in learns none of it. The server reads it through `server/utils/app-version.ts`; a page asks
-    // `/api/version`. The dashboard version is read from the committed package.json (release-please-maintained).
+    // The dashboard's version and build, private: the server reads them through `server/utils/app-version.ts`, and a
+    // page asks `/api/version`, which tells them to a signed-in caller only. The version is read from the committed
+    // package.json (release-please-maintained).
     appVersion: pkg.version as string,
     buildSha: process.env.PIWI_BUILD_SHA || '',
     buildTime: new Date().toISOString(),

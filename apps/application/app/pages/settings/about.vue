@@ -33,11 +33,11 @@ const { data: precisionProjects } = useFetch('/api/gaps/precision', {
     r.items,
 });
 
-// What the instance runs comes from `/api/version`: the public settings every page carries hold none of it.
+// What the instance runs, from `/api/version`, which tells it to a signed-in caller only.
 const appVersion = computed(() => versionInfo.value?.appVersion ?? '');
 const buildSha = computed(() => versionInfo.value?.buildSha ?? '');
 const buildTime = computed(() => versionInfo.value?.buildTime ?? '');
-const nodeVersion = computed(() => versionInfo.value?.node ?? '');
+const nodeVersion = computed(() => versionInfo.value?.node ?? null);
 const authEnabled = config.public.authEnabled as boolean;
 
 const shortSha = computed(() => (buildSha.value ? buildSha.value.slice(0, 7) : null));
@@ -113,7 +113,7 @@ const dbBackendLabel = computed(() => {
       <BrandLogo class="h-14 sm:h-16" />
       <div class="text-sm text-muted">
         <p>
-          <span class="font-mono text-highlighted">v{{ appVersion }}</span>
+          <span v-if="appVersion" class="font-mono text-highlighted">v{{ appVersion }}</span>
           <template v-if="shortSha">
             ·
             <span class="font-mono" :title="buildSha">{{ shortSha }}</span>

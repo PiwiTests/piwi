@@ -2,14 +2,14 @@
 /**
  * The changelog shipped with this build (`GET /api/changelog`), newest release
  * first, ten at a time: one fold per release (`ReleaseNotesAccordion`), the
- * release of the running version marked and open. Read the first time the
- * window opens, then kept. Opened through `useChangelog`.
+ * release of the running version (the response's `runningVersion`) marked and
+ * open. Read the first time the window opens, then kept. Opened through
+ * `useChangelog`.
  */
 import type { ChangelogPage } from '#shared/changelog';
 import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 
 const { open } = useChangelog();
-const appVersion = useAppVersion();
 
 const pages = ref<ChangelogPage[]>([]);
 const loading = ref(false);
@@ -17,9 +17,10 @@ const error = ref<string | null>(null);
 const openReleases = ref<string[]>([]);
 
 const lastPage = computed(() => pages.value[pages.value.length - 1] ?? null);
+const runningVersion = computed(() => pages.value[0]?.runningVersion ?? '');
 const total = computed(() => lastPage.value?.total ?? 0);
 const releases = computed(() =>
-  pages.value.flatMap((page) => page.releases.map((release) => changelogReleaseItem(release, appVersion.value))),
+  pages.value.flatMap((page) => page.releases.map((release) => changelogReleaseItem(release, runningVersion.value))),
 );
 
 async function load(cursor: string | null) {
@@ -30,7 +31,7 @@ async function load(cursor: string | null) {
     const page = await $fetch<ChangelogPage>('/api/changelog', { query: cursor ? { cursor } : {} });
     pages.value = [...pages.value, page];
     if (!cursor) {
-      const first = page.releases.map((release) => changelogReleaseItem(release, appVersion.value));
+      const first = page.releases.map((release) => changelogReleaseItem(release, page.runningVersion));
       const shown = first.find((release) => release.current) ?? first[0];
       openReleases.value = shown ? [shown.key] : [];
     }
@@ -60,7 +61,7 @@ const PROSE_LINK = 'underline decoration-dotted underline-offset-2 hover:decorat
 <template>
   <UModal v-model:open="open" title="Changelog" :ui="{ content: 'sm:max-w-2xl' }">
     <template #description>
-      <template v-if="appVersion">You are on v{{ appVersion }} · </template>
+      <template v-if="runningVersion">You are on v{{ runningVersion }} · </template>
       <ULink :to="PROJECT_LINKS.changelog" target="_blank" rel="noopener noreferrer" :class="PROSE_LINK"
         >Changelog on GitHub</ULink
       >

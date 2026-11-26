@@ -5,7 +5,8 @@ import { isAuthEnabled, optionalCaller } from '../utils/auth';
 
 const DESCRIPTION_PATH = '/_openapi.json';
 
-/** The path as the router matches it: decoded, without its query, repeated or trailing slashes, in lower case. */
+/** The path read loosely (decoded, without its query, repeated or trailing slashes, in lower case), so every spelling
+ * the router serves the description under is checked. */
 function routedPath(raw: string): string {
   let path = raw.split('?')[0] ?? '';
   try {

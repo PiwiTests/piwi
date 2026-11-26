@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { version } from '../../package.json';
 
 vi.mock('../../app/demo/db.client', () => ({ getDemoDbBaseUrl: () => 'https://example.test/demo/' }));
 
@@ -28,7 +29,7 @@ describe('the demo changelog', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     expect(await apiDemoChangelog(new URLSearchParams())).toEqual({
-      runningVersion: '',
+      runningVersion: version,
       total: 0,
       releases: [],
       nextCursor: null,

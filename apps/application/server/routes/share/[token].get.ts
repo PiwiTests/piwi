@@ -3,7 +3,7 @@ import { buildExport } from '#shared/export/build';
 import { renderReportHtml } from '#shared/reports/render-html';
 import { sentencesFor } from '#shared/reports/sentences';
 import { resolveExportBudget, resolveExportMaxCases, serverAssetReader } from '../../utils/export-assets';
-import { exportPiwiVersion, exportSourceUrl } from '../../utils/export-request';
+import { exportSourceUrl } from '../../utils/export-request';
 import { recordShareLinkView } from '../../utils/share-links';
 import {
   LIVE_DASHBOARD_REFRESH_SECONDS,
@@ -45,12 +45,10 @@ export default eventHandler(async (event) => {
         ? await collectClusterBundle(db, link.entityId, {
             maxCases: resolveExportMaxCases(),
             sourceUrl: exportSourceUrl(event, `/failure-clusters/${link.entityId}`),
-            piwiVersion: exportPiwiVersion(event),
           })
         : await collectExecutionBundle(db, link.entityId, {
             maxCases: 1,
             sourceUrl: exportSourceUrl(event, `/test-run-cases/${link.entityId}`),
-            piwiVersion: exportPiwiVersion(event),
           });
     // The entity was pruned (retention) or deleted — indistinguishable from an
     // unknown token by design.
