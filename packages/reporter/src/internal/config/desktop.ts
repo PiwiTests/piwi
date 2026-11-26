@@ -14,7 +14,7 @@ export interface DesktopConfig {
 }
 
 /**
- * Where the Piwi Dashboard desktop app publishes its connection details:
+ * Where the Piwi desktop app publishes its connection details:
  * `~/.piwi/desktop.json` (`%USERPROFILE%\.piwi\desktop.json` on Windows).
  *
  * A home-relative well-known path rather than the OS app-data directory, so the

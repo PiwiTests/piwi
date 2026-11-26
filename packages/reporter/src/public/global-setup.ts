@@ -27,7 +27,7 @@ let relaying = false;
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
- * Piwi Dashboard server at the start of the run.  An optional `userSetup` is
+ * Piwi server at the start of the run.  An optional `userSetup` is
  * called afterward so existing setup logic is preserved.
  *
  * The server-run ID and a one-time token are written to a temp file so the
@@ -37,7 +37,7 @@ let relaying = false;
  * and the setup throws, stopping the run before any worker starts, when one
  * does not answer.
  *
- * @param options   Piwi Dashboard options (uses `serverUrl`, `projectName`, …).
+ * @param options   Piwi options (uses `serverUrl`, `projectName`, …).
  * @param userSetup An existing global setup to chain after the Piwi registration.
  */
 export function createGlobalSetup(

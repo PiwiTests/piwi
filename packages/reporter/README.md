@@ -1,6 +1,6 @@
-# Piwi Dashboard Reporter
+# Piwi Reporter
 
-A custom Playwright reporter that sends your test results to a [Piwi Dashboard](https://piwitests.dev) server — run history, HTML reports, traces and performance metrics, streamed live as tests execute. With the optional capture fixtures it also unlocks locator healing, slow-endpoint analysis, Web Vitals, console capture and failure-time ARIA snapshots.
+A custom Playwright reporter that sends your test results to a [Piwi](https://piwitests.dev) server — run history, HTML reports, traces and performance metrics, streamed live as tests execute. With the optional capture fixtures it also unlocks locator healing, slow-endpoint analysis, Web Vitals, console capture and failure-time ARIA snapshots.
 
 📖 **[Full documentation](https://piwitests.dev/guide/reporter)** · 🎮 **[Live demo](https://piwitests.dev/demo/)**
 
@@ -72,7 +72,7 @@ With authentication on, the reporter needs an API key in `PIWI_API_KEY` (the env
 
 - Node.js 22 or higher (the reporter runs inside your test project — the dashboard *server* itself targets Node 22+, or use its Docker image)
 - Playwright Test 1.59 or higher (a few features need a later version, named in their docs)
-- A running Piwi Dashboard server
+- A running Piwi server
 
 ## Contributing
 

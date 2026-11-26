@@ -1,5 +1,5 @@
 /**
- * `piwi init` — wire a Playwright project up to a Piwi Dashboard, deterministically.
+ * `piwi init` — wire a Playwright project up to a Piwi server, deterministically.
  *
  * The command does the mechanical, error-prone parts of setup so an agent (or a
  * person) does not have to hand-edit config: install the reporter, wrap the
@@ -88,7 +88,7 @@ interface InitOptions {
 }
 
 const USAGE = `
-piwi init — wire a Playwright project up to a Piwi Dashboard
+piwi init — wire a Playwright project up to a Piwi server
 
 Usage:
   npx @piwitests/reporter init [options]

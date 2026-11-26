@@ -246,7 +246,7 @@ function followedLine(followed: FollowedHub): string {
 type PreprocessTestRun = SuiteModeSource & ShardingTestRun & { skip?: (test: TestCase, reason?: string) => void };
 
 /**
- * Piwi Dashboard Playwright reporter.
+ * Piwi Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
  * hands the collected run to a `RunSubmitter` which drives the JSON / multipart

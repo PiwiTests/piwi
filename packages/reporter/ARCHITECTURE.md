@@ -1,7 +1,7 @@
 # Reporter architecture
 
 A map for contributors. The `@piwitests/reporter` package collects Playwright
-test results and sends them to a Piwi Dashboard server. It also ships the `piwi`
+test results and sends them to a Piwi server. It also ships the `piwi`
 command line (`src/cli/`) and the agent skills that `piwi init` installs
 (`templates/skills/`). The rules to follow when you change it are in
 [`AGENTS.md`](AGENTS.md).

@@ -150,7 +150,7 @@ function abortError(signal: AbortSignal): Error {
 }
 
 /**
- * Low-level HTTP client for communicating with the Piwi Dashboard server.
+ * Low-level HTTP client for communicating with the Piwi server.
  * Supports JSON requests, multipart form-data uploads, and session-based login.
  *
  * All three public methods (`login`, `postJSON`, `postFormData`) delegate to a
@@ -165,7 +165,7 @@ export class HttpClient {
   private closedReason: string | null = null;
 
   /**
-   * @param serverUrl Base URL of the Piwi Dashboard server (e.g. `http://localhost:3000`).
+   * @param serverUrl Base URL of the Piwi server (e.g. `http://localhost:3000`).
    * @param logger    Prefixed logger for verbose diagnostics.
    * @param timeout   Socket inactivity timeout in ms (default 30s), so a hung
    *                  server fails fast rather than stalling the reporter.
@@ -212,7 +212,7 @@ export class HttpClient {
     );
   }
 
-  /** Base URL of the Piwi Dashboard server this client talks to (used to print run links). */
+  /** Base URL of the Piwi server this client talks to (used to print run links). */
   get baseUrl(): string {
     return this.serverUrl;
   }

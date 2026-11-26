@@ -1,11 +1,11 @@
 ---
 name: investigate-failure
-description: Investigate a failed test run recorded in Piwi Dashboard and propose a fix grounded in its evidence — error, steps, console, network, locator suggestion, and the diff since the last green run. Use when the user asks "why did the last run fail", "what broke in CI", "diagnose this failure", or points at a Piwi run/cluster.
+description: Investigate a failed test run recorded in Piwi and propose a fix grounded in its evidence — error, steps, console, network, locator suggestion, and the diff since the last green run. Use when the user asks "why did the last run fail", "what broke in CI", "diagnose this failure", or points at a Piwi run/cluster.
 ---
 
 # Investigate a Piwi failure
 
-Turn a failed run in [Piwi Dashboard](https://piwitests.dev) into a grounded diagnosis and a concrete fix. Piwi has already gathered the evidence — the error text, the steps that ran, console output, failing network calls, a suggested locator, and the source diff since the last passing run. Use that instead of guessing.
+Turn a failed run in [Piwi](https://piwitests.dev) into a grounded diagnosis and a concrete fix. Piwi has already gathered the evidence — the error text, the steps that ran, console output, failing network calls, a suggested locator, and the source diff since the last passing run. Use that instead of guessing.
 
 ## How you reach Piwi
 

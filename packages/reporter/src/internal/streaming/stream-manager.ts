@@ -200,7 +200,7 @@ export class StreamManager {
    * @param recovery    Crash-recovery handler for uploading stale payloads on startup.
    * @param uploader    Uploader for per-test-case file uploads.
    * @param fileHandler File-discovery helper for finding traces and attachments.
-   * @param options     Piwi Dashboard reporter options.
+   * @param options     Piwi reporter options.
    * @param logger      Prefixed logger.
    */
   constructor(
