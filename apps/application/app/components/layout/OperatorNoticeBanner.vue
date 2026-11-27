@@ -176,7 +176,7 @@ function dismiss() {
         <span class="text-sm text-highlighted leading-relaxed">
           Storage is at {{ storagePercent }}% of its quota: {{ formatBytes(storage.usedBytes) }} of
           {{ formatBytes(storage.quotaBytes) }}.
-          <template v-if="storageRefusal">{{ storageRefusal }}</template>
+          <template v-if="storageRefusal">{{ `${storageRefusal} ` }}</template>
           <NuxtLink to="/settings/storage" class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
             >Settings → Storage</NuxtLink
           >
