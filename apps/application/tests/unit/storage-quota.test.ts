@@ -7,13 +7,19 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { eq, sql } from 'drizzle-orm';
-import { nextStorageWarning, storageWarningLevel } from '#shared/storage-quota';
+import {
+  nextStorageOver,
+  nextStorageWarning,
+  readStorageOver,
+  storageQuotaStateOf,
+  storageWarningLevel,
+} from '#shared/storage-quota';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { reconcileStorageTotal, storageQuotaBytes, storageUsedBytes, watchStorageQuota } =
+const { reconcileStorageTotal, storageQuotaBytes, storageQuotaState, storageUsedBytes, watchStorageQuota } =
   await import('../../server/utils/storage-quota');
 const { getStorageAnalysis } = await import('#shared/handlers/admin-storage');
 
@@ -40,6 +46,46 @@ describe('the warning levels', () => {
     expect([read(850), told, read(955)]).toEqual([false, 80, true]);
     // Below 75%, every level can come again.
     expect([read(740), told, read(800)]).toEqual([false, 0, true]);
+  });
+});
+
+describe('what the quota refuses', () => {
+  const at = new Date('2026-11-27T10:00:00Z');
+
+  test('files from the quota on, new runs from the ceiling: the bytes on going over plus 10% of the quota', () => {
+    expect(storageQuotaStateOf(1000, 999, null)).toEqual({
+      quotaBytes: 1000,
+      usedBytes: 999,
+      over: null,
+      filesRefused: false,
+      runsRefused: false,
+    });
+    const over = nextStorageOver(null, 1030, 1000, at)!;
+    expect(over).toEqual({ since: at.toISOString(), usedBytes: 1030 });
+    expect(storageQuotaStateOf(1000, 1030, over)).toMatchObject({
+      over: { since: at.toISOString(), ceilingBytes: 1130 },
+      filesRefused: true,
+      runsRefused: false,
+    });
+    expect(storageQuotaStateOf(1000, 1129, over).runsRefused).toBe(false);
+    expect(storageQuotaStateOf(1000, 1130, over).runsRefused).toBe(true);
+  });
+
+  test('keeps the bytes of the first going over until the usage falls below the quota, then starts again', () => {
+    const first = nextStorageOver(null, 1000, 1000, at);
+    expect(nextStorageOver(first, 1100, 1000, new Date())).toBe(first);
+    expect(nextStorageOver(first, 999, 1000, new Date())).toBeNull();
+    expect(nextStorageOver(null, 1050, 1000, at)).toEqual({ since: at.toISOString(), usedBytes: 1050 });
+  });
+
+  test('reads only a well-formed going-over record', () => {
+    expect(readStorageOver({ since: at.toISOString(), usedBytes: 5 })).toEqual({
+      since: at.toISOString(),
+      usedBytes: 5,
+    });
+    for (const value of [null, 'x', [], { since: 'never', usedBytes: 5 }, { since: at.toISOString(), usedBytes: -1 }]) {
+      expect(readStorageOver(value)).toBeNull();
+    }
   });
 });
 
@@ -144,6 +190,39 @@ describe('the running total', () => {
     expect(await storageUsedBytes(db)).toBe(4600);
     await db.delete(schema.testRuns);
     expect(await storageUsedBytes(db)).toBe(0);
+  });
+
+  test('keeps when it went over its quota, from the first check that finds it there to the first below', async () => {
+    const setTotal = (bytes: number) => db.update(schema.storageTotals).set({ bytes });
+    const over = async () =>
+      (await db.select().from(schema.appSettings).where(eq(schema.appSettings.key, 'storage_quota_over')))[0]?.value;
+    const first = new Date('2026-11-27T10:00:00Z');
+
+    expect(await storageQuotaState(db, null)).toBeNull();
+    await setTotal(9000);
+    expect(await storageQuotaState(db, 10_000, first)).toMatchObject({ over: null, filesRefused: false });
+    expect(await over()).toBeUndefined();
+
+    await setTotal(10_500);
+    expect(await storageQuotaState(db, 10_000, first)).toMatchObject({
+      usedBytes: 10_500,
+      over: { since: first.toISOString(), ceilingBytes: 11_500 },
+      filesRefused: true,
+      runsRefused: false,
+    });
+    await setTotal(11_600);
+    expect(await storageQuotaState(db, 10_000, new Date())).toMatchObject({
+      over: { since: first.toISOString(), ceilingBytes: 11_500 },
+      runsRefused: true,
+    });
+    expect(await over()).toEqual({ since: first.toISOString(), usedBytes: 10_500 });
+
+    await setTotal(9900);
+    expect(await storageQuotaState(db, 10_000)).toMatchObject({ over: null, filesRefused: false, runsRefused: false });
+    expect(await over()).toBeUndefined();
+    // Over again: the ceiling counts from the bytes stored now.
+    await setTotal(11_000);
+    expect((await storageQuotaState(db, 10_000))?.over?.ceilingBytes).toBe(12_000);
   });
 
   test('is recounted from the tables each night', async () => {

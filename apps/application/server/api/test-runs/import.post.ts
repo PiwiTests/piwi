@@ -4,6 +4,8 @@ import { streamMultipart } from '../../utils/multipart-stream';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { resolveMaxImportBytes } from '../../utils/upload-limits';
 import { importArchive } from '../../utils/import-archive';
+import { refuseImportAtQuota } from '../../utils/storage-quota';
+import { getDatabase } from '../../database';
 import { formatBytes } from '#shared/utils/format-bytes';
 
 defineRouteMeta({
@@ -11,7 +13,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Import a historical Playwright blob report or trace',
     description:
-      'Import one archive as historical results. A blob report (blob-report/report-*.zip) becomes a complete run with its traces and attachments. A bare trace (trace.zip) becomes a single execution; pass the same importGroup with several traces to gather them into one run. Intended for backfilling runs recorded before Piwi was adopted: re-importing the same archive is a no-op, and imports deliberately do not trigger notifications, AI diagnosis or regression signals.',
+      'Import one archive as historical results. A blob report (blob-report/report-*.zip) becomes a complete run with its traces and attachments. A bare trace (trace.zip) becomes a single execution; pass the same importGroup with several traces to gather them into one run. Intended for backfilling runs recorded before Piwi was adopted: re-importing the same archive is a no-op, and imports deliberately do not trigger notifications, AI diagnosis or regression signals. Once the stored bytes reach `PIWI_STORAGE_QUOTA_BYTES`, an import answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, and past the quota’s ceiling `STORAGE_QUOTA_EXCEEDED`.',
     'x-required-permission': 'storage:manage',
     requestBody: {
       content: {
@@ -47,8 +49,13 @@ export default eventHandler(async (event) => {
   }
 
   // Stream the request to a temp file, within the cap counted on the bytes read
-  // (a chunked body declares no length).
-  const multipart = await streamMultipart(event, { maxTotalBytes: maxUploadBytes, maxFiles: 1 });
+  // (a chunked body declares no length), once the storage quota takes an import.
+  const db = await getDatabase();
+  const multipart = await streamMultipart(event, {
+    maxTotalBytes: maxUploadBytes,
+    maxFiles: 1,
+    beforeFiles: () => refuseImportAtQuota(db),
+  });
   try {
     const projectName = multipart.fields.get('projectName')?.trim();
     const environment = multipart.fields.get('environment')?.trim() || null;

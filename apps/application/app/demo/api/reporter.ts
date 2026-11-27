@@ -46,7 +46,7 @@ import {
 } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
-import { carryIngestHealth } from '#shared/ingest-health';
+import { carryIngestHealth, reportedNotKept, withIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
@@ -1183,12 +1183,17 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
 
-    // This shard's test durations and span join the others', and the run's start and duration become its shards'.
+    // This shard's test durations, span and the files its reporter did not send join the others', and the run's start
+    // and duration become its shards'.
     await recordShardEnd(
       db,
       id,
       shardSpan(body, Date.now()),
-      (metadata) => withShardDurations(metadata, Array.isArray(body.durations) ? body.durations : []),
+      (metadata) =>
+        withShardDurations(
+          withIngestHealth(metadata, reportedNotKept(body.metadata)),
+          Array.isArray(body.durations) ? body.durations : [],
+        ),
       {
         updatedAt: new Date(),
         status: 'running',

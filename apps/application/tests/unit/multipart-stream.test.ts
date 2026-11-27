@@ -234,10 +234,42 @@ describe('streamMultipart', () => {
     expect(calls).toBe(0);
   });
 
-  test('runs beforeFiles once parsing ends when no file part arrives', async () => {
-    let calls = 0;
+  test('runs beforeFiles once parsing ends when no file part arrives, saying none came', async () => {
+    const calls: boolean[] = [];
     const body = buildMultipart([{ name: 'streamToken', value: 'tok' }]);
-    last = await streamMultipart(makeEvent(body), { maxTotalBytes: 1024, beforeFiles: () => void calls++ });
-    expect(calls).toBe(1);
+    last = await streamMultipart(makeEvent(body), {
+      maxTotalBytes: 1024,
+      beforeFiles: (_fields, withFiles) => void calls.push(withFiles),
+    });
+    expect(calls).toEqual([false]);
+
+    const withFile = buildMultipart([{ name: 'trace', filename: 'trace.zip', data: Buffer.from('abc') }]);
+    await last.cleanup();
+    last = await streamMultipart(makeEvent(withFile), {
+      maxTotalBytes: 1024,
+      beforeFiles: (_fields, withFiles) => void calls.push(withFiles),
+    });
+    expect(calls).toEqual([false, true]);
+  });
+
+  test('reads file parts past without writing them when told to discard them, within the same caps', async () => {
+    writeStreams.length = 0;
+    const body = buildMultipart([
+      { name: 'testRun', value: '{}' },
+      { name: 'trace_0', filename: 'trace.zip', data: Buffer.alloc(300, 1) },
+      { name: 'attach_file_0', filename: 'shot.png', data: Buffer.alloc(200, 2) },
+    ]);
+    last = await streamMultipart(makeEvent(body), { maxTotalBytes: 1024, discardFiles: true });
+    expect(last.fields.get('testRun')).toBe('{}');
+    expect(last.files.map(({ field, size, path }) => ({ field, size, path }))).toEqual([
+      { field: 'trace_0', size: 300, path: '' },
+      { field: 'attach_file_0', size: 200, path: '' },
+    ]);
+    expect(writeStreams).toHaveLength(0);
+
+    const large = buildMultipart([{ name: 'trace_0', filename: 'trace.zip', data: Buffer.alloc(2048, 1) }]);
+    await expect(streamMultipart(makeEvent(large), { maxTotalBytes: 1024, discardFiles: true })).rejects.toMatchObject({
+      statusCode: 413,
+    });
   });
 });

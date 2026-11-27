@@ -97,7 +97,8 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
 results stream in and the tab title shows its progress. When ingest left something out or rebuilt
 it, the facts line counts **ingest notes** and **Details** lists them: steps and console entries over the
-[ingest caps](/reference/configuration#ingest-limits), traces not stored, evidence rebuilt from a trace, and the
+[ingest caps](/reference/configuration#ingest-limits), traces not stored, files not kept once the
+[storage quota](/reference/configuration#storage) was reached, evidence rebuilt from a trace, and the
 reporter's fallback to send the run.
 [Errors outside the tests](/reference/test-metadata#errors-outside-the-tests) that Playwright reported (a global setup
 that threw, a spec that did not load) show under the facts line. The tabs:

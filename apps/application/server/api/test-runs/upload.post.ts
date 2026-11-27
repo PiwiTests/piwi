@@ -18,6 +18,8 @@ import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
+import { refuseRunsPastCeiling, storageQuotaState } from '../../utils/storage-quota';
+import { addIngestHealth, reportedNotKept, type IngestHealth } from '#shared/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
@@ -56,7 +58,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Upload test results with reports, traces, and attachments',
     description:
-      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
+      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field. Once the stored bytes reach `PIWI_STORAGE_QUOTA_BYTES`, the results are stored and every file part (reports, traces, attachments) is skipped: the answer adds `filesNotKept`, `{ count, errorCode }` with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, and the run’s ingest health counts them by kind. Past the quota’s ceiling, an upload that would create a run answers 409 with `errorCode` `STORAGE_QUOTA_EXCEEDED`; one that attaches files to a run (`runId`) goes on.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -108,6 +110,9 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 413, message: `Upload too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
+  // Once the storage quota is reached, the file parts are read past and not kept.
+  const filesRefused = (await storageQuotaState(await getDatabase()))?.filesRefused ?? false;
+
   // Stream the request to temp files, within the upload cap counted on the bytes
   // read: the reporter sends chunked bodies, which declare no length. Each file
   // is read back from disk only when it is stored.
@@ -117,9 +122,10 @@ export default eventHandler(async (event) => {
     maxTotalFieldBytes: maxUploadBytes,
     maxFields: MAX_UPLOAD_PARTS,
     maxFiles: MAX_UPLOAD_PARTS,
+    discardFiles: filesRefused,
   });
   try {
-    return await handleUpload(user, runReporterId(event, user), multipart);
+    return await handleUpload(user, runReporterId(event, user), multipart, filesRefused);
   } finally {
     await multipart.cleanup();
   }
@@ -139,6 +145,7 @@ async function handleUpload(
   user: Awaited<ReturnType<typeof requireAuth>>,
   reporterId: number | null,
   multipart: StreamedMultipart,
+  filesRefused: boolean,
 ) {
   // Parse form fields
   let projectName: string | undefined;
@@ -227,6 +234,19 @@ async function handleUpload(
       }
     }
   }
+
+  // At the storage quota, every file part goes unkept: counted by kind for the run's ingest health, then dropped.
+  const notKept: IngestHealth = {};
+  if (filesRefused) {
+    notKept.reportsNotKept = reportFiles.size;
+    notKept.tracesNotKept = traceFiles.size;
+    notKept.attachmentsNotKept = [...attachmentFiles.values()].reduce((sum, list) => sum + list.length, 0);
+    reportFiles.clear();
+    traceFiles.clear();
+    attachmentFiles.clear();
+    attachmentMeta.clear();
+  }
+  const notKeptCount = (notKept.reportsNotKept ?? 0) + (notKept.tracesNotKept ?? 0) + (notKept.attachmentsNotKept ?? 0);
 
   // Validate required fields
   if (!projectName || !testRunData) {
@@ -342,9 +362,10 @@ async function handleUpload(
       await saveEnvironmentSnapshots(db, run.id, testRunData.environments);
       await applyReporterKeep(db, run.id, testRunData.keep);
     } else {
-      // Create a new test run (standard batch upload). Like `/submit`, it replaces the instance's run still in flight:
-      // the stream that fell back to this upload, or a run registered for it, which would otherwise wait until the
-      // stale-run sweep marks it interrupted.
+      // Create a new test run (standard batch upload), unless the storage is past its quota's ceiling. Like
+      // `/submit`, it replaces the instance's run still in flight: the stream that fell back to this upload, or a run
+      // registered for it, which would otherwise wait until the stale-run sweep marks it interrupted.
+      await refuseRunsPastCeiling(db);
       await cancelInstanceRuns(db, project.id, instanceId, undefined, !!(shardTotal && shardTotal > 1));
       const metadata = sanitizeMetadata(testRunData.metadata || null);
       const testRunResult = await db
@@ -458,6 +479,14 @@ async function handleUpload(
         });
       }
     }
+
+    // Written once a held run settled, which rewrites its metadata. A run this upload attaches to takes the files its
+    // reporter says it did not send (a new run took them with its metadata) beside the ones skipped here.
+    await recordIngestHealth(
+      db,
+      testRun.id,
+      attachingToExistingRun ? (addIngestHealth(reportedNotKept(testRunData.metadata), notKept) ?? {}) : notKept,
+    );
 
     // Create the run's directory for attachments
     const testRunPath = `project-${project.id}/run-${testRun.id}`;
@@ -607,6 +636,9 @@ async function handleUpload(
       runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
       reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
+      ...(notKeptCount > 0 && {
+        filesNotKept: { count: notKeptCount, errorCode: 'STORAGE_QUOTA_FILES_REFUSED' as const },
+      }),
     };
   });
   if (!('duplicate' in delivered)) return delivered;

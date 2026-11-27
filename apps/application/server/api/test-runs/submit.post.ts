@@ -30,7 +30,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test results as JSON',
     description:
-      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field.',
+      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field. Past the storage quota’s ceiling (`PIWI_STORAGE_QUOTA_BYTES`), a new run is refused with 409 and `errorCode` `STORAGE_QUOTA_EXCEEDED`; a shard joining its run, and a repeated delivery, go on.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -100,7 +100,11 @@ export default eventHandler(async (event) => {
       await saveEnvironmentSnapshots(db, run.id, body.environments);
       await applyReporterKeep(db, run.id, body.keep);
       if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(mapWireCaseToRunCase));
-      await addBatchShard(db, run.id, batchShardTally(body, testCases, declaredBodyBytes(getRequestHeader(event, 'content-length'))));
+      await addBatchShard(
+        db,
+        run.id,
+        batchShardTally(body, testCases, declaredBodyBytes(getRequestHeader(event, 'content-length'))),
+      );
       if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
       return { success: true, runId: run.id, runUrl: publicRunUrl(run.id), projectId: project.id };
     }

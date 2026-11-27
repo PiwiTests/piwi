@@ -15,6 +15,7 @@ import { matchStartedRunToCiDispatch } from '../../utils/ci-dispatches';
 import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
 import { withInstanceRunLock } from '../../utils/ingest-locks';
+import { refuseRunsPastCeiling } from '../../utils/storage-quota';
 import { findActiveShardedRun } from '../../utils/sharded-runs';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -27,7 +28,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Start a streaming test run',
     description:
-      'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, reuses an existing run from the same instanceId and shardTotal.',
+      'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, reuses an existing run from the same instanceId and shardTotal. Past the storage quota’s ceiling (`PIWI_STORAGE_QUOTA_BYTES`), a new run is refused with 409 and `errorCode` `STORAGE_QUOTA_EXCEEDED`, before any other run is cancelled; a shard joining its run goes on.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -121,6 +122,7 @@ export default eventHandler(async (event) => {
       }
 
       // First shard to arrive: cancel non-sharded runs, then create a new sharded run
+      await refuseRunsPastCeiling(db);
       await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
       const streamToken = randomBytes(32).toString('hex');
@@ -190,6 +192,7 @@ export default eventHandler(async (event) => {
     }
 
     // Non-sharded: cancel previous runs, create a new one (existing behaviour)
+    await refuseRunsPastCeiling(db);
     await cancelInstanceRuns(db, project.id, instanceId);
 
     const streamToken = randomBytes(32).toString('hex');

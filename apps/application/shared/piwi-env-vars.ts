@@ -448,12 +448,13 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_STORAGE_QUOTA_BYTES: {
     description:
-      'The stored bytes the administrators are warned against: at 80% and then 95% of it, Piwi emails every administrator and shows them a banner, and Settings → Storage shows the usage against it. It counts what Settings → Storage totals, the stored files and the traces, and the results the reporter sent for each run. Unset, there is no quota and no warning.',
+      'The stored bytes Piwi keeps within: the stored files and the traces Settings → Storage totals, and the results the reporter sent for each run. At 80% and 95% of it, Piwi emails every administrator and shows them a banner. At the quota, Piwi keeps taking results and refuses every file (traces, screenshots, videos, attachments, reports, a bug report’s screenshots, imports), and each run says how many of its files were not kept. Past a ceiling, the bytes stored when the instance went over plus 10% of the quota, it refuses new runs too, while the runs in progress finish. Both refusals stop once the usage falls below the quota. Unset, there is no quota.',
     category: 'storage',
     type: 'number',
     min: 1024 * 1024,
     since: '0.79.0',
-    notes: 'Warnings only: nothing is refused once the quota is reached.',
+    notes:
+      'A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`.',
   },
   PIWI_STORAGE_PATH: {
     description: 'Directory for local file storage (when PIWI_STORAGE_TYPE is "local").',

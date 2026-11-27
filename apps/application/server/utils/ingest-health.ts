@@ -1,5 +1,5 @@
 import type { DrizzleDB } from '#shared/handlers/db';
-import { addIngestHealth, INGEST_HEALTH_COUNTS, readIngestHealth, type IngestHealth } from '#shared/ingest-health';
+import { INGEST_HEALTH_COUNTS, withIngestHealth, type IngestHealth } from '#shared/ingest-health';
 import { updateRunMetadata } from './run-metadata';
 
 /** True when the delta holds nothing to record. */
@@ -13,10 +13,7 @@ function isEmpty(delta: IngestHealth): boolean {
  */
 export async function recordIngestHealth(db: DrizzleDB, runId: number, delta: IngestHealth): Promise<void> {
   if (isEmpty(delta)) return;
-  await updateRunMetadata(db, runId, (metadata) => {
-    const health = addIngestHealth(readIngestHealth(metadata), delta);
-    return { ...metadata, ...(health ? { ingestHealth: health } : {}) };
-  });
+  await updateRunMetadata(db, runId, (metadata) => withIngestHealth(metadata, delta));
 }
 
 /** What the caps left out of one execution. */

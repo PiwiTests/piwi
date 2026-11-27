@@ -1,8 +1,11 @@
 /**
  * What ingest dropped or rebuilt for one run, kept as `metadata.ingestHealth`.
  * The server counts what its caps left out and what it rebuilt from traces;
- * the reporter names the submit fallback it took. Every field is optional and
- * absent when nothing happened, so a run ingested whole carries no key.
+ * the reporter names the submit fallback it took. The files the storage quota
+ * refused are counted by both: the server for the parts of an upload it skipped,
+ * the reporter for the files it did not send once refused. Every field is
+ * optional and absent when nothing happened, so a run ingested whole carries no
+ * key.
  */
 
 /** How the reporter delivered a run when its first choice failed. */
@@ -27,12 +30,16 @@ export interface SubmitFallback {
   reason?: SubmitFallbackReason;
 }
 
+/** The counts of the files the storage quota refused, which the reporter sends too. */
+export const NOT_KEPT_COUNTS = ['tracesNotKept', 'attachmentsNotKept', 'reportsNotKept'] as const;
+
 /** The counters ingest adds up across the run's batches. */
 export const INGEST_HEALTH_COUNTS = [
   'stepsDropped',
   'consoleEntriesDropped',
   'tracesSkipped',
   'evidenceFromTrace',
+  ...NOT_KEPT_COUNTS,
 ] as const;
 
 export interface IngestHealth {
@@ -44,6 +51,12 @@ export interface IngestHealth {
   tracesSkipped?: number;
   /** Executions whose console, network or ARIA evidence was rebuilt from their trace. */
   evidenceFromTrace?: number;
+  /** Traces not kept because the storage quota was reached. */
+  tracesNotKept?: number;
+  /** Attachments (screenshots, videos, other files) not kept because the storage quota was reached. */
+  attachmentsNotKept?: number;
+  /** Reports not kept because the storage quota was reached. */
+  reportsNotKept?: number;
   /** The fallback the reporter took to deliver the run. */
   submitFallback?: SubmitFallback;
 }
@@ -91,21 +104,55 @@ export function addIngestHealth(current: IngestHealth | null, delta: IngestHealt
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/** What the reporter may tell of a run's ingest: its submit fallback and the files it did not send. */
+function reportedIngestHealth(health: IngestHealth | null): IngestHealth {
+  const reported: IngestHealth = {};
+  for (const key of NOT_KEPT_COUNTS) if (health?.[key]) reported[key] = health[key];
+  if (health?.submitFallback) reported.submitFallback = health.submitFallback;
+  return reported;
+}
+
+/** The files a reporter's run metadata says it did not send once the storage quota refused them. */
+export function reportedNotKept(metadata: unknown): IngestHealth {
+  const { submitFallback: _fallback, ...counts } = reportedIngestHealth(readIngestHealth(metadata));
+  return counts;
+}
+
+/** `metadata` with `delta` added to its ingest health (`addIngestHealth`). */
+export function withIngestHealth(metadata: Record<string, unknown>, delta: IngestHealth): Record<string, unknown> {
+  const health = addIngestHealth(readIngestHealth(metadata), delta);
+  return { ...metadata, ...(health ? { ingestHealth: health } : {}) };
+}
+
+/** `metadata` without the files its reporter says it did not send, which a sharded run adds shard by shard. */
+export function withoutReportedNotKept(metadata: Record<string, unknown> | null): Record<string, unknown> | null {
+  const health = readIngestHealth(metadata);
+  if (!metadata || !health) return metadata;
+  const { ingestHealth: _health, ...rest } = metadata;
+  for (const key of NOT_KEPT_COUNTS) delete health[key];
+  return Object.keys(health).length > 0 ? { ...rest, ingestHealth: health } : rest;
+}
+
 /**
  * Run metadata the reporter sent, cleaned for storage: of its `ingestHealth`
- * only the submit fallback is kept, since the counts are the server's own.
+ * only the submit fallback and the files it did not send are kept, since the
+ * other counts are the server's own.
  */
 export function reporterIngestHealth(metadata: Record<string, unknown>): Record<string, unknown> {
   if (!('ingestHealth' in metadata)) return metadata;
   const { ingestHealth: _sent, ...rest } = metadata;
-  const fallback = readIngestHealth(metadata)?.submitFallback;
-  return fallback ? { ...rest, ingestHealth: { submitFallback: fallback } } : rest;
+  const reported = reportedIngestHealth(readIngestHealth(metadata));
+  return Object.keys(reported).length > 0 ? { ...rest, ingestHealth: reported } : rest;
 }
 
 /**
  * Metadata replacing a run's stored metadata, with the ingest health already
- * recorded on the run carried over: its counts are kept, and the incoming
- * fallback, when there is one, replaces the stored fallback.
+ * recorded on the run carried over: its counts are kept, the incoming
+ * fallback, when there is one, replaces the stored fallback, and each count
+ * of files the reporter did not send is the larger of the stored and the
+ * incoming one. The reporter sends those counts once per run, before the
+ * server counts any file of the run it skips itself, so the larger is their
+ * sum, and a write that carries the stored metadata back counts nothing twice.
  */
 export function carryIngestHealth(
   next: Record<string, unknown> | null,
@@ -114,9 +161,12 @@ export function carryIngestHealth(
   const kept = readIngestHealth(stored);
   if (!kept) return next;
   const incoming = next ? readIngestHealth(next) : null;
-  const merged = addIngestHealth(kept, {
-    ...(incoming?.submitFallback ? { submitFallback: incoming.submitFallback } : {}),
-  });
+  const merged: IngestHealth = { ...kept };
+  for (const key of NOT_KEPT_COUNTS) {
+    const larger = Math.max(kept[key] ?? 0, incoming?.[key] ?? 0);
+    if (larger > 0) merged[key] = larger;
+  }
+  if (incoming?.submitFallback) merged.submitFallback = incoming.submitFallback;
   return { ...next, ingestHealth: merged };
 }
 
@@ -137,6 +187,27 @@ function plural(n: number, one: string, many: string): string {
   return `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 }
 
+const NOT_KEPT_NOUNS: Record<(typeof NOT_KEPT_COUNTS)[number], [string, string]> = {
+  tracesNotKept: ['trace', 'traces'],
+  attachmentsNotKept: ['attachment', 'attachments'],
+  reportsNotKept: ['report', 'reports'],
+};
+
+/** "3 traces and 12 attachments were not kept: the storage quota was reached", or null when every file was kept. */
+function notKeptSentence(health: IngestHealth): string | null {
+  const parts: string[] = [];
+  let total = 0;
+  for (const key of NOT_KEPT_COUNTS) {
+    const n = health[key];
+    if (!n) continue;
+    parts.push(plural(n, ...NOT_KEPT_NOUNS[key]));
+    total += n;
+  }
+  if (parts.length === 0) return null;
+  const listed = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)!}`;
+  return `${listed} ${total === 1 ? 'was' : 'were'} not kept: the storage quota was reached`;
+}
+
 /** One sentence per thing ingest dropped or rebuilt, in reading order. */
 export function describeIngestHealth(health: IngestHealth | null): string[] {
   if (!health) return [];
@@ -155,6 +226,8 @@ export function describeIngestHealth(health: IngestHealth | null): string[] {
       `Console, network or ARIA evidence of ${plural(health.evidenceFromTrace, 'execution', 'executions')} rebuilt from the trace`,
     );
   }
+  const notKept = notKeptSentence(health);
+  if (notKept) lines.push(notKept);
   if (health.submitFallback) {
     const { path, reason } = health.submitFallback;
     lines.push(`${FALLBACK_SENTENCES[path]}${reason ? `: ${REASON_CLAUSES[reason]}` : ''}`);

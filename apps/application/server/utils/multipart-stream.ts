@@ -5,6 +5,7 @@ import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 /**
@@ -20,9 +21,9 @@ export interface StreamedFile {
    * reads no file name from (`.`, `..`, a path ending in a separator): the part keeps its place in arrival order.
    */
   filename: string;
-  /** Absolute path of the temp file the part was streamed to. */
+  /** Absolute path of the temp file the part was streamed to; empty for a part `discardFiles` read past. */
   path: string;
-  /** Bytes written to disk. */
+  /** Bytes of the part. */
   size: number;
   /** Declared MIME type. */
   mimeType: string;
@@ -53,12 +54,18 @@ export interface StreamMultipartOptions {
   maxFiles?: number;
   /**
    * Runs once, with the fields read so far, before the first file part is
-   * written to disk (or once parsing ends when the request has no file part).
-   * Throwing refuses the request before any file byte is stored, so a route
-   * authenticated by a field (a stream token sent ahead of the files) checks
-   * it here. It never runs for a request that already failed.
+   * written to disk (or once parsing ends when the request has no file part:
+   * `withFiles` is false then). Throwing refuses the request before any file
+   * byte is stored, so a route authenticated by a field (a stream token sent
+   * ahead of the files) checks it here. It never runs for a request that
+   * already failed.
    */
-  beforeFiles?: (fields: Map<string, string>) => Promise<void> | void;
+  beforeFiles?: (fields: Map<string, string>, withFiles: boolean) => Promise<void> | void;
+  /**
+   * Read the file parts past without writing them: each is listed with its
+   * field, file name and size, and an empty `path`. The size caps still apply.
+   */
+  discardFiles?: boolean;
 }
 
 const DEFAULT_MAX_FIELD_BYTES = 1024 * 1024; // 1 MiB
@@ -102,8 +109,8 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
   let settled = false;
   // The `beforeFiles` check, run at most once, on the fields read when it starts, and never once the request settled.
   let gate: Promise<void> | undefined;
-  const passGate = () =>
-    settled ? Promise.resolve() : (gate ??= (async () => options.beforeFiles?.(new Map(fields)))());
+  const passGate = (withFiles: boolean) =>
+    settled ? Promise.resolve() : (gate ??= (async () => options.beforeFiles?.(new Map(fields), withFiles))());
   // One per file part, settled once its temp file is written and closed, or given up.
   const fileWrites: Promise<void>[] = [];
 
@@ -158,10 +165,12 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         });
         // Nothing reads the part until the check passed: busboy, and the request
         // behind it, wait meanwhile.
-        const write = passGate().then(async () => {
+        const write = passGate(true).then(async () => {
           // The request failed while the check ran: nothing more is written.
           if (settled) return;
+          let partBytes = 0;
           stream.on('data', (chunk: Buffer) => {
+            partBytes += chunk.length;
             streamedBytes += chunk.length;
             if (streamedBytes > options.maxTotalBytes) {
               const error = apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
@@ -169,18 +178,21 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
               fail(error);
             }
           });
-          const ws = createWriteStream(tmpPath);
-          await pipeline(stream, ws);
+          if (options.discardFiles) {
+            await pipeline(stream, new Writable({ write: (_chunk, _encoding, done) => done() }));
+          } else {
+            await pipeline(stream, createWriteStream(tmpPath));
+          }
           if (truncated) throw apiError({ statusCode: 413, message: 'A file part exceeded the upload limit' });
-          totalBytes += ws.bytesWritten;
+          totalBytes += partBytes;
           if (totalBytes > options.maxTotalBytes) {
             throw apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
           }
           files[index] = {
             field,
             filename,
-            path: tmpPath,
-            size: ws.bytesWritten,
+            path: options.discardFiles ? '' : tmpPath,
+            size: partBytes,
             mimeType: info.mimeType,
           };
         });
@@ -209,7 +221,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
       bb.on('close', () => {
         // busboy has finished parsing; wait for the in-flight file writes to flush,
         // and run the check when no file part did.
-        Promise.all([...fileWrites, passGate()]).then(succeed, fail);
+        Promise.all([...fileWrites, passGate(false)]).then(succeed, fail);
       });
 
       req.on('aborted', () => fail(apiError({ statusCode: 400, message: 'Request aborted' })));

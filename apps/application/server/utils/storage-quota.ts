@@ -1,10 +1,20 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { nextStorageWarning, type StorageWarningLevel } from '#shared/storage-quota';
+import {
+  FILES_REFUSED_MESSAGE,
+  RUNS_REFUSED_MESSAGE,
+  nextStorageOver,
+  nextStorageWarning,
+  readStorageOver,
+  storageQuotaStateOf,
+  type StorageQuotaState,
+  type StorageWarningLevel,
+} from '#shared/storage-quota';
 import { getDialect } from '../database';
 import { files, storageTotals, testRuns, traceBlobs, traceResources } from '../database/schema';
 import { administratorEmails } from './administrators';
-import { getAppSetting, setAppSetting } from './app-settings';
+import { apiError } from './api-error';
+import { deleteAppSetting, getAppSetting, setAppSetting } from './app-settings';
 
 /**
  * The stored bytes against `PIWI_STORAGE_QUOTA_BYTES`. The total is the `storage_totals` rows, which the database's
@@ -16,6 +26,9 @@ import { getAppSetting, setAppSetting } from './app-settings';
 
 /** The `app_settings` key of the level the administrators were last told of. */
 const TOLD_KEY = 'storage_quota_warning';
+
+/** The `app_settings` key of when the instance went over its quota, and the bytes it stored then (`StorageOver`). */
+const OVER_KEY = 'storage_quota_over';
 
 let warnedUnusable = false;
 
@@ -99,4 +112,53 @@ export async function watchStorageQuota(
   const told = next.announce && !announced ? before : next.told;
   if (told !== before) await setAppSetting(db, TOLD_KEY, { told });
   return { usedBytes, told, announced };
+}
+
+/**
+ * The quota against the stored bytes, and what it refuses, keeping `storage_quota_over` current: set by the first
+ * check that finds the bytes at the quota, cleared by the first that finds them below. Null without a quota, which
+ * reads nothing.
+ */
+export async function storageQuotaState(
+  db: DrizzleDB,
+  quotaBytes: number | null = storageQuotaBytes(),
+  now = new Date(),
+): Promise<StorageQuotaState | null> {
+  if (!quotaBytes) return null;
+  const usedBytes = await storageUsedBytes(db);
+  const stored = readStorageOver(await getAppSetting(db, OVER_KEY));
+  const over = nextStorageOver(stored, usedBytes, quotaBytes, now);
+  if (over && over !== stored) await setAppSetting(db, OVER_KEY, over);
+  else if (!over && stored) await deleteAppSetting(db, OVER_KEY);
+  return storageQuotaStateOf(quotaBytes, usedBytes, over);
+}
+
+/** The 409 of a request whose files the quota refuses: it stores nothing of them. */
+export function filesRefusedError() {
+  return apiError({ statusCode: 409, errorCode: 'STORAGE_QUOTA_FILES_REFUSED', message: FILES_REFUSED_MESSAGE });
+}
+
+/** The 409 of a request that would create a run past the ceiling. */
+export function runsRefusedError() {
+  return apiError({ statusCode: 409, errorCode: 'STORAGE_QUOTA_EXCEEDED', message: RUNS_REFUSED_MESSAGE });
+}
+
+/** Refuses a request that brings files (409 `STORAGE_QUOTA_FILES_REFUSED`) while the quota is reached. */
+export async function refuseFilesAtQuota(db: DrizzleDB): Promise<void> {
+  if ((await storageQuotaState(db))?.filesRefused) throw filesRefusedError();
+}
+
+/** Refuses a request that creates a run (409 `STORAGE_QUOTA_EXCEEDED`) past the ceiling. */
+export async function refuseRunsPastCeiling(db: DrizzleDB): Promise<void> {
+  if ((await storageQuotaState(db))?.runsRefused) throw runsRefusedError();
+}
+
+/**
+ * Refuses an import, which creates a run with its files: past the ceiling as a run (`STORAGE_QUOTA_EXCEEDED`), at
+ * the quota for its files (`STORAGE_QUOTA_FILES_REFUSED`).
+ */
+export async function refuseImportAtQuota(db: DrizzleDB): Promise<void> {
+  const state = await storageQuotaState(db);
+  if (state?.runsRefused) throw runsRefusedError();
+  if (state?.filesRefused) throw filesRefusedError();
 }

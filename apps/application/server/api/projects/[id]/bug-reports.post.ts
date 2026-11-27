@@ -5,6 +5,7 @@ import { getDatabase } from '../../../database';
 import { apiError } from '../../../utils/api-error';
 import { isJpeg, isPng, storeBugReport } from '../../../utils/bug-report-store';
 import { streamMultipart } from '../../../utils/multipart-stream';
+import { refuseFilesAtQuota } from '../../../utils/storage-quota';
 import { getRequestAccess } from '../../../utils/auth';
 import { bugReportIntake, fileBugReportIssue, shouldFileOnSend } from '../../../utils/integrations/bug-reports';
 import { BUG_REPORT_LIMITS } from '#shared/handlers/bug-reports';
@@ -15,7 +16,7 @@ defineRouteMeta({
     tags: ['Bug reports'],
     summary: 'Send a bug report',
     description:
-      'What Piwi Picker’s **Send to Piwi…** sends: `multipart/form-data` with a `report` part (the bug report as JSON: `{ v: 1, steps, evidence, context }`, 1 MB at most), an optional `language` part (the language it was written in, such as `fr`), up to three PNG `screenshot` parts named as the report’s `evidence.screenshots` name them (`1-marked.png`, 5 MB each), and up to 100 JPEG `stepShot` parts, the screenshot of each step, named as `evidence.stepShots` names them (`002.jpg`, 1 MB each, 32 MB together). A `createIssue` part (`true`) asks for an issue in the project’s tracker, which takes `issue:create` on the project (Contributor and above) unless the project files every report (then one is created anyway). A JSON body `{ report, language?, createIssue? }` is accepted too, without screenshots. Answers `{ id, url, issue }`, `issue` being the create-issue outcome (`{ status, key?, url?, error? }`) or null.',
+      'What Piwi Picker’s **Send to Piwi…** sends: `multipart/form-data` with a `report` part (the bug report as JSON: `{ v: 1, steps, evidence, context }`, 1 MB at most), an optional `language` part (the language it was written in, such as `fr`), up to three PNG `screenshot` parts named as the report’s `evidence.screenshots` name them (`1-marked.png`, 5 MB each), and up to 100 JPEG `stepShot` parts, the screenshot of each step, named as `evidence.stepShots` names them (`002.jpg`, 1 MB each, 32 MB together). A `createIssue` part (`true`) asks for an issue in the project’s tracker, which takes `issue:create` on the project (Contributor and above) unless the project files every report (then one is created anyway). A JSON body `{ report, language?, createIssue? }` is accepted too, without screenshots. Answers `{ id, url, issue }`, `issue` being the create-issue outcome (`{ status, key?, url?, error? }`) or null. Once the stored bytes reach `PIWI_STORAGE_QUOTA_BYTES`, a report with screenshots answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`; one without is stored.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -61,6 +62,10 @@ async function readIncoming(event: Parameters<typeof getRequestHeader>[0]): Prom
     maxTotalBytes: screenshotsBytes + BUG_REPORT_LIMITS.stepShotsBytes,
     maxFieldBytes: BUG_REPORT_LIMITS.jsonBytes,
     maxFiles: BUG_REPORT_LIMITS.screenshots + BUG_REPORT_LIMITS.stepShots,
+    // A report with screenshots is refused once the storage quota is reached, before any of them is written.
+    beforeFiles: async (_fields, withFiles) => {
+      if (withFiles) await refuseFilesAtQuota(await getDatabase());
+    },
   });
   try {
     const screenshots = new Map<string, Buffer>();

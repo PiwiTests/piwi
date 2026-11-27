@@ -1,8 +1,10 @@
 /**
  * The server's whole "import one archive" path, shared by the multipart upload
- * endpoint and the desktop app's local-path import: project resolution (with
- * scope checks and auto-create), idempotency by content hash, blob-report vs
- * trace dispatch, and the storage-backed `ImportPort`.
+ * endpoint, the desktop app's local-path import and the MCP import tool:
+ * project resolution (with scope checks and auto-create), idempotency by
+ * content hash, the storage quota (an archive already imported answers its run,
+ * any other is refused once the quota refuses files or new runs), blob-report
+ * vs trace dispatch, and the storage-backed `ImportPort`.
  */
 import { createHash } from 'node:crypto';
 import { apiError } from './api-error';
@@ -21,6 +23,7 @@ import { openArchive, ArchiveError } from './archive-reader';
 import { parseErrorContext, consoleLogsFromTrace } from './import-evidence';
 import { parseTraceEvents } from './trace-parser';
 import { runEventBus } from './run-events';
+import { refuseImportAtQuota } from './storage-quota';
 import {
   findImportedRun,
   importBlobReportRun,
@@ -68,6 +71,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
 
   const duplicate = await findImportedRun(db, project.id, importHash);
   if (duplicate) return duplicate;
+  await refuseImportAtQuota(db);
 
   // Both kinds of archive are ZIPs; only their contents tell them apart.
   let opened;

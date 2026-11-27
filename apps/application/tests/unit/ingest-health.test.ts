@@ -135,6 +135,21 @@ describe('the reporter fallback and the server counts', () => {
     expect(carryIngestHealth({ a: 1 }, null)).toEqual({ a: 1 });
   });
 
+  test('metadata a reporter sends keeps the files it did not send too', () => {
+    const sent = { ingestHealth: { tracesNotKept: 3, attachmentsNotKept: 0, reportsNotKept: 1, evidenceFromTrace: 4 } };
+    expect(sanitizeMetadata(sent)).toEqual({ ingestHealth: { tracesNotKept: 3, reportsNotKept: 1 } });
+  });
+
+  test('a metadata write takes the larger count of files not kept, so the same metadata sent again adds nothing', () => {
+    const stored = { ingestHealth: { stepsDropped: 4, tracesNotKept: 2, reportsNotKept: 1 } };
+    const sent = sanitizeMetadata({ ingestHealth: { tracesNotKept: 5, attachmentsNotKept: 1 } });
+    const once = carryIngestHealth(sent, stored);
+    expect(once).toEqual({
+      ingestHealth: { stepsDropped: 4, tracesNotKept: 5, attachmentsNotKept: 1, reportsNotKept: 1 },
+    });
+    expect(carryIngestHealth(sanitizeMetadata(once), once)).toEqual(once);
+  });
+
   test('a recorded fallback reads back alongside the counts', async () => {
     await recordIngestHealth(db as never, 1, { submitFallback: { path: 'recovery' } });
     await recordIngestHealth(db as never, 1, { stepsDropped: 2 });
@@ -160,6 +175,18 @@ describe('describeIngestHealth', () => {
       'Delivered by the batch upload instead of the live stream: finishing the live stream failed',
     ]);
     expect(describeIngestHealth(null)).toEqual([]);
+  });
+
+  test('says in one sentence which files the storage quota did not keep', () => {
+    expect(describeIngestHealth({ tracesNotKept: 3, attachmentsNotKept: 12 })).toEqual([
+      '3 traces and 12 attachments were not kept: the storage quota was reached',
+    ]);
+    expect(describeIngestHealth({ reportsNotKept: 1 })).toEqual([
+      '1 report was not kept: the storage quota was reached',
+    ]);
+    expect(describeIngestHealth({ tracesNotKept: 1, attachmentsNotKept: 1, reportsNotKept: 2 })).toEqual([
+      '1 trace, 1 attachment and 2 reports were not kept: the storage quota was reached',
+    ]);
   });
 
   test('names the run a later run with the same run label ended while it streamed', () => {

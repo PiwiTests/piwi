@@ -13,6 +13,7 @@ import { storableRunErrors } from './storable-values';
 import { sanitizeMetadata } from './sanitize';
 import { countFlakyBatchCases } from './sharded-runs';
 import { streamTokenDigest } from './shard-tokens';
+import { refuseRunsPastCeiling } from './storage-quota';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { durationStats } from '#shared/utils/stats';
@@ -33,7 +34,8 @@ import { resolveRunEnvironment } from '#shared/handlers/environments';
  * `reporterId` is the person whose credentials delivered it (`runReporterId`). `awaitingFiles` holds the run `finalizing` until its files are in: the status the delivery sent waits in its
  * metadata (`withPendingStatus`), and the run keeps the digest of the stream token its files go with
  * (`/case-files`). An upload with `runId` settles it (`settleFinalizingRun`), or the stale-run sweep does.
- * `resultsBytes` is the size of the delivery's results, which the run counts toward the storage quota.
+ * `resultsBytes` is the size of the delivery's results, which the run counts toward the storage quota. Past the
+ * quota's ceiling the run is refused before anything is written (`refuseRunsPastCeiling`).
  *
  * Returns the run as inserted.
  */
@@ -52,6 +54,7 @@ export async function createBatchRun(
   const isSharded = !!(shardTotal && shardTotal > 1);
   const testCases = Array.isArray(body.testCases) ? body.testCases : [];
 
+  await refuseRunsPastCeiling(db);
   await cancelInstanceRuns(db, projectId, instanceId, undefined, isSharded);
 
   const sanitized = sanitizeMetadata(body.metadata || null);
