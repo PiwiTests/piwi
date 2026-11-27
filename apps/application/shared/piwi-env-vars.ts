@@ -446,6 +446,15 @@ export const PIWI_ENV_VARS = {
     default: 'local',
     notes: 'Only the exact value `s3` selects S3; any other value falls back to local storage.',
   },
+  PIWI_STORAGE_QUOTA_BYTES: {
+    description:
+      'The stored bytes the administrators are warned against: at 80% and then 95% of it, Piwi emails every administrator and shows them a banner, and Settings → Storage shows the usage against it. It counts what Settings → Storage totals, the stored files and the traces. Unset, there is no quota and no warning.',
+    category: 'storage',
+    type: 'number',
+    min: 1024 * 1024,
+    since: '0.79.0',
+    notes: 'Warnings only: nothing is refused once the quota is reached.',
+  },
   PIWI_STORAGE_PATH: {
     description: 'Directory for local file storage (when PIWI_STORAGE_TYPE is "local").',
     category: 'storage',

@@ -1380,6 +1380,20 @@
       "when": 1795801362130,
       "tag": "0196_rare_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "6",
+      "when": 1795803303030,
+      "tag": "0197_flimsy_arclight",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "6",
+      "when": 1795803307048,
+      "tag": "0198_storage_total_triggers",
+      "breakpoints": true
     }
   ]
 }

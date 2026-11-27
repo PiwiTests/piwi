@@ -1648,6 +1648,8 @@ export interface StorageAnalysis extends StorageAnalysisData {
   databaseLocation: string;
   /** Where files live: a resolved local storage path, or a label for S3. */
   storageLocation: string;
+  /** The storage quota (`PIWI_STORAGE_QUOTA_BYTES`) `totalBytes` is shown against; null without one. */
+  quotaBytes: number | null;
 }
 
 // ============================================================================

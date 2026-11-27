@@ -3,6 +3,7 @@ import type { ReportBundle } from '#shared/reports/types';
 import { renderReportEmail } from '#shared/reports/render-email';
 import { emailButton, emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
 import { BRAND_MARK_CID, piwiMarkPng } from '#shared/brand';
+import { formatBytes } from '#shared/utils/format-bytes';
 import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import {
   renderDigestEmailAt,
@@ -187,6 +188,28 @@ export function renderOperatorInviteNoticeEmail(invited: string): { html: string
   const { html } = emailLayout('An administrator was invited', body);
   const text = `An administrator was invited\n\nThe operator of this instance invited ${invited} to become an administrator. The invitation link went to that address only, and expires in 72 hours.\n\nIf nobody on your team expected it, delete the account in Settings → Users before the link is used.\n\n${url}`;
   return { html, text };
+}
+
+/** Tells an administrator the stored bytes crossed a level of the storage quota, and where to see what takes the room. */
+export function renderStorageWarningEmail(
+  usedBytes: number,
+  quotaBytes: number,
+  level: number,
+): { html: string; text: string } {
+  const url = `${siteUrl()}/settings/storage`;
+  const percent = Math.floor((usedBytes / quotaBytes) * 100);
+  const title = `Storage is at ${level}% of its quota`;
+  const usage = `This instance stores ${formatBytes(usedBytes)} of its ${formatBytes(quotaBytes)} quota (${percent}%).`;
+  const next =
+    'Settings → Storage shows what takes the room. Deleting old runs, or a shorter data retention, frees it; whoever runs the instance can raise the quota.';
+  const body = `
+    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">${escapeHtml(title)}</h2>
+    <p style="margin:0 0 16px;color:#52525b;">${escapeHtml(usage)}</p>
+    <p style="margin:0 0 24px;color:#52525b;">${escapeHtml(next)}</p>
+    ${emailButton(url, 'Open Storage')}
+    <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
+  const { html } = emailLayout(title, body);
+  return { html, text: `${title}\n\n${usage}\n\n${next}\n\n${url}` };
 }
 
 export function renderVerifyEmail(token: string): { html: string; text: string } {

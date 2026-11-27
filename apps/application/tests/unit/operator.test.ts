@@ -138,7 +138,7 @@ describe('getOperatorUsage', () => {
       projects: 1,
       users: 1,
       runs: { total: 7, last24Hours: 5, last30Days: 6, lastStartedAt: ago(1) },
-      storage: { files: 2, bytes: 1000 },
+      storage: { files: 2, bytes: 1000, quotaBytes: null },
       reporterVersions: [
         { version: '0.76.0', runs: 2, lastRunAt: ago(1) },
         { version: '0.74.0', runs: 1, lastRunAt: ago(24 * 10) },

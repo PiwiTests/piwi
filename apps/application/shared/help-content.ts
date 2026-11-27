@@ -1203,8 +1203,9 @@ export const HELP_TOPICS = {
   // ── Settings ──────────────────────────────────────────────────────────
   'settings.storage-stats': {
     title: 'Storage analysis',
-    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up.',
+    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up. With a storage quota set, the total shows the share of it used.',
     doc: 'operate/storage#storage-management',
+    envVars: ['PIWI_STORAGE_QUOTA_BYTES'],
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
