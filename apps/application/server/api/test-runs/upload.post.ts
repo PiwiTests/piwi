@@ -19,7 +19,7 @@ import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { refuseRunsPastCeiling, storageQuotaState } from '../../utils/storage-quota';
-import { addIngestHealth, reportedNotKept, type IngestHealth } from '#shared/ingest-health';
+import { reportedNotKept, type IngestHealth } from '#shared/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
@@ -285,7 +285,9 @@ async function handleUpload(
   }
 
   if (!project) {
-    project = await resolveIngestProject(db, scope, projectName, testRunData.projectDescription);
+    project = await resolveIngestProject(db, scope, projectName, testRunData.projectDescription, {
+      beforeCreate: () => refuseRunsPastCeiling(db),
+    });
   }
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
@@ -480,12 +482,14 @@ async function handleUpload(
       }
     }
 
-    // Written once a held run settled, which rewrites its metadata. A run this upload attaches to takes the files its
-    // reporter says it did not send (a new run took them with its metadata) beside the ones skipped here.
+    // Written once a held run settled, which rewrites its metadata. The files skipped here add up; those its reporter
+    // says it did not send, on any upload to a run (a new run took them with its metadata), count as the larger of the
+    // stored and the sent counts, so an upload sent again adds nothing.
     await recordIngestHealth(
       db,
       testRun.id,
-      attachingToExistingRun ? (addIngestHealth(reportedNotKept(testRunData.metadata), notKept) ?? {}) : notKept,
+      notKept,
+      attachingToExistingRun ? reportedNotKept(testRunData.metadata) : {},
     );
 
     // Create the run's directory for attachments

@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /**
- * The storage quota's running total on PostgreSQL: the statement triggers add each statement's rows at once, spread
- * over the sessions' slots, and the total always agrees with what Settings → Storage counts plus the runs' results,
- * also when sessions write at the same time and when a statement deletes many rows. Runs against
- * `PIWI_POSTGRES_TEST_URL`, in a database of its own.
+ * The storage quota's running total on PostgreSQL: the statement triggers add each statement's rows at once, and a
+ * run's update of its results row by row, spread over the sessions' slots, and the total always agrees with what
+ * Settings → Storage counts plus the runs' results, also when sessions write at the same time and when a statement
+ * deletes many rows. Runs against `PIWI_POSTGRES_TEST_URL`, in a database of its own.
  */
 
 const postgresUrl = process.env.PIWI_POSTGRES_TEST_URL;
@@ -63,6 +63,30 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
     expect(await used()).toBe(0);
   });
 
+  test('has a trigger for each write of every table it counts, after the latest migration', async () => {
+    const triggers = await client<{ name: string; table: string; level: string; columns: string[] }[]>`
+      SELECT t.tgname AS name, t.tgrelid::regclass::text AS table,
+        CASE WHEN t.tgtype & 1 = 1 THEN 'row' ELSE 'statement' END AS level,
+        array(SELECT a.attname FROM unnest(t.tgattr) AS k JOIN pg_attribute a ON a.attrelid = t.tgrelid AND a.attnum = k)::text[] AS columns
+      FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname LIKE 'storage_totals_%' ORDER BY t.tgname`;
+    const statementTriggers = (table: string) =>
+      ['delete', 'insert', 'update'].map((write) => ({
+        name: `storage_totals_${table}_${write}`,
+        table,
+        level: 'statement',
+        columns: [],
+      }));
+    expect(triggers).toEqual([
+      ...statementTriggers('files'),
+      { name: 'storage_totals_test_runs_delete', table: 'test_runs', level: 'statement', columns: [] },
+      { name: 'storage_totals_test_runs_insert', table: 'test_runs', level: 'statement', columns: [] },
+      // Only an update of a run's results runs it, row by row.
+      { name: 'storage_totals_test_runs_update', table: 'test_runs', level: 'row', columns: ['results_bytes'] },
+      ...statementTriggers('trace_blobs'),
+      ...statementTriggers('trace_resources'),
+    ]);
+  });
+
   test('follows inserts, updates and deletes of the three tables, many rows to a statement', async () => {
     const [blob] = await db
       .insert(schema.traceBlobs)
@@ -114,6 +138,9 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
       .where(eq(schema.testRuns.id, runs[0]!.id));
     await db.update(schema.testRuns).set({ passedTests: 2 });
     expect(await used()).toBe(before + 1905);
+    await db.update(schema.testRuns).set({ resultsBytes: sql`${schema.testRuns.resultsBytes} + 1` });
+    await db.update(schema.testRuns).set({ resultsBytes: sql`${schema.testRuns.resultsBytes}` });
+    expect(await used()).toBe(before + 1925);
     expect(await used()).toBe(await counted());
 
     await db.delete(schema.testRuns);
@@ -156,7 +183,11 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
   });
 
   test('keeps its triggers through a second run of their migrations, and makes missing slots again', async () => {
-    for (const name of ['0200_storage_total_triggers.sql', '0202_storage_total_results.sql']) {
+    for (const name of [
+      '0200_storage_total_triggers.sql',
+      '0202_storage_total_results.sql',
+      '0203_storage_total_results_rows.sql',
+    ]) {
       const migration = readFileSync(
         fileURLToPath(new URL(`../../server/database/migrations-pg/${name}`, import.meta.url)),
         'utf8',

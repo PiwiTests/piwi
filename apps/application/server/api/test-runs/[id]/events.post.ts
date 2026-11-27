@@ -156,12 +156,16 @@ export default eventHandler(async (event) => {
   // touched here — incrementing per inserted row would count retry attempts as
   // extra tests. The per-status counters still accumulate for live progress;
   // the reporter's distinct final counts replace them at /finish. The batch's
-  // size counts toward the storage quota.
+  // size counts toward the storage quota in the share of its results stored:
+  // none for a batch sent again.
+  const storedBytes = Math.round(
+    (declaredBodyBytes(getRequestHeader(event, 'content-length')) * insertedRunCases.length) / completeEvents.length,
+  );
   const updatedRuns = await db
     .update(testRuns)
     .set({
       updatedAt: new Date(),
-      resultsBytes: sql`${testRuns.resultsBytes} + ${declaredBodyBytes(getRequestHeader(event, 'content-length'))}`,
+      resultsBytes: sql`${testRuns.resultsBytes} + ${storedBytes}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,

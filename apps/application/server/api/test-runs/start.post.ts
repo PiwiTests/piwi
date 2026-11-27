@@ -83,6 +83,7 @@ export default eventHandler(async (event) => {
         await getProjectScope(db, user as any, 'run:submit'),
         body.projectName,
         body.projectDescription,
+        { beforeCreate: () => refuseRunsPastCeiling(db) },
       );
 
   // A requested run belongs to no instance: it cancels no other run, and no other run cancels it.

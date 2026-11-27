@@ -73,8 +73,8 @@ export default eventHandler(async (event) => {
   if (!read) throw apiError({ statusCode: 400, message: 'Not a bug report saved by Piwi Picker' });
 
   const db = await getDatabase();
-  const project = await resolveIngestProject(db, await getProjectScope(db, user), projectName);
   if (read.screenshots.size > 0 || read.stepShots.size > 0) await refuseFilesAtQuota(db);
+  const project = await resolveIngestProject(db, await getProjectScope(db, user), projectName);
   const { id } = await storeBugReport(db, {
     projectId: project.id,
     report: read.report,

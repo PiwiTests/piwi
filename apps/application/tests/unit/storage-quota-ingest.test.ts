@@ -10,6 +10,8 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
+import { buildBlobReport } from '../utils/blob-report-fixture';
 import { multipartEvent, type MultipartPart } from './multipart-event';
 import { migrateToLatest } from './temp-db';
 
@@ -65,6 +67,7 @@ const caseFiles = (await import('../../server/api/test-runs/[id]/case-files.post
 const begin = (await import('../../server/api/test-runs/[id]/begin.post')).default as unknown as Route;
 const heartbeat = (await import('../../server/api/test-runs/[id]/heartbeat.post')).default as unknown as Route;
 const finish = (await import('../../server/api/test-runs/[id]/finish.post')).default as unknown as Route;
+const importRoute = (await import('../../server/api/test-runs/import.post')).default as unknown as Route;
 const { streamTokenDigest } = await import('../../server/utils/shard-tokens');
 const { storageQuotaState, storageUsedBytes } = await import('../../server/utils/storage-quota');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
@@ -74,6 +77,8 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
 
 const PROJECT = 'storage-quota-ingest';
+/** A project no request reported into yet. */
+const NEW_PROJECT = 'storage-quota-ingest-new';
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
@@ -174,7 +179,24 @@ describe('the results each request brings count toward the storage quota', () =>
     expect(await resultsBytesOf(run!.id)).toBe(0);
     const complete = batch('complete');
     await events(complete);
-    expect(await resultsBytesOf(run!.id)).toBe(Number(complete.headers!['content-length']));
+    const once = Number(complete.headers!['content-length']);
+    expect(await resultsBytesOf(run!.id)).toBe(once);
+
+    // Sent again, the batch stores nothing and adds nothing; one of whose two results is stored already adds half.
+    await events(complete);
+    expect(await resultsBytesOf(run!.id)).toBe(once);
+    const half = json(
+      {
+        streamToken: 'the-stream-token',
+        testCases: [
+          { ...testCase('pays'), type: 'complete' },
+          { ...testCase('ships'), type: 'complete' },
+        ],
+      },
+      { params: { id: String(run!.id) } },
+    );
+    await events(half);
+    expect(await resultsBytesOf(run!.id)).toBe(once + Math.round(Number(half.headers!['content-length']) / 2));
   });
 });
 
@@ -227,6 +249,19 @@ const uploadWholeRun = (overrides: Record<string, unknown> = {}) => {
   );
 };
 
+/** A blob report of one passed test, as a CI job saves it. */
+const blobReport = (title: string) =>
+  buildBlobReport({ tests: [{ testId: title, title, attempts: [{ status: 'passed' }] }] });
+
+/** An import of `archive` into `projectName`, or a request with no archive part when `archive` is null. */
+const importInto = (projectName: string, archive: Buffer | null) =>
+  importRoute(
+    multipartEvent([
+      field('projectName', projectName),
+      ...(archive ? [{ name: 'archive', filename: 'report.zip', data: archive }] : []),
+    ]),
+  );
+
 describe('the storage quota at ingest', () => {
   beforeEach(() => {
     vi.stubEnv('PIWI_STORAGE_QUOTA_BYTES', String(QUOTA));
@@ -270,6 +305,28 @@ describe('the storage quota at ingest', () => {
       attachmentsNotKept: 1,
       reportsNotKept: 1,
     });
+  });
+
+  test('at the quota and past its ceiling, an archive imported already answers its run, any other is refused', async () => {
+    const imported = await importInto(PROJECT, blobReport('pays'));
+    expect(imported).toMatchObject({ status: 'imported' });
+
+    await goOver();
+    expect(await importInto(PROJECT, blobReport('pays'))).toMatchObject({ runId: imported.runId, status: 'duplicate' });
+    await expect(importInto(PROJECT, blobReport('ships'))).rejects.toMatchObject({
+      statusCode: 409,
+      data: { errorCode: 'STORAGE_QUOTA_FILES_REFUSED' },
+    });
+    await expect(importInto(PROJECT, null)).rejects.toMatchObject({ statusCode: 400 });
+
+    await storeBytes(QUOTA * 1.2);
+    expect(await importInto(PROJECT, blobReport('pays'))).toMatchObject({ runId: imported.runId, status: 'duplicate' });
+    await expect(importInto(PROJECT, blobReport('ships'))).rejects.toMatchObject({
+      statusCode: 409,
+      data: { errorCode: 'STORAGE_QUOTA_EXCEEDED' },
+    });
+    await expect(importInto(PROJECT, null)).rejects.toMatchObject({ statusCode: 400 });
+    expect(await runsOf()).toHaveLength(1);
   });
 
   test('at the quota, the report of a held run is not kept, and the run settles all the same', async () => {
@@ -321,6 +378,21 @@ describe('the storage quota at ingest', () => {
     await expect(submit(json(runResults({ instanceId: 'ci-8', shardTotal: 2, shardIndex: 1 })))).rejects.toMatchObject(
       refused,
     );
+    // A run for a project that does not exist yet is a new run: refused before its project is created.
+    const projectsBefore = await db.select().from(schema.projects);
+    const elsewhere = { projectName: NEW_PROJECT, instanceId: 'ci-1' };
+    await expect(setup(json(elsewhere))).rejects.toMatchObject(refused);
+    await expect(start(json(elsewhere))).rejects.toMatchObject(refused);
+    await expect(submit(json(runResults(elsewhere)))).rejects.toMatchObject(refused);
+    await expect(
+      results(json(runResults({ ...elsewhere, deliveryKey: 'delivery-key-of-the-run-0008' }))),
+    ).rejects.toMatchObject(refused);
+    await expect(uploadWholeRun(elsewhere)).rejects.toMatchObject(refused);
+    await expect(submit(json(runResults({ ...elsewhere, shardTotal: 2, shardIndex: 1 })))).rejects.toMatchObject(
+      refused,
+    );
+    await expect(importInto(NEW_PROJECT, blobReport('pays'))).rejects.toMatchObject(refused);
+    expect(await db.select().from(schema.projects)).toEqual(projectsBefore);
     // Nothing was created, and the instance's run in progress was not cancelled.
     expect(await runsOf()).toEqual(before);
     expect(state.written.size).toBe(0);
@@ -347,57 +419,142 @@ describe('the storage quota at ingest', () => {
   });
 });
 
+/** The ingest health the reporter sends: what it did not send, beside its submit fallback. */
+const notKept = (traces: number, attachments = 0, reports = 0) => ({
+  ingestHealth: {
+    tracesNotKept: traces,
+    attachmentsNotKept: attachments,
+    reportsNotKept: reports,
+    submitFallback: { path: 'submit' },
+  },
+});
+const metadataOf = async (runId: number) =>
+  (await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId)))[0]!.metadata as Record<string, any>;
+const healthOf = async (runId: number) => (await metadataOf(runId))?.ingestHealth;
+/** What the run header says of the run's ingest. */
+const notesOf = async (runId: number) => describeIngestHealth(readIngestHealth(await metadataOf(runId)));
+
 describe('the files a reporter did not send once the quota refused them', () => {
-  /** The ingest health the reporter sends: what it did not send, beside its submit fallback. */
-  const notKept = (traces: number, attachments = 0) => ({
-    ingestHealth: { tracesNotKept: traces, attachmentsNotKept: attachments, submitFallback: { path: 'submit' } },
+  beforeEach(() => {
+    vi.stubEnv('PIWI_STORAGE_QUOTA_BYTES', String(QUOTA));
   });
-  const healthOf = async (runId: number) =>
-    ((await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId)))[0]!.metadata as Record<string, any>)
-      ?.ingestHealth;
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /** An upload to a run its reporter holds: a report, or none, and the files it says it did not send. */
+  const uploadTo = (runId: number, metadata: Record<string, unknown>, report = false) =>
+    upload(
+      multipartEvent([
+        field('runId', String(runId)),
+        field('projectName', PROJECT),
+        field('testRun', { status: 'already-submitted', startTime: '2026-11-02T10:00:00Z', metadata }),
+        ...(report ? [{ name: 'report_custom', filename: 'report.txt', data: Buffer.from('the report') }] : []),
+      ]),
+    );
 
   test('join the run a submit, results ahead of their files or an upload creates', async () => {
     const submitted = await submit(json(runResults({ metadata: notKept(2) })));
-    expect(await healthOf(submitted.runId)).toEqual({ tracesNotKept: 2, submitFallback: { path: 'submit' } });
+    expect(await healthOf(submitted.runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 2 },
+      submitFallback: { path: 'submit' },
+    });
 
     const held = await results(
       json(runResults({ instanceId: 'ci-4', deliveryKey: 'delivery-key-of-the-run-0005', metadata: notKept(1) })),
     );
-    expect(await healthOf(held.runId)).toEqual({ tracesNotKept: 1, submitFallback: { path: 'submit' } });
+    expect(await healthOf(held.runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 1 },
+      submitFallback: { path: 'submit' },
+    });
 
     const { projectName, testCases, ...run } = runResults({ instanceId: 'ci-6', metadata: notKept(0, 4) });
     const uploaded = await upload(
       multipartEvent([field('projectName', projectName), field('testRun', run), field('testCases', testCases)]),
     );
-    expect(await healthOf(uploaded.runId)).toEqual({ attachmentsNotKept: 4, submitFallback: { path: 'submit' } });
+    expect(await healthOf(uploaded.runId)).toEqual({
+      reporterNotKept: { attachmentsNotKept: 4 },
+      submitFallback: { path: 'submit' },
+    });
   });
 
-  test('join a run uploaded in parts with the upload that settles it, and the files that upload skipped', async () => {
-    const settle = (runId: number, report: boolean) =>
-      upload(
-        multipartEvent([
-          field('runId', String(runId)),
-          field('projectName', PROJECT),
-          field('testRun', { status: 'already-submitted', startTime: '2026-11-02T10:00:00Z', metadata: notKept(3, 2) }),
-          ...(report ? [{ name: 'report_custom', filename: 'report.txt', data: Buffer.from('the report') }] : []),
-        ]),
-      );
-    const unreported = await results(json(runResults({ deliveryKey: 'delivery-key-of-the-run-0006' })));
-    await settle(unreported.runId, false);
-    expect(await healthOf(unreported.runId)).toEqual({ tracesNotKept: 3, attachmentsNotKept: 2 });
-
-    vi.stubEnv('PIWI_STORAGE_QUOTA_BYTES', String(QUOTA));
-    const reported = await results(
-      json(runResults({ instanceId: 'ci-7', deliveryKey: 'delivery-key-of-the-run-0007' })),
-    );
+  test('join a run uploaded in parts from an upload after the one that settled it, once', async () => {
+    const { runId } = await results(json(runResults({ deliveryKey: 'delivery-key-of-the-run-0006' })));
+    // A report settles the run; the reporter then leaves out the files the quota refuses, and says so after.
+    await uploadTo(runId, {}, true);
+    expect((await runsOf())[0]!.status).toBe('passed');
     await goOver();
-    await settle(reported.runId, true);
-    vi.unstubAllEnvs();
-    expect(await healthOf(reported.runId)).toEqual({ tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 });
-    expect((await runsOf()).map((run) => run.status)).toEqual(['passed', 'passed']);
+    await uploadTo(runId, notKept(3, 2, 1));
+    expect(await healthOf(runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 },
+    });
+    // The same upload again changes nothing.
+    await uploadTo(runId, notKept(3, 2, 1));
+    expect(await healthOf(runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 },
+    });
+    expect(await notesOf(runId)).toEqual([
+      '3 traces, 2 attachments and 1 report were not kept: the storage quota was reached',
+    ]);
   });
 
-  test('join a streamed run at its finish, once, and each shard’s add up', async () => {
+  test('add the files an upload skipped to those its reporter did not send, in the run header', async () => {
+    const { runId } = await results(json(runResults({ deliveryKey: 'delivery-key-of-the-run-0007' })));
+    await goOver();
+    // The first report settles the run and is not kept; the reporter leaves out the next one and says so after.
+    await uploadTo(runId, {}, true);
+    await uploadTo(runId, notKept(3, 2, 1));
+    await uploadTo(runId, notKept(3, 2, 1));
+    expect(await healthOf(runId)).toEqual({
+      reportsNotKept: 1,
+      reporterNotKept: { tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 },
+    });
+    expect(await notesOf(runId)).toEqual([
+      '3 traces, 2 attachments and 2 reports were not kept: the storage quota was reached',
+    ]);
+  });
+
+  test('join a streamed run as the larger of its finish’s counts and those of each upload after it', async () => {
+    const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
+    const [streamed] = await db
+      .insert(schema.testRuns)
+      .values({
+        projectId: project!.id,
+        status: 'running',
+        startTime: new Date(),
+        streamToken: streamTokenDigest('the-stream-token'),
+      })
+      .returning();
+    await finish(
+      json(
+        { streamToken: 'the-stream-token', status: 'passed', hasPendingUploads: true, metadata: notKept(2, 1) },
+        { params: { id: String(streamed!.id) } },
+      ),
+    );
+    expect(await healthOf(streamed!.id)).toEqual({
+      reporterNotKept: { tracesNotKept: 2, attachmentsNotKept: 1 },
+      submitFallback: { path: 'submit' },
+    });
+
+    // The reporter counts the whole run: its settling upload says what its finish said, and the report it left out.
+    await uploadTo(streamed!.id, notKept(2, 1, 1));
+    await uploadTo(streamed!.id, notKept(2, 1, 1));
+    expect(await healthOf(streamed!.id)).toEqual({
+      reporterNotKept: { tracesNotKept: 2, attachmentsNotKept: 1, reportsNotKept: 1 },
+      submitFallback: { path: 'submit' },
+    });
+    expect((await runsOf())[0]!.status).toBe('passed');
+    // A later upload with higher counts raises them; one with lower counts leaves them.
+    await uploadTo(streamed!.id, notKept(2, 1, 3));
+    await uploadTo(streamed!.id, notKept(1));
+    expect((await healthOf(streamed!.id)).reporterNotKept).toEqual({
+      tracesNotKept: 2,
+      attachmentsNotKept: 1,
+      reportsNotKept: 3,
+    });
+  });
+
+  test('join a streamed run at its finish, once, and each shard’s add up, a shard sent again once', async () => {
     const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
     const [streamed] = await db
       .insert(schema.testRuns)
@@ -416,22 +573,41 @@ describe('the files a reporter did not send once the quota refused them', () => 
     // Sent again, it changes nothing: the run ended.
     await expect(finish(finishBody)).rejects.toMatchObject({ statusCode: 409, data: { errorCode: 'CONFLICT' } });
     expect(await healthOf(streamed!.id)).toEqual({
-      tracesNotKept: 2,
-      attachmentsNotKept: 1,
+      reporterNotKept: { tracesNotKept: 2, attachmentsNotKept: 1 },
       submitFallback: { path: 'submit' },
     });
 
-    for (const shardIndex of [1, 2]) {
+    for (const shardIndex of [1, 1, 2]) {
       await submit(
         json(runResults({ instanceId: 'ci-3', shardTotal: 2, shardIndex, metadata: notKept(shardIndex * 3) })),
       );
     }
     const sharded = (await runsOf()).find((run) => run.instanceId === 'ci-3')!;
-    expect(await healthOf(sharded.id)).toEqual({ tracesNotKept: 9, submitFallback: { path: 'submit' } });
+    expect(await healthOf(sharded.id)).toEqual({
+      reporterNotKept: { tracesNotKept: 9 },
+      submitFallback: { path: 'submit' },
+    });
   });
 });
 
 describe('without a quota', () => {
+  test('takes none of the counts of files a reporter says it did not send', async () => {
+    const { runId } = await submit(json(runResults({ metadata: notKept(2, 1, 1) })));
+    expect(await healthOf(runId)).toEqual({ submitFallback: { path: 'submit' } });
+
+    const held = await results(
+      json(runResults({ instanceId: 'ci-4', deliveryKey: 'delivery-key-of-the-run-0009', metadata: notKept(1) })),
+    );
+    await upload(
+      multipartEvent([
+        field('runId', String(held.runId)),
+        field('projectName', PROJECT),
+        field('testRun', { status: 'already-submitted', startTime: null, metadata: notKept(3, 2) }),
+      ]),
+    );
+    expect(await healthOf(held.runId)).toEqual({ submitFallback: { path: 'submit' } });
+  });
+
   test('reads nothing and refuses nothing', async () => {
     const untouchable = new Proxy(
       {},

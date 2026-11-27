@@ -5,6 +5,7 @@ import {
   RUNS_REFUSED_MESSAGE,
   nextStorageOver,
   nextStorageWarning,
+  parseStorageQuotaBytes,
   readStorageOver,
   readStorageWarningLevel,
   storageQuotaStateOf,
@@ -30,7 +31,7 @@ import { deleteAppSetting, getAppSetting, setAppSetting } from './app-settings';
 /** The `app_settings` key of the level the administrators were last told of. */
 const TOLD_KEY = 'storage_quota_warning';
 
-/** The `app_settings` key of when the instance went over its quota, and the bytes it stored then (`StorageOver`). */
+/** The `app_settings` key of when the instance went over its quota, its bytes then and that quota (`StorageOver`). */
 const OVER_KEY = 'storage_quota_over';
 
 let warnedUnusable = false;
@@ -39,8 +40,8 @@ let warnedUnusable = false;
 export function storageQuotaBytes(): number | null {
   const raw = process.env.PIWI_STORAGE_QUOTA_BYTES?.trim();
   if (!raw) return null;
-  const value = Number(raw);
-  if (Number.isSafeInteger(value) && value >= 1024 * 1024) return value;
+  const value = parseStorageQuotaBytes(raw);
+  if (value !== null) return value;
   if (!warnedUnusable) {
     warnedUnusable = true;
     console.warn('[storage] PIWI_STORAGE_QUOTA_BYTES is not a whole number of bytes, 1 MiB at least: no quota is set.');
@@ -93,13 +94,17 @@ export async function reconcileStorageTotal(db: DrizzleDB): Promise<number> {
  * Compares the total with the quota and its ceiling, keeping `storage_quota_over` current (`storageQuotaState`), and,
  * when the usage crosses a level the administrators were not told of, tells each by `tell`, which answers whether the
  * message went out. The level counts as told once one did: until then, without SMTP or with every message refused,
- * each later watch tries again. Answers what it found, or null without a quota.
+ * each later watch tries again. Answers what it found, or null without a quota, which clears `storage_quota_over`.
  */
 export async function watchStorageQuota(
   db: DrizzleDB,
   tell: (to: string, state: StorageQuotaState, level: Exclude<StorageWarningLevel, 0>) => Promise<boolean>,
   quotaBytes: number | null = storageQuotaBytes(),
 ): Promise<{ usedBytes: number; told: StorageWarningLevel; announced: boolean; state: StorageQuotaState } | null> {
+  if (!quotaBytes) {
+    if ((await getAppSetting(db, OVER_KEY)) !== null) await deleteAppSetting(db, OVER_KEY);
+    return null;
+  }
   const state = await storageQuotaState(db, quotaBytes);
   if (!state) return null;
   const { usedBytes } = state;
@@ -119,9 +124,9 @@ export async function watchStorageQuota(
 }
 
 /**
- * The quota against the stored bytes, and what it refuses, keeping `storage_quota_over` current: set by the first
- * check that finds the bytes at the quota, cleared by the first that finds them below. Null without a quota, which
- * reads nothing.
+ * The quota against the stored bytes, and what it refuses, keeping `storage_quota_over` current (`nextStorageOver`):
+ * written by the first check that finds the bytes at the quota, or over a quota that changed, and removed by the first
+ * that finds them below, so a check that changes nothing writes nothing. Null without a quota, which reads nothing.
  */
 export async function storageQuotaState(
   db: DrizzleDB,
@@ -130,10 +135,11 @@ export async function storageQuotaState(
 ): Promise<StorageQuotaState | null> {
   if (!quotaBytes) return null;
   const usedBytes = await storageUsedBytes(db);
-  const stored = readStorageOver(await getAppSetting(db, OVER_KEY));
+  const setting = await getAppSetting(db, OVER_KEY);
+  const stored = readStorageOver(setting);
   const over = nextStorageOver(stored, usedBytes, quotaBytes, now);
   if (over && over !== stored) await setAppSetting(db, OVER_KEY, over);
-  else if (!over && stored) await deleteAppSetting(db, OVER_KEY);
+  else if (!over && setting !== null) await deleteAppSetting(db, OVER_KEY);
   return storageQuotaStateOf(quotaBytes, usedBytes, over);
 }
 
