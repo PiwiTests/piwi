@@ -19,7 +19,7 @@ import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { refuseRunsPastCeiling, storageQuotaState } from '../../utils/storage-quota';
-import { addIngestHealth, reportedNotKept, type IngestHealth } from '#shared/ingest-health';
+import { reportedNotKept, type IngestHealth } from '#shared/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
@@ -285,7 +285,9 @@ async function handleUpload(
   }
 
   if (!project) {
-    project = await resolveIngestProject(db, scope, projectName, testRunData.projectDescription);
+    project = await resolveIngestProject(db, scope, projectName, testRunData.projectDescription, {
+      beforeCreate: () => refuseRunsPastCeiling(db),
+    });
   }
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
@@ -453,6 +455,7 @@ async function handleUpload(
     // When attaching reports to an existing streaming run, either settle a
     // finalizing run to the status its reporter sent to /finish, or re-notify if
     // it already finished.
+    let settledHere = false;
     if (attachingToExistingRun) {
       const settledStatus =
         existingRunStatus === 'finalizing'
@@ -462,6 +465,7 @@ async function handleUpload(
               metadata: existingRunMetadata,
             })
           : null;
+      settledHere = settledStatus !== null;
 
       if (!settledStatus) {
         // Run already had a final status — just re-notify for dashboard refresh.
@@ -480,13 +484,10 @@ async function handleUpload(
       }
     }
 
-    // Written once a held run settled, which rewrites its metadata. A run this upload attaches to takes the files its
-    // reporter says it did not send (a new run took them with its metadata) beside the ones skipped here.
-    await recordIngestHealth(
-      db,
-      testRun.id,
-      attachingToExistingRun ? (addIngestHealth(reportedNotKept(testRunData.metadata), notKept) ?? {}) : notKept,
-    );
+    // Written once a held run settled, which rewrites its metadata. The upload that settles a run this upload attaches
+    // to brings the files its reporter says it did not send (a new run took them with its metadata), beside the ones
+    // skipped here; a later upload to the settled run brings only the ones it skipped.
+    await recordIngestHealth(db, testRun.id, notKept, settledHere ? reportedNotKept(testRunData.metadata) : {});
 
     // Create the run's directory for attachments
     const testRunPath = `project-${project.id}/run-${testRun.id}`;

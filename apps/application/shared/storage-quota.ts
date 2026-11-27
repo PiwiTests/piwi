@@ -4,9 +4,20 @@
  * Once the stored bytes reach the quota, every file is refused and results are still stored. The bytes stored when the
  * instance first went over are kept (`StorageOver`); past them plus `CEILING_SHARE` of the quota, the ceiling, new
  * runs are refused too. Both stop once the usage falls below the quota, and the ceiling is set again the next time it
- * goes over. Administrators are told once per level crossed, and again only after the usage went back below the level
- * by `REARM_MARGIN`.
+ * goes over, or once the quota changes. Administrators are told once per level crossed, and again only after the usage
+ * went back below the level by `REARM_MARGIN`.
  */
+
+/** The smallest quota `PIWI_STORAGE_QUOTA_BYTES` sets: 1 MiB. */
+const MIN_STORAGE_QUOTA_BYTES = 1024 * 1024;
+
+/** The quota a `PIWI_STORAGE_QUOTA_BYTES` value sets: a whole number of bytes, 1 MiB at least; null for any other. */
+export function parseStorageQuotaBytes(raw: string | undefined): number | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) && value >= MIN_STORAGE_QUOTA_BYTES ? value : null;
+}
 
 /** The share of the quota the results may still take, once the instance is over it, before new runs are refused. */
 export const CEILING_SHARE = 0.1;
@@ -17,11 +28,12 @@ export const FILES_REFUSED_MESSAGE = 'The storage quota is reached: files are no
 /** What a request that creates a run is told past the ceiling (`STORAGE_QUOTA_EXCEEDED`). */
 export const RUNS_REFUSED_MESSAGE = 'The storage is past its quota: new runs are refused until space is freed.';
 
-/** When the instance went over its quota, and the bytes it stored then: the `storage_quota_over` setting. */
+/** When the instance went over its quota, the bytes it stored then and that quota: the `storage_quota_over` setting. */
 export interface StorageOver {
   /** ISO time. */
   since: string;
   usedBytes: number;
+  quotaBytes: number;
 }
 
 /** The quota against the stored bytes, and what it refuses. */
@@ -39,13 +51,18 @@ export interface StorageQuotaState {
 /** A stored `storage_quota_over` setting, or null when it holds none or something else. */
 export function readStorageOver(value: unknown): StorageOver | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const { since, usedBytes } = value as Record<string, unknown>;
+  const { since, usedBytes, quotaBytes } = value as Record<string, unknown>;
   if (typeof since !== 'string' || Number.isNaN(Date.parse(since))) return null;
   if (typeof usedBytes !== 'number' || !Number.isSafeInteger(usedBytes) || usedBytes < 0) return null;
-  return { since, usedBytes };
+  if (typeof quotaBytes !== 'number' || !Number.isSafeInteger(quotaBytes) || quotaBytes <= 0) return null;
+  return { since, usedBytes, quotaBytes };
 }
 
-/** The setting once `usedBytes` is read: the one stored while over the quota, a new one on going over, none below. */
+/**
+ * The setting once `usedBytes` is read: the one stored while over the same quota, a new one on going over or over a
+ * quota that changed, none below. A new one holds the bytes stored now, at the quota or past it, so its ceiling is
+ * always above the quota.
+ */
 export function nextStorageOver(
   stored: StorageOver | null,
   usedBytes: number,
@@ -53,7 +70,8 @@ export function nextStorageOver(
   now: Date,
 ): StorageOver | null {
   if (usedBytes < quotaBytes) return null;
-  return stored ?? { since: now.toISOString(), usedBytes };
+  if (stored && stored.quotaBytes === quotaBytes) return stored;
+  return { since: now.toISOString(), usedBytes, quotaBytes };
 }
 
 /** The bytes past which new runs are refused: those stored on going over, plus `CEILING_SHARE` of the quota. */
@@ -121,7 +139,8 @@ export function storageWarningLevel(
 
 /**
  * The level administrators were last told of, after `usedBytes` is read: raised to the level reached, kept while the
- * usage stays within `REARM_MARGIN` of it, and lowered once it falls further. `announce` says whether to tell them now.
+ * usage stays within `REARM_MARGIN` of it, and lowered once it falls further, one level at a time: to the highest level
+ * up to the one told that the usage is still within `REARM_MARGIN` of. `announce` says whether to tell them now.
  */
 export function nextStorageWarning(
   told: StorageWarningLevel,
@@ -131,11 +150,13 @@ export function nextStorageWarning(
 ): { told: StorageWarningLevel; announce: boolean } {
   const reached = storageWarningLevel(usedBytes, quotaBytes, ceilingBytes);
   if (rank(reached) > rank(told)) return { told: reached, announce: true };
-  if (reached === told) return { told, announce: false };
   const margin = (quotaBytes * REARM_MARGIN) / 100;
-  if (usedBytes >= levelBytes(told, quotaBytes, ceilingBytes) - margin) return { told, announce: false };
-  // Fallen well below what they were told: keep the level still reached, so the next crossing of the higher one warns.
-  return { told: reached, announce: false };
+  let kept: StorageWarningLevel = 0;
+  for (const level of STORAGE_WARNING_LEVELS) {
+    if (rank(level) > rank(told)) break;
+    if (usedBytes >= levelBytes(level, quotaBytes, ceilingBytes) - margin) kept = level;
+  }
+  return { told: kept, announce: false };
 }
 
 /** The heading of a warning: an email's subject, the banner's first words. */

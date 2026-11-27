@@ -1,5 +1,5 @@
 import type { DrizzleDB } from '#shared/handlers/db';
-import { INGEST_HEALTH_COUNTS, withIngestHealth, type IngestHealth } from '#shared/ingest-health';
+import { INGEST_HEALTH_COUNTS, withIngestHealth, withReportedNotKept, type IngestHealth } from '#shared/ingest-health';
 import { updateRunMetadata } from './run-metadata';
 
 /** True when the delta holds nothing to record. */
@@ -10,10 +10,18 @@ function isEmpty(delta: IngestHealth): boolean {
 /**
  * Add what ingest dropped or rebuilt to the run's `metadata.ingestHealth`, so
  * concurrent batches of one run add up instead of overwriting each other.
+ * `reported`, the files the run's reporter says it did not send, counts the
+ * whole run so far: each of its counts replaces a smaller stored one
+ * (`withReportedNotKept`) before `delta` is added.
  */
-export async function recordIngestHealth(db: DrizzleDB, runId: number, delta: IngestHealth): Promise<void> {
-  if (isEmpty(delta)) return;
-  await updateRunMetadata(db, runId, (metadata) => withIngestHealth(metadata, delta));
+export async function recordIngestHealth(
+  db: DrizzleDB,
+  runId: number,
+  delta: IngestHealth,
+  reported: IngestHealth = {},
+): Promise<void> {
+  if (isEmpty(delta) && isEmpty(reported)) return;
+  await updateRunMetadata(db, runId, (metadata) => withIngestHealth(withReportedNotKept(metadata, reported), delta));
 }
 
 /** What the caps left out of one execution. */

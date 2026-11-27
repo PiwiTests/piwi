@@ -10,12 +10,16 @@ import { scopeAllows, type ProjectScope } from './project-access';
  * first use. Only a caller whose scope covers every project may create one.
  * When two requests create the same project at once, the insert that loses the
  * race on the unique name does nothing and both get the row the winner wrote.
+ * `beforeCreate` runs before a project is created, and refuses the request by
+ * throwing: a request whose run is always a new one in a new project (past the
+ * storage quota's ceiling) leaves no project behind.
  */
 export async function resolveIngestProject(
   db: DbClient,
   scope: ProjectScope,
   name: string,
   description?: string | null,
+  { beforeCreate }: { beforeCreate?: () => Promise<void> } = {},
 ): Promise<Project> {
   const findByName = async () => (await db.select().from(projects).where(eq(projects.name, name)))[0];
 
@@ -30,6 +34,7 @@ export async function resolveIngestProject(
   if (scope !== 'all') {
     throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
   }
+  await beforeCreate?.();
   const [created] = await db
     .insert(projects)
     .values({ name, description: description || null })

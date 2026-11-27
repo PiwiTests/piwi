@@ -5,6 +5,7 @@ import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { checkSubmitBody } from '../../utils/batch-payload';
 import { declaredBodyBytes } from '../../utils/body-limit';
+import { refuseRunsPastCeiling } from '../../utils/storage-quota';
 import { runEventBus } from '../../utils/run-events';
 import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
 import { createBatchRun, renewHeldRunToken } from '../../utils/batch-run';
@@ -81,7 +82,9 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription, {
+    beforeCreate: () => refuseRunsPastCeiling(db),
+  });
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored.

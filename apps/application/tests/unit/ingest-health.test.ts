@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
@@ -7,6 +7,7 @@ import {
   addIngestHealth,
   carryIngestHealth,
   describeIngestHealth,
+  MAX_INGEST_COUNT,
   readIngestHealth,
   reporterIngestHealth,
 } from '../../shared/ingest-health';
@@ -19,6 +20,12 @@ const { sanitizeMetadata, capSteps, countDroppedSteps } = await import('../../se
 const { DEFAULT_INGEST_LIMITS } = await import('../../shared/ingest-limits');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
+
+/** A storage quota for the rest of the test: a reporter's counts of the files it did not send are read only then. */
+function withStorageQuota() {
+  vi.stubEnv('PIWI_STORAGE_QUOTA_BYTES', String(1024 * 1024));
+  onTestFinished(() => void vi.unstubAllEnvs());
+}
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -135,12 +142,41 @@ describe('the reporter fallback and the server counts', () => {
     expect(carryIngestHealth({ a: 1 }, null)).toEqual({ a: 1 });
   });
 
-  test('metadata a reporter sends keeps the files it did not send too', () => {
-    const sent = { ingestHealth: { tracesNotKept: 3, attachmentsNotKept: 0, reportsNotKept: 1, evidenceFromTrace: 4 } };
-    expect(sanitizeMetadata(sent)).toEqual({ ingestHealth: { tracesNotKept: 3, reportsNotKept: 1 } });
+  test('metadata a reporter sends keeps the files it did not send too, while the instance sets a storage quota', () => {
+    const sent = {
+      ingestHealth: {
+        tracesNotKept: 3,
+        attachmentsNotKept: 0,
+        reportsNotKept: 1,
+        evidenceFromTrace: 4,
+        submitFallback: { path: 'submit' },
+      },
+    };
+    expect(sanitizeMetadata(sent)).toEqual({ ingestHealth: { submitFallback: { path: 'submit' } } });
+    withStorageQuota();
+    expect(sanitizeMetadata(sent)).toEqual({
+      ingestHealth: { tracesNotKept: 3, reportsNotKept: 1, submitFallback: { path: 'submit' } },
+    });
+  });
+
+  test('holds every count to a bound, as sent and as added up', () => {
+    expect(readIngestHealth({ ingestHealth: { stepsDropped: 1e300, tracesSkipped: Number.MAX_SAFE_INTEGER } })).toEqual(
+      {
+        stepsDropped: MAX_INGEST_COUNT,
+        tracesSkipped: MAX_INGEST_COUNT,
+      },
+    );
+    expect(addIngestHealth({ consoleEntriesDropped: MAX_INGEST_COUNT }, { consoleEntriesDropped: 5 })).toEqual({
+      consoleEntriesDropped: MAX_INGEST_COUNT,
+    });
+    withStorageQuota();
+    expect(sanitizeMetadata({ ingestHealth: { attachmentsNotKept: 1e21 } })).toEqual({
+      ingestHealth: { attachmentsNotKept: MAX_INGEST_COUNT },
+    });
   });
 
   test('a metadata write takes the larger count of files not kept, so the same metadata sent again adds nothing', () => {
+    withStorageQuota();
     const stored = { ingestHealth: { stepsDropped: 4, tracesNotKept: 2, reportsNotKept: 1 } };
     const sent = sanitizeMetadata({ ingestHealth: { tracesNotKept: 5, attachmentsNotKept: 1 } });
     const once = carryIngestHealth(sent, stored);

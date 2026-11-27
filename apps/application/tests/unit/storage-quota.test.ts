@@ -50,7 +50,23 @@ describe('the warning levels', () => {
     expect([read(1070, 1110), told]).toEqual([false, 'ceiling']);
     expect([read(1040, 1110), told]).toEqual([false, 100]);
     expect([read(960, null), told]).toEqual([false, 100]);
-    expect([read(940, null), told, read(1000, 1100)]).toEqual([false, 80, true]);
+    expect([read(940, null), told, read(1000, 1100)]).toEqual([false, 95, true]);
+  });
+
+  test('re-arm one level at a time, so a dip just below the quota past its ceiling warns of nothing again', () => {
+    let told: ReturnType<typeof storageWarningLevel> = 'ceiling';
+    const read = (used: number, ceiling: number | null) => {
+      const next = nextStorageWarning(told, used, 1000, ceiling);
+      told = next.told;
+      return next.announce;
+    };
+    // Below the quota there is no ceiling: 99% is within 5 points of the quota, whose level holds.
+    expect([read(990, null), told, read(1000, 1100)]).toEqual([false, 100, false]);
+    // 94% is 6 points below the quota and 1 below 95%: the quota warns again, 95% does not.
+    expect([read(940, null), told, read(960, null), read(1000, 1100)]).toEqual([false, 95, false, true]);
+    expect([read(1000, 1100), read(1100, 1100), told]).toEqual([false, true, 'ceiling']);
+    // From the ceiling straight to 70%: every level re-arms.
+    expect([read(700, null), told]).toEqual([false, 0]);
   });
 
   test('warn once per level crossed, and again only after the usage fell 5 points below it', () => {
@@ -108,7 +124,7 @@ describe('what the quota refuses', () => {
       runsRefused: false,
     });
     const over = nextStorageOver(null, 1030, 1000, at)!;
-    expect(over).toEqual({ since: at.toISOString(), usedBytes: 1030 });
+    expect(over).toEqual({ since: at.toISOString(), usedBytes: 1030, quotaBytes: 1000 });
     expect(storageQuotaStateOf(1000, 1030, over)).toMatchObject({
       over: { since: at.toISOString(), ceilingBytes: 1130 },
       filesRefused: true,
@@ -122,15 +138,31 @@ describe('what the quota refuses', () => {
     const first = nextStorageOver(null, 1000, 1000, at);
     expect(nextStorageOver(first, 1100, 1000, new Date())).toBe(first);
     expect(nextStorageOver(first, 999, 1000, new Date())).toBeNull();
-    expect(nextStorageOver(null, 1050, 1000, at)).toEqual({ since: at.toISOString(), usedBytes: 1050 });
+    expect(nextStorageOver(null, 1050, 1000, at)).toEqual({
+      since: at.toISOString(),
+      usedBytes: 1050,
+      quotaBytes: 1000,
+    });
+    // Over another quota: a new record from the bytes stored now.
+    expect(nextStorageOver(first, 1100, 1050, at)).toEqual({
+      since: at.toISOString(),
+      usedBytes: 1100,
+      quotaBytes: 1050,
+    });
   });
 
   test('reads only a well-formed going-over record', () => {
-    expect(readStorageOver({ since: at.toISOString(), usedBytes: 5 })).toEqual({
-      since: at.toISOString(),
-      usedBytes: 5,
-    });
-    for (const value of [null, 'x', [], { since: 'never', usedBytes: 5 }, { since: at.toISOString(), usedBytes: -1 }]) {
+    const since = at.toISOString();
+    expect(readStorageOver({ since, usedBytes: 5, quotaBytes: 4 })).toEqual({ since, usedBytes: 5, quotaBytes: 4 });
+    for (const value of [
+      null,
+      'x',
+      [],
+      { since: 'never', usedBytes: 5, quotaBytes: 4 },
+      { since, usedBytes: -1, quotaBytes: 4 },
+      { since, usedBytes: 5 },
+      { since, usedBytes: 5, quotaBytes: 0 },
+    ]) {
       expect(readStorageOver(value)).toBeNull();
     }
   });
@@ -239,10 +271,23 @@ describe('the running total', () => {
     expect(await storageUsedBytes(db)).toBe(0);
   });
 
+  const setTotal = (bytes: number) => db.update(schema.storageTotals).set({ bytes });
+  const overSetting = async () =>
+    (await db.select().from(schema.appSettings).where(eq(schema.appSettings.key, 'storage_quota_over')))[0];
+  const over = async () => (await overSetting())?.value;
+
+  test('has a trigger for each write of every table it counts, after the latest migration', async () => {
+    const triggers = await db.all<{ name: string; table: string }>(
+      sql`SELECT name, tbl_name AS "table" FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'storage_totals_%' ORDER BY name`,
+    );
+    expect(triggers).toEqual(
+      ['files', 'test_runs', 'trace_blobs', 'trace_resources'].flatMap((table) =>
+        ['delete', 'insert', 'update'].map((write) => ({ name: `storage_totals_${table}_${write}`, table })),
+      ),
+    );
+  });
+
   test('keeps when it went over its quota, from the first check that finds it there to the first below', async () => {
-    const setTotal = (bytes: number) => db.update(schema.storageTotals).set({ bytes });
-    const over = async () =>
-      (await db.select().from(schema.appSettings).where(eq(schema.appSettings.key, 'storage_quota_over')))[0]?.value;
     const first = new Date('2026-11-27T10:00:00Z');
 
     expect(await storageQuotaState(db, null)).toBeNull();
@@ -262,7 +307,7 @@ describe('the running total', () => {
       over: { since: first.toISOString(), ceilingBytes: 11_500 },
       runsRefused: true,
     });
-    expect(await over()).toEqual({ since: first.toISOString(), usedBytes: 10_500 });
+    expect(await over()).toEqual({ since: first.toISOString(), usedBytes: 10_500, quotaBytes: 10_000 });
 
     await setTotal(9900);
     expect(await storageQuotaState(db, 10_000)).toMatchObject({ over: null, filesRefused: false, runsRefused: false });
@@ -270,6 +315,54 @@ describe('the running total', () => {
     // Over again: the ceiling counts from the bytes stored now.
     await setTotal(11_000);
     expect((await storageQuotaState(db, 10_000))?.over?.ceilingBytes).toBe(12_000);
+  });
+
+  test('starts its record of going over again once the quota changes, its ceiling always above the quota', async () => {
+    const first = new Date('2026-11-27T10:00:00Z');
+    const later = new Date('2026-11-28T10:00:00Z');
+    await setTotal(10_500);
+    expect((await storageQuotaState(db, 10_000, first))?.over?.ceilingBytes).toBe(11_500);
+
+    // Raised while over: the record starts again from the bytes stored now, and new runs are taken.
+    await setTotal(20_000);
+    expect(await storageQuotaState(db, 20_000, later)).toMatchObject({
+      over: { since: later.toISOString(), ceilingBytes: 22_000 },
+      filesRefused: true,
+      runsRefused: false,
+    });
+    expect(await over()).toEqual({ since: later.toISOString(), usedBytes: 20_000, quotaBytes: 20_000 });
+
+    // Raised above the usage: nothing is refused, and the record goes.
+    expect(await storageQuotaState(db, 30_000)).toMatchObject({ over: null, filesRefused: false });
+    expect(await over()).toBeUndefined();
+  });
+
+  test('writes its record of going over only when it changes, never on a read that finds the same', async () => {
+    await setTotal(9000);
+    await storageQuotaState(db, 10_000);
+    expect(await overSetting()).toBeUndefined();
+
+    await setTotal(10_500);
+    await storageQuotaState(db, 10_000);
+    const stale = new Date('2026-01-01T00:00:00Z');
+    await db
+      .update(schema.appSettings)
+      .set({ updatedAt: stale })
+      .where(eq(schema.appSettings.key, 'storage_quota_over'));
+    await setTotal(11_000);
+    for (let read = 0; read < 3; read++) await storageQuotaState(db, 10_000);
+    expect(await overSetting()).toMatchObject({ updatedAt: stale, value: { usedBytes: 10_500, quotaBytes: 10_000 } });
+  });
+
+  test('clears its record of going over from the watch once no quota is set', async () => {
+    await setTotal(10_500);
+    await storageQuotaState(db, 10_000);
+    expect(await over()).toBeDefined();
+    const tell = vi.fn(async () => true);
+    expect(await watchStorageQuota(db, tell, null)).toBeNull();
+    expect(await over()).toBeUndefined();
+    expect(await watchStorageQuota(db, tell, null)).toBeNull();
+    expect(tell).not.toHaveBeenCalled();
   });
 
   test('is recounted from the tables each night', async () => {

@@ -7,6 +7,7 @@
  * optional and absent when nothing happened, so a run ingested whole carries no
  * key.
  */
+import { parseStorageQuotaBytes } from './storage-quota';
 
 /** How the reporter delivered a run when its first choice failed. */
 export const SUBMIT_FALLBACK_PATHS = ['upload', 'submit', 'recovery'] as const;
@@ -61,8 +62,14 @@ export interface IngestHealth {
   submitFallback?: SubmitFallback;
 }
 
+/** The largest count kept: more steps, console entries or files than any run holds. */
+export const MAX_INGEST_COUNT = 1_000_000_000;
+
+/** A count as kept: a whole number above 0, held to `MAX_INGEST_COUNT`. */
 function positiveInt(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? Math.min(value, MAX_INGEST_COUNT)
+    : undefined;
 }
 
 function readSubmitFallback(value: unknown): SubmitFallback | undefined {
@@ -97,19 +104,37 @@ export function readIngestHealth(metadata: unknown): IngestHealth | null {
 export function addIngestHealth(current: IngestHealth | null, delta: IngestHealth): IngestHealth | null {
   const out: IngestHealth = { ...current };
   for (const key of INGEST_HEALTH_COUNTS) {
-    const sum = (current?.[key] ?? 0) + (delta[key] ?? 0);
+    const sum = Math.min((current?.[key] ?? 0) + (delta[key] ?? 0), MAX_INGEST_COUNT);
     if (sum > 0) out[key] = sum;
   }
   if (delta.submitFallback) out.submitFallback = delta.submitFallback;
   return Object.keys(out).length > 0 ? out : null;
 }
 
-/** What the reporter may tell of a run's ingest: its submit fallback and the files it did not send. */
+/** Whether the instance sets a storage quota (`PIWI_STORAGE_QUOTA_BYTES`), the one that refuses a reporter's files. */
+function hasStorageQuota(): boolean {
+  return typeof process !== 'undefined' && parseStorageQuotaBytes(process.env?.PIWI_STORAGE_QUOTA_BYTES) !== null;
+}
+
+/**
+ * What the reporter may tell of a run's ingest: its submit fallback, and the files it did not send while the instance
+ * sets a storage quota.
+ */
 function reportedIngestHealth(health: IngestHealth | null): IngestHealth {
   const reported: IngestHealth = {};
-  for (const key of NOT_KEPT_COUNTS) if (health?.[key]) reported[key] = health[key];
+  if (hasStorageQuota()) for (const key of NOT_KEPT_COUNTS) if (health?.[key]) reported[key] = health[key];
   if (health?.submitFallback) reported.submitFallback = health.submitFallback;
   return reported;
+}
+
+/** `kept` with each count of files not kept the larger of its own and `incoming`'s. */
+function withLargerNotKept(kept: IngestHealth, incoming: IngestHealth | null): IngestHealth {
+  const merged: IngestHealth = { ...kept };
+  for (const key of NOT_KEPT_COUNTS) {
+    const larger = Math.max(kept[key] ?? 0, incoming?.[key] ?? 0);
+    if (larger > 0) merged[key] = larger;
+  }
+  return merged;
 }
 
 /** The files a reporter's run metadata says it did not send once the storage quota refused them. */
@@ -122,6 +147,18 @@ export function reportedNotKept(metadata: unknown): IngestHealth {
 export function withIngestHealth(metadata: Record<string, unknown>, delta: IngestHealth): Record<string, unknown> {
   const health = addIngestHealth(readIngestHealth(metadata), delta);
   return { ...metadata, ...(health ? { ingestHealth: health } : {}) };
+}
+
+/**
+ * `metadata` with the files its reporter says it did not send (`reportedNotKept`): each count the larger of the
+ * stored one and the reporter's, which counts the files it left out of the whole run so far.
+ */
+export function withReportedNotKept(
+  metadata: Record<string, unknown>,
+  reported: IngestHealth,
+): Record<string, unknown> {
+  const health = withLargerNotKept(readIngestHealth(metadata) ?? {}, reported);
+  return Object.keys(health).length > 0 ? { ...metadata, ingestHealth: health } : metadata;
 }
 
 /** `metadata` without the files its reporter says it did not send, which a sharded run adds shard by shard. */
@@ -161,11 +198,7 @@ export function carryIngestHealth(
   const kept = readIngestHealth(stored);
   if (!kept) return next;
   const incoming = next ? readIngestHealth(next) : null;
-  const merged: IngestHealth = { ...kept };
-  for (const key of NOT_KEPT_COUNTS) {
-    const larger = Math.max(kept[key] ?? 0, incoming?.[key] ?? 0);
-    if (larger > 0) merged[key] = larger;
-  }
+  const merged = withLargerNotKept(kept, incoming);
   if (incoming?.submitFallback) merged.submitFallback = incoming.submitFallback;
   return { ...next, ingestHealth: merged };
 }

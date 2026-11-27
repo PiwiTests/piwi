@@ -4,6 +4,7 @@ import { requireAuth } from '../../../utils/auth';
 import { runReporterId } from '../../../utils/run-viewer';
 import { checkSubmitBody } from '../../../utils/batch-payload';
 import { declaredBodyBytes } from '../../../utils/body-limit';
+import { refuseRunsPastCeiling } from '../../../utils/storage-quota';
 import { createBatchRun, renewHeldRunToken } from '../../../utils/batch-run';
 import { deliverOnce, readDeliveryKey } from '../../../utils/run-deliveries';
 import { runEventBus } from '../../../utils/run-events';
@@ -54,7 +55,9 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription, {
+    beforeCreate: () => refuseRunsPastCeiling(db),
+  });
 
   const delivered = await deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
     const streamToken = randomBytes(32).toString('hex');

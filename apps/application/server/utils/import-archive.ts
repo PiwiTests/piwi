@@ -67,7 +67,11 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
 
-  const project = await resolveIngestProject(db, scope, projectName);
+  // An archive for a project that does not exist yet is not imported already: the quota refuses it before the project
+  // is created.
+  const project = await resolveIngestProject(db, scope, projectName, null, {
+    beforeCreate: () => refuseImportAtQuota(db),
+  });
 
   const duplicate = await findImportedRun(db, project.id, importHash);
   if (duplicate) return duplicate;

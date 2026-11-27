@@ -36,12 +36,16 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
 
 ## The storage quota
 
-- **A path that creates a run calls `refuseRunsPastCeiling` before it cancels or writes anything, and one that stores
-  files refuses them at the quota** (`server/utils/storage-quota.ts`: `refuseFilesAtQuota`, `refuseImportAtQuota`,
-  `storageQuotaState`), never a check of its own; a run in progress, a shard joining its run and a repeated delivery go
-  on, and `begin`, `events`, `heartbeat` and `finish` never answer a quota code (`tests/unit/storage-quota-ingest.test.ts`).
-- **Every write of a run's results adds their size to `test_runs.results_bytes`**, which the storage total counts (the
-  `Content-Length` of a JSON body, the `testRun` and `testCases` fields of an upload).
+- **A path that creates a run calls `refuseRunsPastCeiling` before it cancels or writes anything, a new project
+  included (`resolveIngestProject`'s `beforeCreate`), and one that stores files refuses them at the quota**
+  (`server/utils/storage-quota.ts`: `refuseFilesAtQuota`, `refuseImportAtQuota`, `storageQuotaState`), never a check
+  of its own; a run in progress, a shard joining its run, a repeated delivery and a re-import go on, and `begin`,
+  `events`, `heartbeat` and `finish` never answer a quota code (`tests/unit/storage-quota-ingest.test.ts`).
+- **`test_runs.results_bytes`, which the storage total counts, adds only the results a run stored**: the
+  `Content-Length` of a `submit` or `upload/results` body that creates the run or adds a shard, that of an `events`
+  batch times the share of its complete results inserted, and the `testRun` and `testCases` fields of an `upload` that
+  creates the run or adds a shard. Nothing else counts: `setup`, `start`, `begin`, `finish`, a repeated delivery, an
+  upload with `runId`, an import.
 
 ## Timed-out tests fold into `failedTests`
 
