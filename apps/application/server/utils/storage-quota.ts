@@ -1,6 +1,7 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { nextStorageWarning, type StorageWarningLevel } from '#shared/storage-quota';
+import { getDialect } from '../database';
 import { files, storageTotals, traceBlobs, traceResources } from '../database/schema';
 import { administratorEmails } from './administrators';
 import { getAppSetting, setAppSetting } from './app-settings';
@@ -41,38 +42,59 @@ const COUNTED_BYTES = sql`(SELECT coalesce(sum(CASE WHEN ${files.blobId} IS NULL
   + (SELECT coalesce(sum(coalesce(${traceBlobs.storedSize}, ${traceBlobs.size})), 0) FROM ${traceBlobs})
   + (SELECT coalesce(sum(${traceResources.size}), 0) FROM ${traceResources})`;
 
+/** The rows the triggers write to: one on SQLite, 16 on PostgreSQL, where a session writes to `pid % 16`. */
+const SLOTS = getDialect() === 'postgres' ? 16 : 1;
+
 /**
- * Recounts the total from the tables, in one statement: slot 0 takes the count and every other slot 0, so what the
- * triggers missed (a row written while the triggers did not exist, a restore) is put right. Answers the total.
+ * Recounts the total from the tables: slot 0 takes the count and every other slot 0, so what the triggers missed (a
+ * row written while they did not exist, a restore) is put right, and a missing slot is made again. On PostgreSQL the
+ * table is locked first, which waits for the writes in flight to end and holds the next ones until the count is
+ * written, so none of them is lost. Answers the total.
  */
 export async function reconcileStorageTotal(db: DrizzleDB): Promise<number> {
-  await db.insert(storageTotals).values({ slot: 0, bytes: 0 }).onConflictDoNothing();
   await db
-    .update(storageTotals)
-    .set({ bytes: sql`CASE WHEN ${storageTotals.slot} = 0 THEN (${COUNTED_BYTES}) ELSE 0 END` });
+    .insert(storageTotals)
+    .values(Array.from({ length: SLOTS }, (_, slot) => ({ slot, bytes: 0 })))
+    .onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    if (getDialect() === 'postgres') {
+      // The client is typed as SQLite's; on PostgreSQL its transaction runs raw SQL with `execute`.
+      await (tx as unknown as { execute(query: SQL): Promise<unknown> }).execute(
+        sql`LOCK TABLE ${storageTotals} IN EXCLUSIVE MODE`,
+      );
+    }
+    // A statement of its own, after the lock: it counts what the writes it waited for committed.
+    await tx
+      .update(storageTotals)
+      .set({ bytes: sql`CASE WHEN ${storageTotals.slot} = 0 THEN (${COUNTED_BYTES}) ELSE 0 END` });
+  });
   return storageUsedBytes(db);
 }
 
 /**
  * Compares the total with the quota and, when it crosses a level the administrators were not told of, tells each by
- * `tell`; a message that fails is logged, and the level counts as told. Answers what it found, or null without a quota.
+ * `tell`, which answers whether the message went out. The level counts as told once one did: until then, without SMTP
+ * or with every message refused, each later watch tries again. Answers what it found, or null without a quota.
  */
 export async function watchStorageQuota(
   db: DrizzleDB,
-  tell: (to: string, usedBytes: number, quotaBytes: number, level: StorageWarningLevel) => Promise<void>,
+  tell: (to: string, usedBytes: number, quotaBytes: number, level: StorageWarningLevel) => Promise<boolean>,
   quotaBytes: number | null = storageQuotaBytes(),
 ): Promise<{ usedBytes: number; told: StorageWarningLevel; announced: boolean } | null> {
   if (!quotaBytes) return null;
   const usedBytes = await storageUsedBytes(db);
   const before = (await getAppSetting<{ told: StorageWarningLevel }>(db, TOLD_KEY))?.told ?? 0;
-  const { told, announce } = nextStorageWarning(before, usedBytes, quotaBytes);
-  if (told !== before) await setAppSetting(db, TOLD_KEY, { told });
-  if (announce) {
+  const next = nextStorageWarning(before, usedBytes, quotaBytes);
+  let announced = false;
+  if (next.announce) {
     const results = await Promise.allSettled(
-      (await administratorEmails(db)).map((to) => tell(to, usedBytes, quotaBytes, told)),
+      (await administratorEmails(db)).map((to) => tell(to, usedBytes, quotaBytes, next.told)),
     );
+    announced = results.some((result) => result.status === 'fulfilled' && result.value);
     const failed = results.filter((result) => result.status === 'rejected').length;
-    if (failed) console.error(`[storage] ${failed} administrator(s) could not be told the storage is at ${told}%`);
+    if (failed) console.error(`[storage] ${failed} administrator(s) could not be told the storage is at ${next.told}%`);
   }
-  return { usedBytes, told, announced: announce };
+  const told = next.announce && !announced ? before : next.told;
+  if (told !== before) await setAppSetting(db, TOLD_KEY, { told });
+  return { usedBytes, told, announced };
 }

@@ -8,7 +8,7 @@ import type { ApiResponse } from '~~/types/api';
  * (`PUT /api/operator/notice`) and, to administrators, the administrators they invited that nobody took yet (in one
  * alert of three addresses at most) and the storage once it reaches 80% or 95% of its quota. Read in the server
  * render, so it costs the browser no request. Dismissing the notice hides it in this browser until another replaces
- * it, and the storage warning until the usage reaches 95%; a critical notice, an invitation and a 95% warning stay.
+ * it, and the 80% storage warning for a week; a critical notice, an invitation and a 95% warning stay.
  * Their height is `--operator-notice-height` on the page, which the page panel's minimum height leaves out, so no page
  * runs past the bottom of the window.
  */
@@ -37,10 +37,11 @@ const invitations = computed(() => data.value?.invitations ?? []);
 const INVITATIONS_NAMED = 3;
 const namedInvitations = computed(() => invitations.value.slice(0, INVITATIONS_NAMED));
 const moreInvitations = computed(() => Math.max(0, invitations.value.length - INVITATIONS_NAMED));
-/** The level of the storage warning dismissed in this browser: 80 only, since a 95% warning stays. */
+const ONE_WEEK_S = 60 * 60 * 24 * 7;
+/** The 80% storage warning dismissed in this browser, for a week: it comes back while the storage stays that full. */
 const storageDismissed = useCookie<number | null>('piwi-storage-warning-dismissed', {
   default: () => null,
-  maxAge: ONE_YEAR_S,
+  maxAge: ONE_WEEK_S,
   sameSite: 'lax',
 });
 const storage = computed(() => {

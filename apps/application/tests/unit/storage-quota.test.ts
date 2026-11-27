@@ -4,7 +4,9 @@
  * level crossed.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { eq, sql } from 'drizzle-orm';
 import { nextStorageWarning, storageWarningLevel } from '#shared/storage-quota';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
@@ -126,7 +128,7 @@ describe('the running total', () => {
       { username: 'invited', password: '', role: 'administrator', email: 'invited@example.com' },
       { username: 'member', password: 'hash', role: 'member', email: 'member@example.com' },
     ]);
-    const tell = vi.fn(async (_to: string, _used: number, _quota: number, _level: number) => {});
+    const tell = vi.fn(async (_to: string, _used: number, _quota: number, _level: number) => true);
     const quota = 10_000;
 
     expect(await watchStorageQuota(db, tell, null)).toBeNull();
@@ -140,5 +142,31 @@ describe('the running total', () => {
     await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/c.png', size: 1200 });
     expect(await watchStorageQuota(db, tell, quota)).toMatchObject({ told: 95, announced: true });
     expect(tell).toHaveBeenLastCalledWith('owner@example.com', 9700, quota, 95);
+  });
+
+  test('records a level only once a message went out, and tries again until one does', async () => {
+    await db
+      .insert(schema.users)
+      .values({ username: 'owner', password: 'hash', role: 'administrator', email: 'o@x.io' });
+    await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/a.png', size: 9000 });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const unsent = vi.fn(async () => false);
+    expect(await watchStorageQuota(db, unsent, 10_000)).toMatchObject({ told: 0, announced: false });
+    const failing = vi.fn(async () => Promise.reject(new Error('SMTP down')));
+    expect(await watchStorageQuota(db, failing, 10_000)).toMatchObject({ told: 0, announced: false });
+    const sent = vi.fn(async () => true);
+    expect(await watchStorageQuota(db, sent, 10_000)).toMatchObject({ told: 80, announced: true });
+    expect(sent).toHaveBeenCalledOnce();
+  });
+
+  test('keeps its triggers through a second run of their migration', async () => {
+    await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/a.png', size: 1000 });
+    const migration = readFileSync(
+      fileURLToPath(new URL('../../server/database/migrations/0198_storage_total_triggers.sql', import.meta.url)),
+      'utf8',
+    );
+    for (const statement of migration.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
+    await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/b.png', size: 500 });
+    expect(await storageUsedBytes(db)).toBe(1500);
   });
 });

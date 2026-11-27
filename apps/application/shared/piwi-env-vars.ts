@@ -453,7 +453,6 @@ export const PIWI_ENV_VARS = {
     type: 'number',
     min: 1024 * 1024,
     since: '0.79.0',
-    docs: 'operate/storage',
     notes: 'Warnings only: nothing is refused once the quota is reached.',
   },
   PIWI_STORAGE_PATH: {

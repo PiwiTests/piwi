@@ -95,7 +95,7 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 | Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                                 |
 | Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                                      |
 | CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                                                |
-| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
+| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `storage_totals` (the stored bytes, kept by triggers), `test_functions`, `test_selections`, `project_url_patterns`                        |
 | Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
 | Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
 | Integrations         | `integration_connections`, `project_integrations`, `project_test_management`, `test_management_cases`, `test_management_catalog_reads`, `integration_actions`                                                |
@@ -498,13 +498,13 @@ The main files of `server/utils/`, by area.
 
 Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTasks`):
 
-| Schedule        | Tasks                                                                                                                                           |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
-| Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
-| Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
-| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)              |
-| Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
+| Schedule        | Tasks                                                                                                                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync`, `storage:watch` (the storage quota's warnings) |
+| Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                                                                          |
+| Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                                                                            |
+| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)                                                              |
+| Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows), `storage:reconcile` (recounts the stored bytes)                           |
 
 ### Code the server and the demo share
 

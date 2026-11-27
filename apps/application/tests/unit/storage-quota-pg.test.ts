@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -21,7 +22,7 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
   const { default: postgres } = await import('postgres');
   const { drizzle } = await import('drizzle-orm/postgres-js');
   const { migrate } = await import('drizzle-orm/postgres-js/migrator');
-  const { eq } = await import('drizzle-orm');
+  const { eq, ne } = await import('drizzle-orm');
   const schema = await import('../../server/database/schema.pg');
   const { reconcileStorageTotal, storageUsedBytes } = await import('../../server/utils/storage-quota');
   const { getStorageAnalysis } = await import('#shared/handlers/admin-storage');
@@ -99,6 +100,38 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
         }),
       ),
     );
+    expect(await used()).toBe(await counted());
+  });
+
+  test('keeps a write in flight while it is recounted', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let inserted!: () => void;
+    const insertedOnce = new Promise<void>((resolve) => (inserted = resolve));
+    const writer = db.transaction(async (tx) => {
+      await tx.insert(schema.files).values({ type: 'video', path: 'project-1/in-flight.webm', size: 1000 });
+      inserted();
+      await held;
+    });
+    await insertedOnce;
+    const recount = reconcileStorageTotal(db as never);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+    await writer;
+    await recount;
+    expect(await used()).toBe(await counted());
+  });
+
+  test('keeps its triggers through a second run of their migration, and makes missing slots again', async () => {
+    const migration = readFileSync(
+      fileURLToPath(new URL('../../server/database/migrations-pg/0200_storage_total_triggers.sql', import.meta.url)),
+      'utf8',
+    );
+    for (const statement of migration.split('--> statement-breakpoint')) await client.unsafe(statement);
+    await db.delete(schema.storageTotals).where(ne(schema.storageTotals.slot, 0));
+    await reconcileStorageTotal(db as never);
+    expect(await db.select().from(schema.storageTotals)).toHaveLength(16);
+    await db.insert(schema.files).values({ type: 'video', path: 'project-1/after.webm', size: 3 });
     expect(await used()).toBe(await counted());
   });
 
