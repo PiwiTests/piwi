@@ -41,7 +41,10 @@ describe('what the operator sends', () => {
 describe('inviting an administrator', () => {
   let db: TempDb;
   let close: () => Promise<void>;
-  const mail = () => ({ sendInvite: vi.fn(async () => {}), tellAdministrator: vi.fn(async () => {}) });
+  const mail = () => ({
+    sendInvite: vi.fn(async (_to: string, _token: string, _username: string) => {}),
+    tellAdministrator: vi.fn(async (_to: string, _invited: string) => {}),
+  });
 
   beforeEach(async () => {
     ({ db, close } = await openTempDb());
