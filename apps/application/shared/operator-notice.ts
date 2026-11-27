@@ -17,26 +17,16 @@ export const NOTICE_URL_MAX = 2000;
 export type NoticeLevel = (typeof NOTICE_LEVELS)[number];
 export type NoticeAudience = (typeof NOTICE_AUDIENCES)[number];
 
+/** Control (`Cc`), format (`Cf`), lone surrogate (`Cs`), and line and paragraph separator characters, none of them. */
+const PLAIN_LINE = /^[^\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]*$/u;
+
 /**
- * Whether `value` is one line of plain text: well-formed Unicode with no control character (C0, DEL, C1), no line or
- * paragraph separator and no character that reorders or hides text (bidirectional controls, zero-width characters,
- * the byte order mark), so what a banner says is what it shows.
+ * Whether `value` is one line of plain text: well-formed Unicode with no control character, no line or paragraph
+ * separator and no format character, which reorders or hides text (bidirectional marks and controls, zero-width
+ * characters, the byte order mark, tag characters), so what a banner says is what it shows.
  */
 export function isPlainLine(value: string): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
-      index++;
-      continue;
-    }
-    if (code >= 0xdc00 && code <= 0xdfff) return false;
-    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false;
-    if ((code >= 0x200b && code <= 0x200f) || (code >= 0x2028 && code <= 0x202e)) return false;
-    if ((code >= 0x2060 && code <= 0x2069) || code === 0xfeff) return false;
-  }
-  return true;
+  return PLAIN_LINE.test(value);
 }
 
 /** An http or https address with no user name or password in it, which would hide the host it leads to. */
