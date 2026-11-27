@@ -37,8 +37,8 @@ maintenance window, a change to the service, a deadline. It is one line of plain
 new one replaces it.
 
 <figure>
-  <img src="/screenshots/operator-notice.png" alt="A warning banner above the Projects page announcing a maintenance window, with a link to a status page and a button to dismiss it" />
-  <figcaption>A warning notice above the Projects page.</figcaption>
+  <img src="/screenshots/operator-notice.png" alt="A warning banner above the dashboard's Home page announcing a maintenance window, with a link to a status page and a button to dismiss it" />
+  <figcaption>A warning notice above the Home page.</figcaption>
 </figure>
 
 ```bash
