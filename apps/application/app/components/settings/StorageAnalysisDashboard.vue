@@ -24,12 +24,17 @@ const kindColor = Object.fromEntries(STORAGE_KIND_SERIES.map((s) => [s.key, s.co
 const kindLabel = Object.fromEntries(STORAGE_KIND_SERIES.map((s) => [s.key, s.label])) as Record<string, string>;
 
 const totalBytes = computed(() => props.analysis?.totalBytes ?? 0);
-/** With a quota (`PIWI_STORAGE_QUOTA_BYTES`), the share of it the total takes, beside the file count. */
+/**
+ * With a quota (`PIWI_STORAGE_QUOTA_BYTES`), the share of it used (the results of runs counted too), beside the file
+ * count, or what it refuses once reached: files, then new runs past its ceiling.
+ */
 const quotaHint = computed(() => {
-  const quota = props.analysis?.quotaBytes;
+  const quota = props.analysis?.quota;
   if (!quota) return null;
-  const percent = Math.floor((totalBytes.value / quota) * 100);
-  return `${percent}% of the ${formatBytes(quota)} quota · ${props.analysis!.totalFiles.toLocaleString()} files`;
+  const share = `${Math.floor((quota.usedBytes / quota.quotaBytes) * 100)}% of the ${formatBytes(quota.quotaBytes)} quota`;
+  if (quota.runsRefused) return `${share}: new runs are refused`;
+  if (quota.filesRefused) return `${share}: files are not kept`;
+  return `${share} · ${props.analysis!.totalFiles.toLocaleString()} files`;
 });
 const hasData = computed(() => !!props.analysis && props.analysis.totalFiles > 0);
 const showLoading = computed(() => props.pending && !props.analysis);

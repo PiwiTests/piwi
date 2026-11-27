@@ -28,7 +28,7 @@ export async function apiGetStorageAnalysis() {
     storageSizeOnDisk: null,
     databaseLocation: 'In-browser database (demo)',
     storageLocation: 'In-browser storage (demo)',
-    quotaBytes: null,
+    quota: null,
   };
 }
 

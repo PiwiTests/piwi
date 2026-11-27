@@ -79,19 +79,43 @@ export function storageQuotaStateOf(
   };
 }
 
-/** The levels, in percent of the quota, at which administrators are warned. */
-export const STORAGE_WARNING_LEVELS = [80, 95] as const;
+/**
+ * The levels administrators are warned at, lowest first: 80% and 95% of the quota, the quota itself (`100`: files are
+ * refused) and the ceiling (`'ceiling'`: new runs are refused).
+ */
+export const STORAGE_WARNING_LEVELS = [80, 95, 100, 'ceiling'] as const;
 
 export type StorageWarningLevel = 0 | (typeof STORAGE_WARNING_LEVELS)[number];
 
 /** How far below a level the usage must fall, in percent of the quota, before that level warns again. */
 export const REARM_MARGIN = 5;
 
-/** The highest level `usedBytes` reaches against `quotaBytes`, 0 below the first. */
-export function storageWarningLevel(usedBytes: number, quotaBytes: number): StorageWarningLevel {
-  const percent = (usedBytes / quotaBytes) * 100;
+/** A level's place among the levels, 0 for none. */
+function rank(level: StorageWarningLevel): number {
+  return level === 0 ? 0 : STORAGE_WARNING_LEVELS.indexOf(level) + 1;
+}
+
+/** The bytes at which a level is reached; the ceiling is out of reach while the instance is not over its quota. */
+function levelBytes(level: StorageWarningLevel, quotaBytes: number, ceilingBytes: number | null): number {
+  if (level === 'ceiling') return ceilingBytes ?? Infinity;
+  return (quotaBytes * level) / 100;
+}
+
+/** A level the watch stored, or 0 when it holds none or something else. */
+export function readStorageWarningLevel(value: unknown): StorageWarningLevel {
+  return STORAGE_WARNING_LEVELS.includes(value as never) ? (value as StorageWarningLevel) : 0;
+}
+
+/** The highest level `usedBytes` reaches against `quotaBytes` and the ceiling (null while not over), 0 below the first. */
+export function storageWarningLevel(
+  usedBytes: number,
+  quotaBytes: number,
+  ceilingBytes: number | null = null,
+): StorageWarningLevel {
   let level: StorageWarningLevel = 0;
-  for (const threshold of STORAGE_WARNING_LEVELS) if (percent >= threshold) level = threshold;
+  for (const candidate of STORAGE_WARNING_LEVELS) {
+    if (usedBytes >= levelBytes(candidate, quotaBytes, ceilingBytes)) level = candidate;
+  }
   return level;
 }
 
@@ -103,12 +127,27 @@ export function nextStorageWarning(
   told: StorageWarningLevel,
   usedBytes: number,
   quotaBytes: number,
+  ceilingBytes: number | null = null,
 ): { told: StorageWarningLevel; announce: boolean } {
-  const reached = storageWarningLevel(usedBytes, quotaBytes);
-  if (reached > told) return { told: reached, announce: true };
+  const reached = storageWarningLevel(usedBytes, quotaBytes, ceilingBytes);
+  if (rank(reached) > rank(told)) return { told: reached, announce: true };
   if (reached === told) return { told, announce: false };
-  const percent = (usedBytes / quotaBytes) * 100;
-  if (percent >= told - REARM_MARGIN) return { told, announce: false };
+  const margin = (quotaBytes * REARM_MARGIN) / 100;
+  if (usedBytes >= levelBytes(told, quotaBytes, ceilingBytes) - margin) return { told, announce: false };
   // Fallen well below what they were told: keep the level still reached, so the next crossing of the higher one warns.
   return { told: reached, announce: false };
+}
+
+/** The heading of a warning: an email's subject, the banner's first words. */
+export function storageWarningTitle(level: Exclude<StorageWarningLevel, 0>): string {
+  if (level === 'ceiling') return 'Storage is past its quota: new runs are refused';
+  if (level === 100) return 'Storage reached its quota: files are not kept';
+  return `Storage is at ${level}% of its quota`;
+}
+
+/** What the quota refuses at a level, in a sentence; null while it refuses nothing. */
+export function storageRefusalSentence(level: StorageWarningLevel): string | null {
+  if (level === 'ceiling') return RUNS_REFUSED_MESSAGE;
+  if (level === 100) return FILES_REFUSED_MESSAGE;
+  return null;
 }

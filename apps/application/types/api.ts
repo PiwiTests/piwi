@@ -5,6 +5,7 @@ import type { Serialize, Simplify } from 'nitropack/types';
  */
 
 import type { IngestHealth } from '#shared/ingest-health';
+import type { StorageQuotaState } from '#shared/storage-quota';
 import type {
   FilterDetails,
   KeepSource,
@@ -1648,8 +1649,11 @@ export interface StorageAnalysis extends StorageAnalysisData {
   databaseLocation: string;
   /** Where files live: a resolved local storage path, or a label for S3. */
   storageLocation: string;
-  /** The storage quota (`PIWI_STORAGE_QUOTA_BYTES`) `totalBytes` is shown against; null without one. */
-  quotaBytes: number | null;
+  /**
+   * The storage quota (`PIWI_STORAGE_QUOTA_BYTES`) against the bytes it counts (`totalBytes` and the results of runs),
+   * and what it refuses; null without one.
+   */
+  quota: StorageQuotaState | null;
 }
 
 // ============================================================================

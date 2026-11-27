@@ -138,7 +138,7 @@ describe('getOperatorUsage', () => {
       projects: 1,
       users: 1,
       runs: { total: 7, last24Hours: 5, last30Days: 6, lastStartedAt: ago(1) },
-      storage: { files: 2, bytes: 1000, quotaBytes: null },
+      storage: { files: 2, bytes: 1000, quotaBytes: null, over: null, filesRefused: false, runsRefused: false },
       reporterVersions: [
         { version: '0.76.0', runs: 2, lastRunAt: ago(1) },
         { version: '0.74.0', runs: 1, lastRunAt: ago(24 * 10) },
@@ -147,6 +147,35 @@ describe('getOperatorUsage', () => {
     expect(JSON.stringify(usage)).not.toContain('secret-project-name');
     expect(JSON.stringify(usage)).not.toContain('alice');
     expect(JSON.stringify(usage)).not.toContain('someone@example.com');
+  });
+
+  test('says what the storage quota refuses once the instance is over it', async () => {
+    const processCounts = {
+      requestsInProgress: 0,
+      diagnosesInProgress: 0,
+      assistantAnswersInProgress: 0,
+      openEventStreams: 0,
+    };
+    vi.stubEnv('PIWI_STORAGE_QUOTA_BYTES', String(1024 * 1024));
+    try {
+      await db.update(schema.storageTotals).set({ bytes: 1024 * 1024 });
+      const atQuota = await getOperatorUsage(db as never, processCounts, NOW);
+      expect(atQuota.storage).toEqual({
+        files: 0,
+        bytes: 1024 * 1024,
+        quotaBytes: 1024 * 1024,
+        over: { since: expect.any(String), ceilingBytes: 1024 * 1024 + 104_857 },
+        filesRefused: true,
+        runsRefused: false,
+      });
+      await db.update(schema.storageTotals).set({ bytes: 2 * 1024 * 1024 });
+      expect((await getOperatorUsage(db as never, processCounts, NOW)).storage).toMatchObject({
+        filesRefused: true,
+        runsRefused: true,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test('answers zeros and nulls on an empty instance', async () => {

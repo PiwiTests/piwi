@@ -6,7 +6,9 @@ import {
   nextStorageOver,
   nextStorageWarning,
   readStorageOver,
+  readStorageWarningLevel,
   storageQuotaStateOf,
+  storageWarningTitle,
   type StorageQuotaState,
   type StorageWarningLevel,
 } from '#shared/storage-quota';
@@ -20,8 +22,9 @@ import { deleteAppSetting, getAppSetting, setAppSetting } from './app-settings';
  * The stored bytes against `PIWI_STORAGE_QUOTA_BYTES`. The total is the `storage_totals` rows, which the database's
  * triggers keep as files, trace blobs and trace resources are written and deleted (counted as Settings → Storage
  * counts them), and as runs' results arrive and runs are deleted (`test_runs.results_bytes`), and
- * `reconcileStorageTotal` recounts each night. `watchStorageQuota` tells the administrators, by email, each time the
- * usage crosses 80% or 95% of the quota.
+ * `reconcileStorageTotal` recounts each night. `storageQuotaState` says what the quota refuses: files once the total
+ * reaches it, new runs past its ceiling. `watchStorageQuota` tells the administrators, by email, each time the usage
+ * crosses 80% or 95% of the quota, the quota itself and the ceiling.
  */
 
 /** The `app_settings` key of the level the administrators were last told of. */
@@ -87,31 +90,32 @@ export async function reconcileStorageTotal(db: DrizzleDB): Promise<number> {
 }
 
 /**
- * Compares the total with the quota and, when it crosses a level the administrators were not told of, tells each by
- * `tell`, which answers whether the message went out. The level counts as told once one did: until then, without SMTP
- * or with every message refused, each later watch tries again. Answers what it found, or null without a quota.
+ * Compares the total with the quota and its ceiling, keeping `storage_quota_over` current (`storageQuotaState`), and,
+ * when the usage crosses a level the administrators were not told of, tells each by `tell`, which answers whether the
+ * message went out. The level counts as told once one did: until then, without SMTP or with every message refused,
+ * each later watch tries again. Answers what it found, or null without a quota.
  */
 export async function watchStorageQuota(
   db: DrizzleDB,
-  tell: (to: string, usedBytes: number, quotaBytes: number, level: StorageWarningLevel) => Promise<boolean>,
+  tell: (to: string, state: StorageQuotaState, level: Exclude<StorageWarningLevel, 0>) => Promise<boolean>,
   quotaBytes: number | null = storageQuotaBytes(),
-): Promise<{ usedBytes: number; told: StorageWarningLevel; announced: boolean } | null> {
-  if (!quotaBytes) return null;
-  const usedBytes = await storageUsedBytes(db);
-  const before = (await getAppSetting<{ told: StorageWarningLevel }>(db, TOLD_KEY))?.told ?? 0;
-  const next = nextStorageWarning(before, usedBytes, quotaBytes);
+): Promise<{ usedBytes: number; told: StorageWarningLevel; announced: boolean; state: StorageQuotaState } | null> {
+  const state = await storageQuotaState(db, quotaBytes);
+  if (!state) return null;
+  const { usedBytes } = state;
+  const before = readStorageWarningLevel((await getAppSetting<{ told: unknown }>(db, TOLD_KEY))?.told);
+  const next = nextStorageWarning(before, usedBytes, state.quotaBytes, state.over?.ceilingBytes ?? null);
   let announced = false;
-  if (next.announce) {
-    const results = await Promise.allSettled(
-      (await administratorEmails(db)).map((to) => tell(to, usedBytes, quotaBytes, next.told)),
-    );
+  if (next.announce && next.told !== 0) {
+    const level = next.told;
+    const results = await Promise.allSettled((await administratorEmails(db)).map((to) => tell(to, state, level)));
     announced = results.some((result) => result.status === 'fulfilled' && result.value);
     const failed = results.filter((result) => result.status === 'rejected').length;
-    if (failed) console.error(`[storage] ${failed} administrator(s) could not be told the storage is at ${next.told}%`);
+    if (failed) console.error(`[storage] ${failed} administrator(s) could not be told: ${storageWarningTitle(level)}`);
   }
   const told = next.announce && !announced ? before : next.told;
   if (told !== before) await setAppSetting(db, TOLD_KEY, { told });
-  return { usedBytes, told, announced };
+  return { usedBytes, told, announced, state };
 }
 
 /**

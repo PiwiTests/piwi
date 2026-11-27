@@ -22,18 +22,39 @@ delete process.env.PIWI_DATABASE_URL;
 const { reconcileStorageTotal, storageQuotaBytes, storageQuotaState, storageUsedBytes, watchStorageQuota } =
   await import('../../server/utils/storage-quota');
 const { getStorageAnalysis } = await import('#shared/handlers/admin-storage');
+const { renderStorageWarningEmail } = await import('../../server/utils/email');
 
 describe('the warning levels', () => {
-  test('are 80% and 95% of the quota', () => {
+  test('are 80% and 95% of the quota, the quota and, once over it, the ceiling', () => {
     expect(storageWarningLevel(799, 1000)).toBe(0);
     expect(storageWarningLevel(800, 1000)).toBe(80);
     expect(storageWarningLevel(949, 1000)).toBe(80);
     expect(storageWarningLevel(950, 1000)).toBe(95);
-    expect(storageWarningLevel(1500, 1000)).toBe(95);
+    expect(storageWarningLevel(999, 1000)).toBe(95);
+    expect(storageWarningLevel(1000, 1000)).toBe(100);
+    expect(storageWarningLevel(1500, 1000)).toBe(100);
+    expect(storageWarningLevel(1119, 1000, 1120)).toBe(100);
+    expect(storageWarningLevel(1120, 1000, 1120)).toBe('ceiling');
+  });
+
+  test('warn once as files stop being kept and once as new runs are refused, then re-arm as the usage falls', () => {
+    let told: ReturnType<typeof storageWarningLevel> = 95;
+    const read = (used: number, ceiling: number | null) => {
+      const next = nextStorageWarning(told, used, 1000, ceiling);
+      told = next.told;
+      return next.announce;
+    };
+    expect([read(1010, 1110), told, read(1050, 1110)]).toEqual([true, 100, false]);
+    expect([read(1110, 1110), told, read(1200, 1110)]).toEqual([true, 'ceiling', false]);
+    // Within 5 points of the ceiling, nothing new; further down, the quota's level holds until 95%.
+    expect([read(1070, 1110), told]).toEqual([false, 'ceiling']);
+    expect([read(1040, 1110), told]).toEqual([false, 100]);
+    expect([read(960, null), told]).toEqual([false, 100]);
+    expect([read(940, null), told, read(1000, 1100)]).toEqual([false, 80, true]);
   });
 
   test('warn once per level crossed, and again only after the usage fell 5 points below it', () => {
-    let told: 0 | 80 | 95 = 0;
+    let told: ReturnType<typeof storageWarningLevel> = 0;
     const read = (used: number) => {
       const next = nextStorageWarning(told, used, 1000);
       told = next.told;
@@ -46,6 +67,32 @@ describe('the warning levels', () => {
     expect([read(850), told, read(955)]).toEqual([false, 80, true]);
     // Below 75%, every level can come again.
     expect([read(740), told, read(800)]).toEqual([false, 0, true]);
+  });
+});
+
+describe('the warning email', () => {
+  const state = (usedBytes: number, ceilingBytes: number | null) => ({
+    quotaBytes: 1024 ** 3,
+    usedBytes,
+    over: ceilingBytes === null ? null : { since: '2026-11-27T10:00:00.000Z', ceilingBytes },
+    filesRefused: ceilingBytes !== null,
+    runsRefused: ceilingBytes !== null && usedBytes >= ceilingBytes,
+  });
+
+  test('says what the quota refuses from the level it reached on', () => {
+    const atNinetyFive = renderStorageWarningEmail(state(0.96 * 1024 ** 3, null), 95).text;
+    expect(atNinetyFive).toMatch(/^Storage is at 95% of its quota\n/);
+    expect(atNinetyFive).not.toContain('refused');
+
+    const atQuota = renderStorageWarningEmail(state(1024 ** 3, 1.1 * 1024 ** 3), 100).text;
+    expect(atQuota).toMatch(/^Storage reached its quota: files are not kept\n/);
+    expect(atQuota).toContain('no longer keeps their files');
+    expect(atQuota).toContain('Once the stored bytes reach 1.10 GB, new runs are refused too.');
+
+    const pastCeiling = renderStorageWarningEmail(state(1.2 * 1024 ** 3, 1.1 * 1024 ** 3), 'ceiling');
+    expect(pastCeiling.text).toMatch(/^Storage is past its quota: new runs are refused\n/);
+    expect(pastCeiling.text).toContain('New runs are refused until space is freed.');
+    expect(pastCeiling.html).toContain('/settings/storage');
   });
 });
 
@@ -240,7 +287,11 @@ describe('the running total', () => {
       { username: 'invited', password: '', role: 'administrator', email: 'invited@example.com' },
       { username: 'member', password: 'hash', role: 'member', email: 'member@example.com' },
     ]);
-    const tell = vi.fn(async (_to: string, _used: number, _quota: number, _level: number) => true);
+    const told: Array<[string, number, string | number]> = [];
+    const tell = vi.fn(async (to: string, state: { usedBytes: number }, level: string | number) => {
+      told.push([to, state.usedBytes, level]);
+      return true;
+    });
     const quota = 10_000;
 
     expect(await watchStorageQuota(db, tell, null)).toBeNull();
@@ -249,11 +300,46 @@ describe('the running total', () => {
     await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/b.png', size: 1500 });
     expect(await watchStorageQuota(db, tell, quota)).toMatchObject({ told: 80, announced: true });
     expect(await watchStorageQuota(db, tell, quota)).toMatchObject({ told: 80, announced: false });
-    expect(tell.mock.calls).toEqual([['owner@example.com', 8500, quota, 80]]);
+    expect(told).toEqual([['owner@example.com', 8500, 80]]);
 
     await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/c.png', size: 1200 });
     expect(await watchStorageQuota(db, tell, quota)).toMatchObject({ told: 95, announced: true });
-    expect(tell).toHaveBeenLastCalledWith('owner@example.com', 9700, quota, 95);
+    expect(told.at(-1)).toEqual(['owner@example.com', 9700, 95]);
+  });
+
+  test('tells them once files stop being kept and once new runs are refused, keeping when it went over', async () => {
+    await db
+      .insert(schema.users)
+      .values({ username: 'owner', password: 'hash', role: 'administrator', email: 'o@x.io' });
+    const levels: Array<string | number> = [];
+    const tell = vi.fn(async (_to: string, _state: unknown, level: string | number) => {
+      levels.push(level);
+      return true;
+    });
+    const watch = () => watchStorageQuota(db, tell, 10_000);
+
+    await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/a.png', size: 10_200 });
+    expect(await watch()).toMatchObject({
+      told: 100,
+      announced: true,
+      state: { filesRefused: true, runsRefused: false, over: { ceilingBytes: 11_200 } },
+    });
+    expect(await watch()).toMatchObject({ told: 100, announced: false });
+    // Results still come in, up to the ceiling: the bytes when it went over, plus 10% of the quota.
+    await db.insert(schema.testRuns).values({ projectId, status: 'passed', startTime: new Date(), resultsBytes: 1000 });
+    expect(await watch()).toMatchObject({ told: 'ceiling', announced: true, state: { runsRefused: true } });
+    expect(levels).toEqual([100, 'ceiling']);
+
+    // Space freed below the quota: the record of going over goes, and the next crossings warn again.
+    await db.delete(schema.testRuns);
+    await db.delete(schema.files);
+    expect(await watch()).toMatchObject({ told: 0, state: { over: null, filesRefused: false } });
+    expect(await db.select().from(schema.appSettings).where(eq(schema.appSettings.key, 'storage_quota_over'))).toEqual(
+      [],
+    );
+    await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/b.png', size: 10_500 });
+    expect(await watch()).toMatchObject({ told: 100, announced: true, state: { over: { ceilingBytes: 11_500 } } });
+    expect(levels).toEqual([100, 'ceiling', 100]);
   });
 
   test('records a level only once a message went out, and tries again until one does', async () => {

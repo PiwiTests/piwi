@@ -38,7 +38,14 @@ test.describe('Operator usage', () => {
         projects: expect.any(Number),
         users: expect.any(Number),
         runs: { total: expect.any(Number), last24Hours: expect.any(Number), last30Days: expect.any(Number) },
-        storage: { files: expect.any(Number), bytes: expect.any(Number), quotaBytes: null },
+        storage: {
+          files: expect.any(Number),
+          bytes: expect.any(Number),
+          quotaBytes: null,
+          over: null,
+          filesRefused: false,
+          runsRefused: false,
+        },
         reporterVersions: expect.any(Array),
       });
       expect(JSON.stringify(usage)).not.toContain(PROJECT.OPERATOR_USAGE);
