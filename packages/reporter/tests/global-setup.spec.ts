@@ -7,7 +7,12 @@ import { createGlobalSetup } from '../src/public/global-setup.js';
 import { relayRunLog } from '../src/internal/support/run-log.js';
 import type * as RunLog from '../src/internal/support/run-log.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import { getSetupFilePath, peekSetupFailure, readSetupInfo } from '../src/internal/support/setup-file.js';
+import {
+  getSetupFilePath,
+  peekSetupFailure,
+  peekSetupRefusedForQuota,
+  readSetupInfo,
+} from '../src/internal/support/setup-file.js';
 import {
   ariaSampleIdentity,
   clearAriaSampleFile,
@@ -391,6 +396,56 @@ describe('createGlobalSetup', () => {
       expect(readSetupInfo('global-setup-http-fail')).toBeNull();
       expect(peekSetupFailure('global-setup-http-fail')).toBeNull();
     } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('says once that the dashboard took no run for its storage quota, and leaves that for the reporter', async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 409, {
+        statusCode: 409,
+        message: 'The storage is past its quota.',
+        data: { errorCode: 'STORAGE_QUOTA_EXCEEDED' },
+      }),
+    );
+    cleanupNames.push('global-setup-quota');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let userSetupCalled = false;
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-quota' }, async () => {
+        userSetupCalled = true;
+      });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+
+      expect(userSetupCalled).toBe(true);
+      expect(requests.map((r) => r.url)).toEqual(['/api/test-runs/setup']);
+      expect(warn.mock.calls.map(([line]) => line)).toEqual([
+        "[Piwi Dashboard] The dashboard took no run: its storage is past its quota, and past the ceiling at which it takes no new run. The tests and the run's exit code are not affected, and nothing of this run is sent. A shorter retention on the dashboard, or a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs), frees space.",
+      ]);
+      expect(peekSetupRefusedForQuota('global-setup-quota')).toBe(true);
+      expect(peekSetupFailure('global-setup-quota')).toBe(
+        'Request failed with status 409: The storage is past its quota.',
+      );
+    } finally {
+      warn.mockRestore();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('takes a 409 without a code as any other failure to register the run', async () => {
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 409, { message: 'Conflict' }));
+    cleanupNames.push('global-setup-conflict');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await createGlobalSetup({ serverUrl: url, projectName: 'global-setup-conflict' })({
+        reporter: [PIWI_REPORTER_ENTRY],
+      });
+      expect(warn.mock.calls.map(([line]) => line)).toEqual([
+        '[Piwi Dashboard] Could not register global setup: Request failed with status 409: Conflict',
+      ]);
+      expect(peekSetupRefusedForQuota('global-setup-conflict')).toBe(false);
+    } finally {
+      warn.mockRestore();
       await new Promise<void>((r) => server.close(() => r()));
     }
   });
