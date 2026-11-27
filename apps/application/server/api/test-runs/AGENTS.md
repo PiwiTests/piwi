@@ -34,6 +34,15 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   trims it and sets `environment_id` to the environment of the project it resolves to, discovering one for a new
   label: spread its result, never set `environment` on its own (`tests/unit/run-environment-column.test.ts`).
 
+## The storage quota
+
+- **A path that creates a run calls `refuseRunsPastCeiling` before it cancels or writes anything, and one that stores
+  files refuses them at the quota** (`server/utils/storage-quota.ts`: `refuseFilesAtQuota`, `refuseImportAtQuota`,
+  `storageQuotaState`), never a check of its own; a run in progress, a shard joining its run and a repeated delivery go
+  on, and `begin`, `events`, `heartbeat` and `finish` never answer a quota code (`tests/unit/storage-quota-ingest.test.ts`).
+- **Every write of a run's results adds their size to `test_runs.results_bytes`**, which the storage total counts (the
+  `Content-Length` of a JSON body, the `testRun` and `testCases` fields of an upload).
+
 ## Timed-out tests fold into `failedTests`
 
 `test_runs` has no `timedOutTests` column. Playwright's `'timedOut'` (stored as `'timedout'`) counts as failed, so that
