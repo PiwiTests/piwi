@@ -38,7 +38,7 @@ export interface SetupInfo {
 interface SetupFailure {
   projectName: string;
   failed: string;
-  /** The dashboard took no run for its storage quota, which the global setup said already. */
+  /** The dashboard refused the run for its storage quota, which the global setup said already. */
   storageQuota?: true;
 }
 
@@ -49,8 +49,8 @@ export function writeSetupInfo(info: SetupInfo): void {
 
 /**
  * Write in this process's setup file that the global setup could not register the run, and why, for the reporter to
- * say; with `storageQuota`, that the dashboard took no run for its storage quota, which the global setup said. Never
- * throws.
+ * say; with `storageQuota`, that the dashboard refused the run for its storage quota, which the global setup said.
+ * Never throws.
  */
 export function writeSetupFailure(projectName: string, failed: string, storageQuota = false): void {
   const failure: SetupFailure = { projectName, failed, ...(storageQuota && { storageQuota: true as const }) };
@@ -97,7 +97,7 @@ export function peekSetupFailure(projectName: string): string | null {
   return typeof failed === 'string' ? failed : null;
 }
 
-/** Whether the global setup of this process said the dashboard took no run of the given project for its storage quota. */
+/** Whether the global setup of this process said the dashboard refused the project's run for its storage quota. */
 export function peekSetupRefusedForQuota(projectName: string): boolean {
   return peekSetupFile(projectName)?.storageQuota === true;
 }

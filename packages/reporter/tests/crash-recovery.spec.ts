@@ -90,6 +90,35 @@ describe('the crash-recovery file', () => {
     expect(recovery.load()).toBeNull();
   });
 
+  it('keeps the counts of the files the copy left out, beside the mark of its delivery from recovery', async () => {
+    const bodies: any[] = [];
+    server = await startServer((req, res) => {
+      bodies.push(JSON.parse(req.body));
+      jsonRes(res, 200, { runId: 1 });
+    });
+    const recovery = recoveryFor(server.url);
+    const ingestHealth = {
+      tracesNotKept: 1,
+      attachmentsNotKept: 2,
+      reportsNotKept: 1,
+      submitFallback: { path: 'submit', reason: 'finish-failed' },
+    };
+    recovery.save({ projectName, metadata: { branch: 'main', ingestHealth }, testCases: [] });
+
+    await recovery.tryUpload(new HttpClient(server.url, logger));
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].metadata).toEqual({
+      branch: 'main',
+      ingestHealth: {
+        tracesNotKept: 1,
+        attachmentsNotKept: 2,
+        reportsNotKept: 1,
+        submitFallback: { path: 'recovery' },
+      },
+    });
+  });
+
   it("is kept when the answer is not the dashboard's: a sign-in page, or JSON that names no run", async () => {
     let signInPage = true;
     server = await startServer((_req, res) => {
@@ -121,7 +150,7 @@ describe('the crash-recovery file', () => {
       await recovery.tryUpload(new HttpClient(server.url, logger), null, quota);
       expect(warn).toHaveBeenCalledTimes(1);
       expect(info).toHaveBeenLastCalledWith(
-        '[Piwi Dashboard] The saved test data stays on this machine for a later run.',
+        '[Piwi Dashboard] The dashboard refused the saved test data for its storage quota: it stays on this machine for a later run.',
       );
     } finally {
       warn.mockRestore();

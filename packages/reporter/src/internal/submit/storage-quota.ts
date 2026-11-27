@@ -7,13 +7,16 @@ const FILES_REFUSED = 'STORAGE_QUOTA_FILES_REFUSED';
 const RUN_REFUSED = 'STORAGE_QUOTA_EXCEEDED';
 
 const FREES_SPACE =
-  'A shorter retention on the dashboard, or a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs), frees space.';
+  'A shorter retention on the dashboard frees space, and a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs) raises the limit.';
 
 /** Said once a run, when the dashboard keeps the run's results and refuses its files. */
 const FILES_REFUSED_WARNING = `The dashboard's storage quota is reached: it keeps this run's results, but not its traces, videos, screenshots or reports, so none are sent for the rest of the run. ${FREES_SPACE}`;
 
-/** Said once a run, when the dashboard takes no new run. */
-const RUN_REFUSED_WARNING = `The dashboard took no run: its storage is past its quota, and past the ceiling at which it takes no new run. The tests and the run's exit code are not affected, and nothing of this run is sent. ${FREES_SPACE}`;
+/** Said once a run, when the dashboard refuses the run. */
+const RUN_REFUSED_WARNING = `The dashboard refused this run: its storage is past its quota, and past the ceiling at which it refuses new runs. The tests and the run's exit code are not affected, and nothing of this run is sent. ${FREES_SPACE}`;
+
+/** Said when the dashboard refuses the batch delivery of a run it holds from the run's stream. */
+const STREAMED_REST_REFUSED_WARNING = `The dashboard kept what this run streamed and refused the rest: its storage is past its quota. The run's data is saved on this machine for a later run to send once the dashboard has room. ${FREES_SPACE}`;
 
 /** Whether the dashboard refused a request's files for its storage quota (409, `STORAGE_QUOTA_FILES_REFUSED`). */
 export function quotaRefusesFiles(error: unknown): boolean {
@@ -73,6 +76,14 @@ export class StorageQuota {
     if (this.run) return;
     this.run = true;
     if (!told) this.logger.warn(RUN_REFUSED_WARNING);
+  }
+
+  /**
+   * The dashboard refused the batch delivery of a run it holds from the run's stream: the run is not refused, what it
+   * streamed stays, and the rest goes in the recovery copy, which the caller saves.
+   */
+  refuseRestOfStreamedRun(): void {
+    this.logger.warn(STREAMED_REST_REFUSED_WARNING);
   }
 
   /**

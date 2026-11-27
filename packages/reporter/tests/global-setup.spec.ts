@@ -400,7 +400,7 @@ describe('createGlobalSetup', () => {
     }
   });
 
-  it('says once that the dashboard took no run for its storage quota, and leaves that for the reporter', async () => {
+  it('says once that the dashboard refused the run for its storage quota, and leaves that for the reporter', async () => {
     const { server, url, requests } = await startServer((_req, res) =>
       jsonRes(res, 409, {
         statusCode: 409,
@@ -420,7 +420,7 @@ describe('createGlobalSetup', () => {
       expect(userSetupCalled).toBe(true);
       expect(requests.map((r) => r.url)).toEqual(['/api/test-runs/setup']);
       expect(warn.mock.calls.map(([line]) => line)).toEqual([
-        "[Piwi Dashboard] The dashboard took no run: its storage is past its quota, and past the ceiling at which it takes no new run. The tests and the run's exit code are not affected, and nothing of this run is sent. A shorter retention on the dashboard, or a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs), frees space.",
+        "[Piwi Dashboard] The dashboard refused this run: its storage is past its quota, and past the ceiling at which it refuses new runs. The tests and the run's exit code are not affected, and nothing of this run is sent. A shorter retention on the dashboard frees space, and a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs) raises the limit.",
       ]);
       expect(peekSetupRefusedForQuota('global-setup-quota')).toBe(true);
       expect(peekSetupFailure('global-setup-quota')).toBe(

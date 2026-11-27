@@ -29,6 +29,11 @@ export function recoveryFilePath(serverUrl: string, projectName: string, dir: st
   return path.join(dir, `piwi-dashboard-recovery-${key}.json`);
 }
 
+/** `value` when it is an object, else an empty one. */
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
 /** An answer of the dashboard that refuses the run itself, which no later try can change. */
 function refusesRun(error: unknown): boolean {
   return error instanceof HttpError && [400, 409, 422].includes(error.status);
@@ -129,8 +134,9 @@ export class CrashRecovery {
    * Submit a previously saved payload to the dashboard it was saved for. The
    * file is deleted once the dashboard took the run, or refused it for good;
    * anything else keeps it for the next run. A refusal for the dashboard's
-   * storage quota keeps it too, and refuses this run in `storageQuota`: the
-   * dashboard takes no new run.
+   * storage quota keeps it too, and refuses this run in `storageQuota`, when
+   * given: the dashboard refuses new runs. A run the global setup registered
+   * goes on, so its caller gives none.
    */
   async tryUpload(httpClient: HttpClient, auth?: string | null, storageQuota?: StorageQuota): Promise<void> {
     const data = this.load();
@@ -141,10 +147,12 @@ export class CrashRecovery {
     // Strip instanceId so /submit doesn't cancel the current run (which shares
     // the same instanceId for the same project + hostname combination).
     delete data.instanceId;
-    // The dashboard shows the run was delivered late, from this saved copy.
-    const metadata =
-      data.metadata && typeof data.metadata === 'object' ? (data.metadata as Record<string, unknown>) : {};
-    data.metadata = { ...metadata, ingestHealth: { submitFallback: { path: 'recovery' } } };
+    // The dashboard shows the run was delivered late, from this saved copy, with the files the copy counts as not kept.
+    const metadata = asRecord(data.metadata);
+    data.metadata = {
+      ...metadata,
+      ingestHealth: { ...asRecord(metadata.ingestHealth), submitFallback: { path: 'recovery' } },
+    };
 
     try {
       deliveredRunId(await httpClient.postJSON('/api/test-runs/submit', data, auth), '/api/test-runs/submit');
@@ -153,7 +161,9 @@ export class CrashRecovery {
     } catch (error) {
       if (quotaRefusesRun(error)) {
         storageQuota?.refuseRun();
-        this.logger.info('The saved test data stays on this machine for a later run.');
+        this.logger.info(
+          'The dashboard refused the saved test data for its storage quota: it stays on this machine for a later run.',
+        );
         return;
       }
       if (refusesRun(error)) {

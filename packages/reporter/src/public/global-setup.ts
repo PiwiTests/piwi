@@ -183,7 +183,7 @@ export function createGlobalSetup(
         }
       }
     } catch (error) {
-      // A dashboard that takes no run for its storage quota is said here once: the reporter sends nothing of the run.
+      // A dashboard that refuses the run for its storage quota is said here once: the reporter sends nothing of it.
       const quotaRefused = registers && !registered && quotaRefusesRun(error);
       if (quotaRefused) new StorageQuota(logger).refuseRun();
       else logger.warn(`Could not register global setup: ${errorMessage(error)}`);

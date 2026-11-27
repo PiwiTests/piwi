@@ -353,13 +353,15 @@ export class Uploader {
       }
       const parts = splitCaseFiles(whole);
       if (!isTooLarge(error) || parts.length < 2) throw error;
+      let sent = false;
       for (const [i, part] of parts.entries()) {
         try {
           await send(part);
+          sent = true;
         } catch (partError) {
           if (quotaRefusesFiles(partError)) {
             this.filesRefused(testCase, parts.slice(i));
-            return i > 0;
+            return sent;
           }
           if (!isTooLarge(partError)) throw partError;
           this.logger.warn(

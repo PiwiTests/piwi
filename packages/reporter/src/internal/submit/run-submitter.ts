@@ -213,8 +213,8 @@ export class RunSubmitter {
     const sm = this.streamManager;
     await sm?.drain();
 
-    // The dashboard took no run for its storage quota, as the global setup or the stream heard: nothing of the run is
-    // sent, and no copy is saved for a later run.
+    // The dashboard refused the run for its storage quota, as the global setup or the stream heard: nothing of the run
+    // is sent, and no copy is saved for a later run.
     if (this.storageQuota.refusesRun) return null;
 
     let auth: string | null;
@@ -514,7 +514,7 @@ export class RunSubmitter {
         output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
       };
     } catch (error) {
-      if (quotaRefusesRun(error)) return this.stopForStorageQuota();
+      if (quotaRefusesRun(error)) return this.stopForStorageQuota(payload);
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
       return { done: false, output: null };
@@ -649,7 +649,7 @@ export class RunSubmitter {
         output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
       };
     } catch (error) {
-      if (quotaRefusesRun(error)) return this.stopForStorageQuota();
+      if (quotaRefusesRun(error)) return this.stopForStorageQuota(payload);
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);
       this.logRecoverySaved(
@@ -694,11 +694,19 @@ export class RunSubmitter {
   }
 
   /**
-   * The dashboard took no run for its storage quota: said once a run. Every other rung would be refused alike, so the
-   * ladder stops, and no recovery copy is saved. The test run's own result stays what Playwright made it.
+   * The dashboard refused the run's batch delivery for its storage quota. Every other rung would be refused alike, so
+   * the ladder stops. A run whose stream opened stays on the dashboard as streamed, and `payload` is saved as its
+   * recovery copy, which a later run sends once the dashboard has room, naming the streamed run it replaces
+   * (`replacesRun`, a shard's aside). Any other run is refused, said once a run, with no copy saved. The test run's own
+   * result stays what Playwright made it.
    */
-  private stopForStorageQuota(): SubmitOutcome {
-    this.storageQuota.refuseRun();
+  private stopForStorageQuota(payload: RunPayload): SubmitOutcome {
+    if (this.streamManager?.runId != null) {
+      this.storageQuota.refuseRestOfStreamedRun();
+      this.saveRecovery(payload);
+    } else {
+      this.storageQuota.refuseRun();
+    }
     return { done: true, output: null };
   }
 

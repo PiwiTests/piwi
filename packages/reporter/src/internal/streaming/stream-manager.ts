@@ -264,7 +264,8 @@ export class StreamManager {
 
   // Open the stream, asking again after a failure a later try may not meet (no answer, a server error, a timeout or
   // a rate limit) until the run ends. A refusal that stays (another client error) gives it up at once, and so does
-  // a dashboard that took no run for its storage quota, as the global setup or the replay of a saved run heard.
+  // a dashboard that refused the run for its storage quota, as the global setup heard, or as the replay of a saved run
+  // heard for a run the global setup did not register.
   private async _doStart(run: RunStart): Promise<void> {
     this.setupInfo = readSetupInfo(this.options.projectName!);
     if (this.storageQuota.refusesRun) {
@@ -278,8 +279,12 @@ export class StreamManager {
         if (!authResolved) {
           this._auth = await this.httpClient.resolveAuth(this.options);
           authResolved = true;
-          // A request token starts this run alone: a run saved earlier is sent with another run's credentials.
-          if (!requestedRunTarget()) await this.recovery.tryUpload(this.httpClient, this._auth, this.storageQuota);
+          // A request token starts this run alone: a run saved earlier is sent with another run's credentials. A
+          // replay refused for the storage quota refuses this run too, unless the global setup registered it.
+          if (!requestedRunTarget()) {
+            const quota = this.setupInfo ? undefined : this.storageQuota;
+            await this.recovery.tryUpload(this.httpClient, this._auth, quota);
+          }
           if (this.storageQuota.refusesRun) {
             this.giveUpStart(null);
             return;
@@ -400,7 +405,7 @@ export class StreamManager {
   }
 
   // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run, unless
-  // the dashboard took no run for its storage quota: that is said once a run, and nothing of the run is sent.
+  // the dashboard refused the run for its storage quota: that is said once a run, and nothing of the run is sent.
   private giveUpStart(error: unknown): void {
     const requested = requestedRunTarget();
     if (quotaRefusesRun(error) || this.storageQuota.refusesRun) {

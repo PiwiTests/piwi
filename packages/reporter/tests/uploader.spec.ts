@@ -603,7 +603,7 @@ describe("the dashboard's storage quota", () => {
       expect([...sent].map((tc) => tc.title)).toEqual(['first']);
       expect(quotaLines()).toHaveLength(1);
       expect(quotaLines()[0]).toBe(
-        "[Piwi Dashboard] The dashboard's storage quota is reached: it keeps this run's results, but not its traces, videos, screenshots or reports, so none are sent for the rest of the run. A shorter retention on the dashboard, or a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs), frees space.",
+        "[Piwi Dashboard] The dashboard's storage quota is reached: it keeps this run's results, but not its traces, videos, screenshots or reports, so none are sent for the rest of the run. A shorter retention on the dashboard frees space, and a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs) raises the limit.",
       );
       expect(warnings).toHaveLength(1);
       expect(uploader.storageQuota.notKept()).toEqual({ tracesNotKept: 1, attachmentsNotKept: 3 });
@@ -613,6 +613,30 @@ describe("the dashboard's storage quota", () => {
       await uploadCaseFilesInTurn(uploader, logger, run, cases, new AbortController().signal, turn);
       expect(requests.filter((r) => r.url === '/api/test-runs/7/case-files')).toHaveLength(2);
       expect(uploader.storageQuota.notKept()).toEqual({ tracesNotKept: 1, attachmentsNotKept: 3 });
+      expect(quotaLines()).toHaveLength(1);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('reports a test as not sent when the refusal follows parts left out as too large, and counts the refused', async () => {
+    // A request that carries the video is too large; any other the storage quota refuses.
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/traces/check') return jsonRes(res, 200, {});
+      if (req.body.includes('HUGE-VIDEO')) return jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+      jsonRes(res, 409, FILES_REFUSED);
+    });
+    try {
+      const logger = new Logger(false);
+      const uploader = new Uploader(new HttpClient(url, logger), new FileHandler(logger), logger);
+      const tc = testCase('checkout', [attachment('video', 'HUGE-VIDEO.webm'), attachment('screenshot', 'shot.png')]);
+
+      const sent = await uploader.uploadCaseFiles('proj', 7, 'tok', tc, false, null);
+
+      expect(sent).toBe(false);
+      // Both files together, the video alone, then the screenshot alone.
+      expect(requests.filter((r) => r.url === '/api/test-runs/7/case-files')).toHaveLength(3);
+      expect(uploader.storageQuota.notKept()).toEqual({ attachmentsNotKept: 1 });
       expect(quotaLines()).toHaveLength(1);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));

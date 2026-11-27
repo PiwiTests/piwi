@@ -11,7 +11,7 @@ import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { Logger } from '../src/internal/support/logger.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
-import { writeSetupFailure } from '../src/internal/support/setup-file.js';
+import { writeSetupFailure, writeSetupInfo } from '../src/internal/support/setup-file.js';
 import {
   startServer,
   jsonRes,
@@ -560,7 +560,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       expect(urlsHit(server)).toEqual(['/api/test-runs/upload']);
     });
 
-    it('a dashboard without /upload/results gets the run in one upload, as before', async () => {
+    it('a dashboard without /upload/results gets the run, its files and its report in one multipart upload', async () => {
       let uploadBody = '';
       await runInParts((req, res) => {
         if (req.url === '/api/test-runs/upload') {
@@ -1241,8 +1241,10 @@ describe("the dashboard's storage quota", () => {
   const dirs: string[] = [];
   let warnings: string[];
 
-  const RUN_REFUSED_LINE =
-    "[Piwi Dashboard] The dashboard took no run: its storage is past its quota, and past the ceiling at which it takes no new run. The tests and the run's exit code are not affected, and nothing of this run is sent. A shorter retention on the dashboard, or a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs), frees space.";
+  const FREES_SPACE =
+    'A shorter retention on the dashboard frees space, and a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs) raises the limit.';
+  const RUN_REFUSED_LINE = `[Piwi Dashboard] The dashboard refused this run: its storage is past its quota, and past the ceiling at which it refuses new runs. The tests and the run's exit code are not affected, and nothing of this run is sent. ${FREES_SPACE}`;
+  const STREAMED_REST_REFUSED_LINE = `[Piwi Dashboard] The dashboard kept what this run streamed and refused the rest: its storage is past its quota. The run's data is saved on this machine for a later run to send once the dashboard has room. ${FREES_SPACE}`;
 
   /** A refusal of the dashboard, as every one of its own carries its error code. */
   function refuse(res: Parameters<typeof jsonRes>[0], errorCode: string | null): void {
@@ -1273,8 +1275,15 @@ describe("the dashboard's storage quota", () => {
     return { name: 'screenshot', path: file, contentType: 'image/png' };
   }
 
-  /** Run two failing tests, each with its screenshot, and answer what `onEnd` returns. */
-  async function runTwoTests(options: Record<string, unknown>, shard: unknown = null): Promise<unknown> {
+  /**
+   * Run two failing tests, each with its screenshot, and answer what `onEnd` returns. `afterFirst` runs once the first
+   * test ended.
+   */
+  async function runTwoTests(
+    options: Record<string, unknown>,
+    shard: unknown = null,
+    afterFirst?: () => Promise<void>,
+  ): Promise<unknown> {
     const reporter = new PiwiDashboardReporter({
       serverUrl: server.url,
       projectName,
@@ -1295,6 +1304,7 @@ describe("the dashboard's storage quota", () => {
         test,
         fakeResult({ status: 'failed', workerIndex: 0, attachments: [screenshot(`${test.title}-SHOT`)] }),
       );
+      if (test === tests[0]) await afterFirst?.();
     }
     return reporter.onEnd({ status: 'failed' } as any);
   }
@@ -1363,6 +1373,38 @@ describe("the dashboard's storage quota", () => {
       });
 
       const ended = await runTwoTests({ streaming: true, reports: [{ type: 'custom', dir: reportDir() }] });
+
+      expect(ended).toBeUndefined();
+      expect(runRequests().filter((u) => u === '/api/test-runs/1/case-files')).toHaveLength(1);
+      expect(runRequests()).not.toContain('/api/test-runs/upload');
+      expect(finishBody.hasPendingUploads).toBe(false);
+      expect(finishBody.metadata.ingestHealth).toEqual({ attachmentsNotKept: 2, reportsNotKept: 1 });
+      expect(quotaLines()).toHaveLength(1);
+    });
+
+    it('a streamed run uploading files live sends none after the refusal, and counts what it left out in its /finish', async () => {
+      let finishBody: any;
+      server = await startServer((req, res) => {
+        if (req.url === '/api/test-runs/start') {
+          jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+        } else if (req.url === '/api/test-runs/1/events') {
+          jsonRes(res, 200, {});
+        } else if (req.url === '/api/test-runs/1/case-files') {
+          refuse(res, 'STORAGE_QUOTA_FILES_REFUSED');
+        } else if (req.url === '/api/test-runs/1/finish') {
+          finishBody = JSON.parse(req.body);
+          jsonRes(res, 200, {});
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      const ended = await runTwoTests(
+        { streaming: true, liveFileUploads: true, reports: [{ type: 'custom', dir: reportDir() }] },
+        null,
+        // The first test's files are refused before the second test ends.
+        () => vi.waitFor(() => expect(quotaLines()).toHaveLength(1), { timeout: 5000 }),
+      );
 
       expect(ended).toBeUndefined();
       expect(runRequests().filter((u) => u === '/api/test-runs/1/case-files')).toHaveLength(1);
@@ -1478,9 +1520,61 @@ describe("the dashboard's storage quota", () => {
       expect(warnings).toEqual([RUN_REFUSED_LINE]);
       expect(recoveredRun(server, projectName).label).toBe('saved');
     });
+
+    it('the replay of a saved run is refused for a run the global setup registered: the copy stays, the run goes on', async () => {
+      server = await startServer((req, res) => {
+        if (req.url === '/api/test-runs/submit') refuse(res, 'STORAGE_QUOTA_EXCEEDED');
+        else if (req.url === '/api/test-runs/7/begin') jsonRes(res, 200, { runId: 7, streamToken: 'tok' });
+        else if (req.url?.startsWith('/api/test-runs/7/')) jsonRes(res, 200, {});
+        else textRes(res, 404, 'nope');
+      });
+      new CrashRecovery(server.url, projectName).save({ projectName, label: 'saved', testCases: [] });
+      writeSetupInfo({ runId: 7, setupToken: 'setup', projectName });
+
+      const ended = await runTwoTests({ streaming: true });
+
+      expect(ended).toBeUndefined();
+      expect(runRequests().slice(0, 2)).toEqual(['/api/test-runs/submit', '/api/test-runs/7/begin']);
+      expect(runRequests().slice(-1)).toEqual(['/api/test-runs/7/finish']);
+      expect(quotaLines()).toEqual([]);
+      expect(recoveredRun(server, projectName).label).toBe('saved');
+    });
+
+    for (const { refused, reports } of [
+      { refused: '/api/test-runs/submit', reports: false },
+      { refused: '/api/test-runs/upload/results', reports: true },
+    ]) {
+      it(`at ${refused} after the stream opened: says the streamed run stays, and saves the copy that replaces it`, async () => {
+        server = await startServer((req, res) => {
+          if (req.url === '/api/test-runs/start') jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+          else if (req.url === '/api/test-runs/1/events' || req.url === '/api/test-runs/1/case-files') {
+            jsonRes(res, 200, {});
+          } else if (req.url === '/api/test-runs/1/finish') jsonRes(res, 400, { message: 'Invalid body' });
+          else if (req.url === refused) refuse(res, 'STORAGE_QUOTA_EXCEEDED');
+          else textRes(res, 404, 'nope');
+        });
+
+        const ended = await runTwoTests({
+          streaming: true,
+          ...(reports ? { reports: [{ type: 'custom', dir: reportDir() }] } : {}),
+        });
+
+        expect(ended).toBeUndefined();
+        expect(runRequests()).toContain('/api/test-runs/1/finish');
+        expect(runRequests().slice(-1)).toEqual([refused]);
+        expect(runRequests().filter((u) => !u.startsWith('/api/test-runs/1/'))).toEqual([
+          '/api/test-runs/start',
+          refused,
+        ]);
+        expect(quotaLines()).toEqual([STREAMED_REST_REFUSED_LINE]);
+        const copy = recoveredRun(server, projectName);
+        expect(copy.replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
+        expect(copy.testCases).toHaveLength(2);
+      });
+    }
   });
 
-  it("keeps an older dashboard's 409 without a code as before: the stream gives up, the batch is sent and saved", async () => {
+  it("reads an older dashboard's 409 without a code as a plain refusal: the stream gives up, the batch is sent and saved", async () => {
     server = await startServer((req, res) =>
       req.url === '/api/test-runs/start' || req.url === '/api/test-runs/submit'
         ? refuse(res, null)

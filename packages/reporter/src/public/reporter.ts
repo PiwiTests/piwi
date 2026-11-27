@@ -685,7 +685,7 @@ export class PiwiDashboardReporter {
     for (const { name, value, fallback } of this.ignoredEnv) {
       this.logger.warn(`${name}=${value} is not a number of 0 or more, so the default (${fallback}) applies.`);
     }
-    // The global setup said already that the dashboard took no run for its storage quota: nothing of the run is sent.
+    // The global setup said already that the dashboard refused the run for its storage quota: nothing of it is sent.
     if (peekSetupRefusedForQuota(this.options.projectName!)) this.storageQuota.refuseRun(true);
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
@@ -918,7 +918,7 @@ export class PiwiDashboardReporter {
       if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change; a run the
-      // dashboard took none of for its storage quota was told so by the global setup.
+      // dashboard refused for its storage quota was told so by the global setup.
       else if (why !== 'local' && !this.storageQuota.refusesRun) {
         const failure = why === 'setup-failed' ? peekSetupFailure(this.options.projectName!) : null;
         this.logger.info(ciLiveViewNote(why, failure));
