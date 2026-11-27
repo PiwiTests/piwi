@@ -216,7 +216,9 @@ async function signIn(credentials: { username: string; password: string }): Prom
 /** Open a project's page in a browser signed in with `cookie`, once it has read the viewer's own requests. */
 async function openAs(page: Page, cookie: string, projectId: number) {
   const [name, value] = [cookie.slice(0, cookie.indexOf('=')), cookie.slice(cookie.indexOf('=') + 1)];
-  await page.context().addCookies([{ name, value, url: AUTH_BASE }]);
+  // A `__Host-` cookie is taken only Secure, with `Path=/` and its host named.
+  const host = new URL(AUTH_BASE).hostname;
+  await page.context().addCookies([{ name, value, domain: host, path: '/', secure: true }]);
   const requestsRead = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/run-requests' && res.ok(), {
     timeout: 60_000,
   });

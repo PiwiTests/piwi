@@ -132,7 +132,8 @@ export async function signIn(server) {
     body: JSON.stringify({ username: ADMIN.username, password: ADMIN.password }),
   });
   if (!res.ok) throw new Error(`${server.name}: sign-in failed (${res.status}): ${await res.text()}`);
-  const session = res.headers.getSetCookie().find((c) => c.startsWith('piwi_session='));
+  // A build compared against may name its session cookie with or without the `__Host-` prefix.
+  const session = res.headers.getSetCookie().find((c) => /^(?:__Host-)?piwi_session=/.test(c));
   if (!session) throw new Error(`${server.name}: sign-in returned no session cookie`);
   server.cookie = session.split(';')[0];
   return server.cookie;

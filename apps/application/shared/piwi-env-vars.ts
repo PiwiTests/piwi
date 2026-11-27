@@ -521,6 +521,17 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     since: '0.55.1',
   },
+  PIWI_OPERATOR_TOKEN: {
+    description:
+      "A token that opens the operator routes (GET /api/operator/usage: the instance's usage and what it is doing now, in counts only) to whoever runs the instance without an account in it, such as a hosting provider or a deployment script. Sent as a Bearer token; never accepted as a session or an API key. Unset, the operator routes answer 404.",
+    category: 'auth',
+    secret: true,
+    example: 'a 64-char random hex string',
+    since: '0.79.0',
+    docs: 'operate/upgrading',
+    notes:
+      "At least 32 characters, with no space: a token it cannot take leaves the routes closed, and the first request to them logs a warning. The right token always passes; a client network that sends ten wrong tokens in 15 minutes is refused until the window ends, the network being the reverse proxy's unless PIWI_TRUST_PROXY is set. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
+  },
   PIWI_METRICS_ENABLED: {
     description:
       'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
