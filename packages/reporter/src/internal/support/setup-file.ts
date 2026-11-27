@@ -38,6 +38,8 @@ export interface SetupInfo {
 interface SetupFailure {
   projectName: string;
   failed: string;
+  /** The dashboard took no run for its storage quota, which the global setup said already. */
+  storageQuota?: true;
 }
 
 /** Write this process's setup info file, readable by its owner alone, replacing whatever was at its path. */
@@ -47,10 +49,11 @@ export function writeSetupInfo(info: SetupInfo): void {
 
 /**
  * Write in this process's setup file that the global setup could not register the run, and why, for the reporter to
- * say. Never throws.
+ * say; with `storageQuota`, that the dashboard took no run for its storage quota, which the global setup said. Never
+ * throws.
  */
-export function writeSetupFailure(projectName: string, failed: string): void {
-  const failure: SetupFailure = { projectName, failed };
+export function writeSetupFailure(projectName: string, failed: string, storageQuota = false): void {
+  const failure: SetupFailure = { projectName, failed, ...(storageQuota && { storageQuota: true as const }) };
   try {
     writePrivateFile(getSetupFilePath(projectName), JSON.stringify(failure));
   } catch {
@@ -92,6 +95,11 @@ export function peekSetupInfo(projectName: string): SetupInfo | null {
 export function peekSetupFailure(projectName: string): string | null {
   const failed = peekSetupFile(projectName)?.failed;
   return typeof failed === 'string' ? failed : null;
+}
+
+/** Whether the global setup of this process said the dashboard took no run of the given project for its storage quota. */
+export function peekSetupRefusedForQuota(projectName: string): boolean {
+  return peekSetupFile(projectName)?.storageQuota === true;
 }
 
 /** Read and delete this process's setup file for the given project: its registration, `null` when it holds none. */

@@ -1072,6 +1072,14 @@ describe('StreamManager start refused', () => {
     expect(await warningFor(new HttpError(401))).toContain("Set the reporter's `apiKey` option");
   });
 
+  it('says the dashboard took no run for its storage quota, and gives the stream up for good', async () => {
+    const warning = await warningFor(
+      new HttpError(409, 'Request failed with status 409: Refused.', 'STORAGE_QUOTA_EXCEEDED'),
+    );
+    expect(warning).toContain('The dashboard took no run: its storage is past its quota');
+    expect(warning).not.toContain('Live streaming');
+  });
+
   it("prints the dashboard's own reason for a 403, not the API key advice", async () => {
     const refusal =
       'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';

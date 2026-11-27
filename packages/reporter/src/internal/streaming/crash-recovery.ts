@@ -5,6 +5,7 @@ import { errorMessage } from '../support/errors.js';
 import { legacyPrivateTempDir, privateTempDir, readPrivateFile, writePrivateFile } from '../support/private-file.js';
 import { HttpError, deliveredRunId, type HttpClient } from '../transport/http-client.js';
 import { Logger } from '../support/logger.js';
+import { quotaRefusesRun, type StorageQuota } from '../submit/storage-quota.js';
 
 /** What the recovery file holds: the run, and the dashboard it is for. */
 interface RecoveryFile {
@@ -127,9 +128,11 @@ export class CrashRecovery {
   /**
    * Submit a previously saved payload to the dashboard it was saved for. The
    * file is deleted once the dashboard took the run, or refused it for good;
-   * anything else keeps it for the next run.
+   * anything else keeps it for the next run. A refusal for the dashboard's
+   * storage quota keeps it too, and refuses this run in `storageQuota`: the
+   * dashboard takes no new run.
    */
-  async tryUpload(httpClient: HttpClient, auth?: string | null): Promise<void> {
+  async tryUpload(httpClient: HttpClient, auth?: string | null, storageQuota?: StorageQuota): Promise<void> {
     const data = this.load();
     if (!data || recoveryServer(httpClient.baseUrl) !== this.serverUrl) return;
 
@@ -148,6 +151,11 @@ export class CrashRecovery {
       this.logger.info('Successfully uploaded saved test data');
       this.clear();
     } catch (error) {
+      if (quotaRefusesRun(error)) {
+        storageQuota?.refuseRun();
+        this.logger.info('The saved test data stays on this machine for a later run.');
+        return;
+      }
       if (refusesRun(error)) {
         this.logger.warn(`The dashboard refused the saved test data, which is deleted: ${errorMessage(error)}`);
         this.clear();
