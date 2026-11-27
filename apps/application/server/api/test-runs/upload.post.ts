@@ -455,7 +455,6 @@ async function handleUpload(
     // When attaching reports to an existing streaming run, either settle a
     // finalizing run to the status its reporter sent to /finish, or re-notify if
     // it already finished.
-    let settledHere = false;
     if (attachingToExistingRun) {
       const settledStatus =
         existingRunStatus === 'finalizing'
@@ -465,7 +464,6 @@ async function handleUpload(
               metadata: existingRunMetadata,
             })
           : null;
-      settledHere = settledStatus !== null;
 
       if (!settledStatus) {
         // Run already had a final status — just re-notify for dashboard refresh.
@@ -484,10 +482,15 @@ async function handleUpload(
       }
     }
 
-    // Written once a held run settled, which rewrites its metadata. The upload that settles a run this upload attaches
-    // to brings the files its reporter says it did not send (a new run took them with its metadata), beside the ones
-    // skipped here; a later upload to the settled run brings only the ones it skipped.
-    await recordIngestHealth(db, testRun.id, notKept, settledHere ? reportedNotKept(testRunData.metadata) : {});
+    // Written once a held run settled, which rewrites its metadata. The files skipped here add up; those its reporter
+    // says it did not send, on any upload to a run (a new run took them with its metadata), count as the larger of the
+    // stored and the sent counts, so an upload sent again adds nothing.
+    await recordIngestHealth(
+      db,
+      testRun.id,
+      notKept,
+      attachingToExistingRun ? reportedNotKept(testRunData.metadata) : {},
+    );
 
     // Create the run's directory for attachments
     const testRunPath = `project-${project.id}/run-${testRun.id}`;

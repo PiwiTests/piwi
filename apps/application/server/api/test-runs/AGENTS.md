@@ -46,6 +46,10 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   batch times the share of its complete results inserted, and the `testRun` and `testCases` fields of an `upload` that
   creates the run or adds a shard. Nothing else counts: `setup`, `start`, `begin`, `finish`, a repeated delivery, an
   upload with `runId`, an import.
+- **The reporter's counts of files not kept stay apart from the server's**: `ingestHealth.reporterNotKept` takes the
+  larger of the stored and the sent count on every write (`withReportedNotKept`, `carryIngestHealth`), added only shard
+  by shard, while the parts an upload skipped add up in `tracesNotKept` and the rest; readers show the sum
+  (`describeIngestHealth`; `tests/unit/storage-quota-ingest.test.ts`).
 
 ## Timed-out tests fold into `failedTests`
 

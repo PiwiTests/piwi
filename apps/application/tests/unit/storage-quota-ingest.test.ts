@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import { buildBlobReport } from '../utils/blob-report-fixture';
 import { multipartEvent, type MultipartPart } from './multipart-event';
 import { migrateToLatest } from './temp-db';
@@ -427,9 +428,11 @@ const notKept = (traces: number, attachments = 0, reports = 0) => ({
     submitFallback: { path: 'submit' },
   },
 });
-const healthOf = async (runId: number) =>
-  ((await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId)))[0]!.metadata as Record<string, any>)
-    ?.ingestHealth;
+const metadataOf = async (runId: number) =>
+  (await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId)))[0]!.metadata as Record<string, any>;
+const healthOf = async (runId: number) => (await metadataOf(runId))?.ingestHealth;
+/** What the run header says of the run's ingest. */
+const notesOf = async (runId: number) => describeIngestHealth(readIngestHealth(await metadataOf(runId)));
 
 describe('the files a reporter did not send once the quota refused them', () => {
   beforeEach(() => {
@@ -439,52 +442,79 @@ describe('the files a reporter did not send once the quota refused them', () => 
     vi.unstubAllEnvs();
   });
 
+  /** An upload to a run its reporter holds: a report, or none, and the files it says it did not send. */
+  const uploadTo = (runId: number, metadata: Record<string, unknown>, report = false) =>
+    upload(
+      multipartEvent([
+        field('runId', String(runId)),
+        field('projectName', PROJECT),
+        field('testRun', { status: 'already-submitted', startTime: '2026-11-02T10:00:00Z', metadata }),
+        ...(report ? [{ name: 'report_custom', filename: 'report.txt', data: Buffer.from('the report') }] : []),
+      ]),
+    );
+
   test('join the run a submit, results ahead of their files or an upload creates', async () => {
     const submitted = await submit(json(runResults({ metadata: notKept(2) })));
-    expect(await healthOf(submitted.runId)).toEqual({ tracesNotKept: 2, submitFallback: { path: 'submit' } });
+    expect(await healthOf(submitted.runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 2 },
+      submitFallback: { path: 'submit' },
+    });
 
     const held = await results(
       json(runResults({ instanceId: 'ci-4', deliveryKey: 'delivery-key-of-the-run-0005', metadata: notKept(1) })),
     );
-    expect(await healthOf(held.runId)).toEqual({ tracesNotKept: 1, submitFallback: { path: 'submit' } });
+    expect(await healthOf(held.runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 1 },
+      submitFallback: { path: 'submit' },
+    });
 
     const { projectName, testCases, ...run } = runResults({ instanceId: 'ci-6', metadata: notKept(0, 4) });
     const uploaded = await upload(
       multipartEvent([field('projectName', projectName), field('testRun', run), field('testCases', testCases)]),
     );
-    expect(await healthOf(uploaded.runId)).toEqual({ attachmentsNotKept: 4, submitFallback: { path: 'submit' } });
+    expect(await healthOf(uploaded.runId)).toEqual({
+      reporterNotKept: { attachmentsNotKept: 4 },
+      submitFallback: { path: 'submit' },
+    });
   });
 
-  test('join a run uploaded in parts with the upload that settles it, and the files that upload skipped', async () => {
-    const settle = (runId: number, report: boolean) =>
-      upload(
-        multipartEvent([
-          field('runId', String(runId)),
-          field('projectName', PROJECT),
-          field('testRun', { status: 'already-submitted', startTime: '2026-11-02T10:00:00Z', metadata: notKept(3, 2) }),
-          ...(report ? [{ name: 'report_custom', filename: 'report.txt', data: Buffer.from('the report') }] : []),
-        ]),
-      );
-    const unreported = await results(json(runResults({ deliveryKey: 'delivery-key-of-the-run-0006' })));
-    await settle(unreported.runId, false);
-    expect(await healthOf(unreported.runId)).toEqual({ tracesNotKept: 3, attachmentsNotKept: 2 });
-    // An upload to the settled run brings its counts again: they are not taken twice.
-    await settle(unreported.runId, false);
-    expect(await healthOf(unreported.runId)).toEqual({ tracesNotKept: 3, attachmentsNotKept: 2 });
-
-    const reported = await results(
-      json(runResults({ instanceId: 'ci-7', deliveryKey: 'delivery-key-of-the-run-0007' })),
-    );
+  test('join a run uploaded in parts from an upload after the one that settled it, once', async () => {
+    const { runId } = await results(json(runResults({ deliveryKey: 'delivery-key-of-the-run-0006' })));
+    // A report settles the run; the reporter then leaves out the files the quota refuses, and says so after.
+    await uploadTo(runId, {}, true);
+    expect((await runsOf())[0]!.status).toBe('passed');
     await goOver();
-    await settle(reported.runId, true);
-    expect(await healthOf(reported.runId)).toEqual({ tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 });
-    // A report sent to it later, at the quota too, counts as one more not kept, and the reporter's counts once.
-    await settle(reported.runId, true);
-    expect(await healthOf(reported.runId)).toEqual({ tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 2 });
-    expect((await runsOf()).map((run) => run.status)).toEqual(['passed', 'passed']);
+    await uploadTo(runId, notKept(3, 2, 1));
+    expect(await healthOf(runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 },
+    });
+    // The same upload again changes nothing.
+    await uploadTo(runId, notKept(3, 2, 1));
+    expect(await healthOf(runId)).toEqual({
+      reporterNotKept: { tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 },
+    });
+    expect(await notesOf(runId)).toEqual([
+      '3 traces, 2 attachments and 1 report were not kept: the storage quota was reached',
+    ]);
   });
 
-  test('join a streamed run held for its reports once: its finish’s counts and the larger ones of its settling upload', async () => {
+  test('add the files an upload skipped to those its reporter did not send, in the run header', async () => {
+    const { runId } = await results(json(runResults({ deliveryKey: 'delivery-key-of-the-run-0007' })));
+    await goOver();
+    // The first report settles the run and is not kept; the reporter leaves out the next one and says so after.
+    await uploadTo(runId, {}, true);
+    await uploadTo(runId, notKept(3, 2, 1));
+    await uploadTo(runId, notKept(3, 2, 1));
+    expect(await healthOf(runId)).toEqual({
+      reportsNotKept: 1,
+      reporterNotKept: { tracesNotKept: 3, attachmentsNotKept: 2, reportsNotKept: 1 },
+    });
+    expect(await notesOf(runId)).toEqual([
+      '3 traces, 2 attachments and 2 reports were not kept: the storage quota was reached',
+    ]);
+  });
+
+  test('join a streamed run as the larger of its finish’s counts and those of each upload after it', async () => {
     const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
     const [streamed] = await db
       .insert(schema.testRuns)
@@ -502,32 +532,29 @@ describe('the files a reporter did not send once the quota refused them', () => 
       ),
     );
     expect(await healthOf(streamed!.id)).toEqual({
-      tracesNotKept: 2,
-      attachmentsNotKept: 1,
+      reporterNotKept: { tracesNotKept: 2, attachmentsNotKept: 1 },
       submitFallback: { path: 'submit' },
     });
 
     // The reporter counts the whole run: its settling upload says what its finish said, and the report it left out.
-    const settle = () =>
-      upload(
-        multipartEvent([
-          field('runId', String(streamed!.id)),
-          field('projectName', PROJECT),
-          field('testRun', { status: 'already-submitted', startTime: null, metadata: notKept(2, 1, 1) }),
-        ]),
-      );
-    await settle();
-    await settle();
+    await uploadTo(streamed!.id, notKept(2, 1, 1));
+    await uploadTo(streamed!.id, notKept(2, 1, 1));
     expect(await healthOf(streamed!.id)).toEqual({
-      tracesNotKept: 2,
-      attachmentsNotKept: 1,
-      reportsNotKept: 1,
+      reporterNotKept: { tracesNotKept: 2, attachmentsNotKept: 1, reportsNotKept: 1 },
       submitFallback: { path: 'submit' },
     });
     expect((await runsOf())[0]!.status).toBe('passed');
+    // A later upload with higher counts raises them; one with lower counts leaves them.
+    await uploadTo(streamed!.id, notKept(2, 1, 3));
+    await uploadTo(streamed!.id, notKept(1));
+    expect((await healthOf(streamed!.id)).reporterNotKept).toEqual({
+      tracesNotKept: 2,
+      attachmentsNotKept: 1,
+      reportsNotKept: 3,
+    });
   });
 
-  test('join a streamed run at its finish, once, and each shard’s add up', async () => {
+  test('join a streamed run at its finish, once, and each shard’s add up, a shard sent again once', async () => {
     const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
     const [streamed] = await db
       .insert(schema.testRuns)
@@ -546,18 +573,20 @@ describe('the files a reporter did not send once the quota refused them', () => 
     // Sent again, it changes nothing: the run ended.
     await expect(finish(finishBody)).rejects.toMatchObject({ statusCode: 409, data: { errorCode: 'CONFLICT' } });
     expect(await healthOf(streamed!.id)).toEqual({
-      tracesNotKept: 2,
-      attachmentsNotKept: 1,
+      reporterNotKept: { tracesNotKept: 2, attachmentsNotKept: 1 },
       submitFallback: { path: 'submit' },
     });
 
-    for (const shardIndex of [1, 2]) {
+    for (const shardIndex of [1, 1, 2]) {
       await submit(
         json(runResults({ instanceId: 'ci-3', shardTotal: 2, shardIndex, metadata: notKept(shardIndex * 3) })),
       );
     }
     const sharded = (await runsOf()).find((run) => run.instanceId === 'ci-3')!;
-    expect(await healthOf(sharded.id)).toEqual({ tracesNotKept: 9, submitFallback: { path: 'submit' } });
+    expect(await healthOf(sharded.id)).toEqual({
+      reporterNotKept: { tracesNotKept: 9 },
+      submitFallback: { path: 'submit' },
+    });
   });
 });
 

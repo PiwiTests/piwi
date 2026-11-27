@@ -155,7 +155,7 @@ describe('the reporter fallback and the server counts', () => {
     expect(sanitizeMetadata(sent)).toEqual({ ingestHealth: { submitFallback: { path: 'submit' } } });
     withStorageQuota();
     expect(sanitizeMetadata(sent)).toEqual({
-      ingestHealth: { tracesNotKept: 3, reportsNotKept: 1, submitFallback: { path: 'submit' } },
+      ingestHealth: { reporterNotKept: { tracesNotKept: 3, reportsNotKept: 1 }, submitFallback: { path: 'submit' } },
     });
   });
 
@@ -171,19 +171,27 @@ describe('the reporter fallback and the server counts', () => {
     });
     withStorageQuota();
     expect(sanitizeMetadata({ ingestHealth: { attachmentsNotKept: 1e21 } })).toEqual({
-      ingestHealth: { attachmentsNotKept: MAX_INGEST_COUNT },
+      ingestHealth: { reporterNotKept: { attachmentsNotKept: MAX_INGEST_COUNT } },
     });
   });
 
-  test('a metadata write takes the larger count of files not kept, so the same metadata sent again adds nothing', () => {
+  test('a metadata write takes the larger of each reporter count, beside the server’s own, so a repeat adds nothing', () => {
     withStorageQuota();
-    const stored = { ingestHealth: { stepsDropped: 4, tracesNotKept: 2, reportsNotKept: 1 } };
+    const stored = {
+      ingestHealth: { stepsDropped: 4, tracesNotKept: 1, reporterNotKept: { tracesNotKept: 2, reportsNotKept: 1 } },
+    };
     const sent = sanitizeMetadata({ ingestHealth: { tracesNotKept: 5, attachmentsNotKept: 1 } });
     const once = carryIngestHealth(sent, stored);
     expect(once).toEqual({
-      ingestHealth: { stepsDropped: 4, tracesNotKept: 5, attachmentsNotKept: 1, reportsNotKept: 1 },
+      ingestHealth: {
+        stepsDropped: 4,
+        tracesNotKept: 1,
+        reporterNotKept: { tracesNotKept: 5, attachmentsNotKept: 1, reportsNotKept: 1 },
+      },
     });
+    // Stored metadata sent through again keeps its reporter's counts and the server's apart.
     expect(carryIngestHealth(sanitizeMetadata(once), once)).toEqual(once);
+    expect(carryIngestHealth(sanitizeMetadata({ ingestHealth: { tracesNotKept: 3 } }), once)).toEqual(once);
   });
 
   test('a recorded fallback reads back alongside the counts', async () => {
@@ -223,6 +231,11 @@ describe('describeIngestHealth', () => {
     expect(describeIngestHealth({ tracesNotKept: 1, attachmentsNotKept: 1, reportsNotKept: 2 })).toEqual([
       '1 trace, 1 attachment and 2 reports were not kept: the storage quota was reached',
     ]);
+    // The files an upload skipped and those the reporter did not send, added up kind by kind.
+    const both = readIngestHealth({
+      ingestHealth: { reportsNotKept: 1, reporterNotKept: { tracesNotKept: 3, reportsNotKept: 2 } },
+    });
+    expect(describeIngestHealth(both)).toEqual(['3 traces and 3 reports were not kept: the storage quota was reached']);
   });
 
   test('names the run a later run with the same run label ended while it streamed', () => {
