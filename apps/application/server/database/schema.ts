@@ -25,6 +25,7 @@ export const {
   failureDiagnoses,
   failureDiagnosisVersions,
   appSettings,
+  storageTotals,
   files,
   traceResources,
   traceBlobs,

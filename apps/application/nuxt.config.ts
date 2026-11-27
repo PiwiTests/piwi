@@ -452,10 +452,10 @@ export default defineNuxtConfig({
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification, auto-heal and integration outbox sweepers every minute. The
+      // Run the notification, auto-heal and integration outbox sweepers and the storage quota's watch every minute. The
       // tracker status pull ticks here too and runs on the cadence PIWI_INTEGRATIONS_SYNC_MINUTES
       // sets at run time (default every 15 min).
-      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync'],
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync', 'storage:watch'],
       // Fire the report schedules that are due (a missed tick fires on the next sweep)
       '*/5 * * * *': ['reports:schedule'],
       // Read the final state of the pull requests a gate failed on (overrides and escapes)
@@ -468,6 +468,9 @@ export default defineNuxtConfig({
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
       // rows and canonical nodes unseen for thirty runs (independent of retention).
       '23 3 * * *': ['graph:sweep'],
+      // Nightly recount of the stored bytes the storage quota is watched against, after the retention sweep freed what
+      // it frees.
+      '41 3 * * *': ['storage:reconcile'],
     },
   },
 

@@ -5,11 +5,12 @@ import type { ApiResponse } from '~~/types/api';
 
 /**
  * What whoever runs the instance tells its users, above every page of the default layout: the notice they set
- * (`PUT /api/operator/notice`), and, to administrators, the administrators they invited that nobody took yet, in one
- * alert of at most three addresses. Read in the server render, so it costs the browser no request. Dismissing the notice hides it in this browser until another
- * replaces it; a critical one stays, and so does an invitation until it is taken or ends. Their height is
- * `--operator-notice-height` on the page, which the page panel's minimum height leaves out, so no page runs past the
- * bottom of the window.
+ * (`PUT /api/operator/notice`) and, to administrators, the administrators they invited that nobody took yet (in one
+ * alert of three addresses at most) and the storage once it reaches 80% or 95% of its quota. Read in the server
+ * render, so it costs the browser no request. Dismissing the notice hides it in this browser until another replaces
+ * it, and the storage warning until the usage reaches 95%; a critical notice, an invitation and a 95% warning stay.
+ * Their height is `--operator-notice-height` on the page, which the page panel's minimum height leaves out, so no page
+ * runs past the bottom of the window.
  */
 
 const { data } = useFetch<ApiResponse<typeof import('~~/server/api/notice.get').default>>('/api/notice', {
@@ -36,7 +37,22 @@ const invitations = computed(() => data.value?.invitations ?? []);
 const INVITATIONS_NAMED = 3;
 const namedInvitations = computed(() => invitations.value.slice(0, INVITATIONS_NAMED));
 const moreInvitations = computed(() => Math.max(0, invitations.value.length - INVITATIONS_NAMED));
-const shown = computed(() => notice.value !== null || invitations.value.length > 0);
+/** The level of the storage warning dismissed in this browser: 80 only, since a 95% warning stays. */
+const storageDismissed = useCookie<number | null>('piwi-storage-warning-dismissed', {
+  default: () => null,
+  maxAge: ONE_YEAR_S,
+  sameSite: 'lax',
+});
+const storage = computed(() => {
+  const current = data.value?.storage ?? null;
+  if (!current) return null;
+  if (current.level === 80 && storageDismissed.value === 80) return null;
+  return current;
+});
+const storagePercent = computed(() =>
+  storage.value ? Math.floor((storage.value.usedBytes / storage.value.quotaBytes) * 100) : 0,
+);
+const shown = computed(() => notice.value !== null || invitations.value.length > 0 || storage.value !== null);
 
 /** The host a link leads to, shown beside its label so a label cannot pass for another site. */
 const linkHost = computed(() => {
@@ -62,6 +78,11 @@ watch(shown, (visible) => {
   if (!visible && import.meta.client) document.documentElement.style.removeProperty(HEIGHT_VARIABLE);
 });
 onUnmounted(() => document.documentElement.style.removeProperty(HEIGHT_VARIABLE));
+
+function dismissStorage() {
+  storageDismissed.value = 80;
+  document.getElementById('main-content')?.focus();
+}
 
 function dismiss() {
   if (!notice.value) return;
@@ -130,6 +151,30 @@ function dismiss() {
           <NuxtLink to="/settings/users" class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
             >Settings → Users</NuxtLink
           >.
+        </span>
+      </template>
+    </UAlert>
+    <UAlert
+      v-if="storage"
+      data-shot="storage-warning"
+      role="status"
+      aria-label="Storage warning"
+      :color="storage.level === 95 ? 'error' : 'warning'"
+      icon="i-lucide-hard-drive"
+      variant="subtle"
+      :close="storage.level === 80"
+      :ui="{ description: 'opacity-100' }"
+      class="rounded-none"
+      @update:open="dismissStorage"
+    >
+      <template #description>
+        <span class="text-sm text-highlighted leading-relaxed">
+          Storage is at {{ storagePercent }}% of its quota: {{ formatBytes(storage.usedBytes) }} of
+          {{ formatBytes(storage.quotaBytes) }}.
+          <NuxtLink to="/settings/storage" class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+            >Settings → Storage</NuxtLink
+          >
+          shows what takes the room.
         </span>
       </template>
     </UAlert>

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { deleteUserRecord, findUserByEmail } from '#shared/handlers/users';
@@ -8,6 +8,7 @@ import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import type { ErrorCode } from '#shared/utils/error-codes';
 import { accountTokens, users } from '../database/schema';
 import { newAccountToken } from './account-tokens';
+import { administratorEmails } from './administrators';
 
 /**
  * An administrator invited by whoever runs the instance (`POST /api/operator/admin-invite`), for an address the
@@ -184,21 +185,8 @@ export async function inviteAdministrator(
   }
 
   // Told: the administrators who can sign in, never another invitee who has not.
-  const administrators = await db
-    .select({ email: users.email })
-    .from(users)
-    .where(
-      and(
-        eq(users.role, InstanceRole.ADMINISTRATOR),
-        ne(users.id, invitee.userId),
-        isNotNull(users.email),
-        or(ne(users.password, ''), isNotNull(users.oauthProvider)),
-      ),
-    )
-    .orderBy(asc(users.id));
-  const results = await Promise.allSettled(
-    administrators.map(({ email }) => mail.tellAdministrator(email!, invitee.email)),
-  );
+  const administrators = await administratorEmails(db, invitee.userId);
+  const results = await Promise.allSettled(administrators.map((email) => mail.tellAdministrator(email, invitee.email)));
   const failed = results.filter((result) => result.status === 'rejected').length;
   if (failed) console.error(`[operator/admin-invite] ${failed} administrator(s) could not be told by email`);
   return { expiresAt: link.expiresAt };

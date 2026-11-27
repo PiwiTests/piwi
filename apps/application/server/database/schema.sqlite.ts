@@ -541,6 +541,14 @@ export const appSettings = sqliteTable('app_settings', {
     .$defaultFn(() => new Date()),
 });
 
+// The bytes Settings → Storage counts (the stored files that are not trace blobs, the trace blobs and the pooled trace
+// resources), kept by the triggers on those three tables and recounted each night. One row on SQLite (`slot` 0);
+// PostgreSQL spreads its writes over 16 rows by session, so concurrent uploads do not wait on one. The total is their sum.
+export const storageTotals = sqliteTable('storage_totals', {
+  slot: integer('slot').primaryKey(),
+  bytes: integer('bytes').notNull().default(0),
+});
+
 // Content-addressed storage for large per-execution text payloads (ARIA
 // snapshots, test source snippets, source-frame JSON). One row per unique
 // content per project — test_runs_cases rows reference payloads by id, so a
