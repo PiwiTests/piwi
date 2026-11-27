@@ -72,6 +72,8 @@ export interface UserListItem {
   oauthProvider: string | null;
   /** Whether the user uploaded a profile picture, which an administrator may remove. */
   avatarUploaded: boolean;
+  /** The invitation whoever runs the instance sent this account, while nobody took it; ended or not. */
+  operatorInvitation: { invitedAt: Date; expiresAt: Date } | null;
   createdAt: Date;
   updatedAt: Date;
 }

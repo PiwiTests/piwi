@@ -175,6 +175,20 @@ export function renderInviteEmail(token: string, username: string, invitedBy?: s
   return { html, text };
 }
 
+/** Tells an administrator that whoever runs the instance invited another one, and where to remove the account. */
+export function renderOperatorInviteNoticeEmail(invited: string): { html: string; text: string } {
+  const url = `${siteUrl()}/settings/users`;
+  const body = `
+    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">An administrator was invited</h2>
+    <p style="margin:0 0 16px;color:#52525b;">The operator of this instance invited <strong>${escapeHtml(invited)}</strong> to become an administrator. The invitation link went to that address only, and expires in 72 hours.</p>
+    <p style="margin:0 0 24px;color:#52525b;">If nobody on your team expected it, delete the account in Settings → Users before the link is used.</p>
+    ${emailButton(url, 'Open Users')}
+    <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
+  const { html } = emailLayout('An administrator was invited', body);
+  const text = `An administrator was invited\n\nThe operator of this instance invited ${invited} to become an administrator. The invitation link went to that address only, and expires in 72 hours.\n\nIf nobody on your team expected it, delete the account in Settings → Users before the link is used.\n\n${url}`;
+  return { html, text };
+}
+
 export function renderVerifyEmail(token: string): { html: string; text: string } {
   const url = `${siteUrl()}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
   const body = `

@@ -15,6 +15,7 @@ const TTL_MS: Record<TokenPurpose, number> = {
 /**
  * Mint a new single-use token for a user, to email to `email`. Returns the
  * plaintext token. The token acts only while the account still holds `email`.
+ * `issuedBy: 'operator'` marks an invitation whoever runs the instance asked for.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function mintAccountToken(
@@ -22,6 +23,7 @@ export async function mintAccountToken(
   userId: number,
   purpose: TokenPurpose,
   email: string,
+  options: { issuedBy?: 'operator' } = {},
 ): Promise<string> {
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashToken(token);
@@ -30,7 +32,9 @@ export async function mintAccountToken(
   // Invalidate any unused tokens of the same purpose for this user
   await db.delete(accountTokens).where(and(eq(accountTokens.userId, userId), eq(accountTokens.purpose, purpose)));
 
-  await db.insert(accountTokens).values({ userId, purpose, tokenHash, email, expiresAt });
+  await db
+    .insert(accountTokens)
+    .values({ userId, purpose, tokenHash, email, expiresAt, issuedBy: options.issuedBy ?? null });
   return token;
 }
 

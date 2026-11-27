@@ -64,6 +64,7 @@ import {
   type GroupDetails,
   type GroupSummary,
 } from './groups';
+import { pendingOperatorInvitations, type OperatorInvitation } from './operator-invitations';
 import { createUserRecord, deleteUserRecord, listUsers, updateUserRecord } from './users';
 
 /** A refusal the routes turn into an API error with `statusCode`. */
@@ -199,7 +200,7 @@ async function dropAdministratorRole(db: DrizzleDB, userId: number, role: string
 
 type UserRow = Awaited<ReturnType<typeof listUsers>>['users'][number];
 
-function toUserListItem(row: UserRow, groupIds: number[]): UserListItem {
+function toUserListItem(row: UserRow, groupIds: number[], invitation: OperatorInvitation | undefined): UserListItem {
   return {
     id: row.id,
     username: row.username,
@@ -211,6 +212,7 @@ function toUserListItem(row: UserRow, groupIds: number[]): UserListItem {
     emailVerified: row.emailVerified,
     oauthProvider: row.oauthProvider,
     avatarUploaded: row.avatarKey !== null,
+    operatorInvitation: invitation ? { invitedAt: invitation.invitedAt, expiresAt: invitation.expiresAt } : null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -218,8 +220,12 @@ function toUserListItem(row: UserRow, groupIds: number[]): UserListItem {
 
 /** Every user with their instance role and groups: what administrators see. */
 export async function listUserItems(db: DrizzleDB): Promise<UserListItem[]> {
-  const [{ users: rows }, groupIdsByUser] = await Promise.all([listUsers(db), getGroupIdsByUser(db)]);
-  return rows.map((row) => toUserListItem(row, groupIdsByUser.get(row.id) ?? []));
+  const [{ users: rows }, groupIdsByUser, invitations] = await Promise.all([
+    listUsers(db),
+    getGroupIdsByUser(db),
+    invitationsByUser(db),
+  ]);
+  return rows.map((row) => toUserListItem(row, groupIdsByUser.get(row.id) ?? [], invitations.get(row.id)));
 }
 
 type ProjectScope = 'all' | Set<number>;
@@ -290,12 +296,17 @@ export async function listUserSummaries(
   return sortProjectAccessUsers(rows);
 }
 
+/** The operator's pending invitations, by the account each is for. */
+async function invitationsByUser(db: DrizzleDB): Promise<Map<number, OperatorInvitation>> {
+  return new Map((await pendingOperatorInvitations(db)).map((invitation) => [invitation.userId, invitation]));
+}
+
 async function userItem(db: DrizzleDB, userId: number): Promise<UserListItem> {
   const { users: rows } = await listUsers(db);
   const row = rows.find((r) => r.id === userId);
   if (!row) throw new AccessError(404, 'User not found');
   const groupIds = (await getUserGroups(db, userId)).map((g) => g.id).sort((a, b) => a - b);
-  return toUserListItem(row, groupIds);
+  return toUserListItem(row, groupIds, (await invitationsByUser(db)).get(userId));
 }
 
 /**

@@ -396,6 +396,7 @@ async function confirmRemovePicture() {
                 <p class="text-xs text-muted break-words">
                   @{{ user.username }}<template v-if="user.email"> · {{ user.email }}</template>
                 </p>
+                <OperatorInvitationMark v-if="user.operatorInvitation" :invitation="user.operatorInvitation" />
               </div>
             </div>
             <UserRowActions
@@ -461,6 +462,10 @@ async function confirmRemovePicture() {
                     title="Email verified"
                   />
                 </span>
+                <OperatorInvitationMark
+                  v-if="row.original.operatorInvitation"
+                  :invitation="row.original.operatorInvitation"
+                />
               </div>
             </div>
           </template>

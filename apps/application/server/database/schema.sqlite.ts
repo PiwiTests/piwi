@@ -1459,6 +1459,8 @@ export const accountTokens = sqliteTable(
     email: text('email'),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+    // 'operator' for an invitation whoever runs the instance asked for; null for one an administrator sent.
+    issuedBy: text('issued_by'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),
