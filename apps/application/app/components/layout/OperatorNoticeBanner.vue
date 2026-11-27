@@ -47,7 +47,7 @@ function dismiss() {
     :color="LOOK[notice.level].color"
     :icon="LOOK[notice.level].icon"
     variant="subtle"
-    :close="notice.level !== 'critical' ? { 'aria-label': 'Dismiss this notice' } : false"
+    :close="notice.level !== 'critical'"
     class="shrink-0 rounded-none border-x-0 border-t-0"
     @update:open="dismiss"
   >

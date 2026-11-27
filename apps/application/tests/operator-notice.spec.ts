@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { waitForHydration } from './utils';
 
 /**
  * The operator's notice: the token of PIWI_OPERATOR_TOKEN sets, reads and clears it, and every page shows it above
@@ -18,7 +19,8 @@ test.describe('Operator notice', () => {
   });
 
   test('opens to the operator token only, and refuses a notice it cannot show', async ({ request }) => {
-    for (const headers of [{}, { Authorization: `Bearer ${TOKEN}x` }, { 'X-API-Key': TOKEN }]) {
+    const refused: Record<string, string>[] = [{}, { Authorization: `Bearer ${TOKEN}x` }, { 'X-API-Key': TOKEN }];
+    for (const headers of refused) {
       expect((await request.get('/api/operator/notice', { headers })).status(), JSON.stringify(headers)).toBe(401);
       const put = await request.put('/api/operator/notice', { headers, data: { level: 'info', text: 'x' } });
       expect(put.status(), JSON.stringify(headers)).toBe(401);
@@ -59,6 +61,7 @@ test.describe('Operator notice', () => {
       if (new URL(sent.url()).pathname === '/api/notice') asked.push(sent.url());
     });
     await page.goto('/');
+    await waitForHydration(page);
     const banner = page.locator('[data-shot="operator-notice"]');
     await expect(banner).toContainText('Maintenance tonight from 22:00 UTC.');
     await expect(banner.getByRole('link', { name: 'Status page' })).toHaveAttribute(
@@ -67,7 +70,7 @@ test.describe('Operator notice', () => {
     );
     expect(asked).toEqual([]);
 
-    await banner.getByRole('button', { name: 'Dismiss this notice' }).click();
+    await banner.getByRole('button', { name: 'Close' }).click();
     await expect(banner).toBeHidden();
     await page.reload();
     await expect(page.getByText('Maintenance tonight from 22:00 UTC.')).toBeHidden();
@@ -78,7 +81,7 @@ test.describe('Operator notice', () => {
     });
     await page.reload();
     await expect(banner).toContainText('Uploads are paused for an hour.');
-    await expect(banner.getByRole('button', { name: 'Dismiss this notice' })).toHaveCount(0);
+    await expect(banner.getByRole('button', { name: 'Close' })).toHaveCount(0);
 
     await request.delete('/api/operator/notice', { headers: OPERATOR });
     await page.reload();

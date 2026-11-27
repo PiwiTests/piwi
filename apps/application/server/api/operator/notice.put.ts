@@ -17,11 +17,11 @@ defineRouteMeta({
             type: 'object',
             properties: {
               level: { type: 'string', enum: ['info', 'warning', 'critical'] },
-              text: { type: 'string', maxLength: 500 },
+              text: { type: 'string' },
               link: {
                 type: 'object',
                 nullable: true,
-                properties: { url: { type: 'string', format: 'uri' }, label: { type: 'string', maxLength: 80 } },
+                properties: { url: { type: 'string', format: 'uri' }, label: { type: 'string' } },
                 required: ['url'],
               },
               expiresAt: { type: 'string', format: 'date-time', nullable: true },
