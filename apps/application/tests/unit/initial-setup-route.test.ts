@@ -9,7 +9,8 @@ import { migrateToLatest } from './temp-db';
 /**
  * First-admin setup through its routes: it stays open while no administrator
  * exists, and with `PIWI_SETUP_TOKEN` set the form says it needs the token and
- * the setup refuses a request without it. A setup a busy server refuses takes
+ * the setup refuses a request without it. The administrator keeps the email
+ * given, which no other account may hold. A setup a busy server refuses takes
  * no rate-limit slot.
  */
 
@@ -78,6 +79,22 @@ describe('first-admin setup while only members exist', () => {
     await (state.db as ReturnType<typeof drizzle<typeof schema>>)
       .insert(schema.users)
       .values({ username: 'ada@example.com', password: '', role: 'member', oauthProvider: 'github' });
+  });
+
+  test('keeps the administrator’s email, and refuses one a member holds, whatever its letter case', async () => {
+    const db = state.db as ReturnType<typeof drizzle<typeof schema>>;
+    await db.update(schema.users).set({ email: 'ada@example.com' }).where(eq(schema.users.username, 'ada@example.com'));
+    await expect(setup(request({ email: 'ADA@example.com' }))).rejects.toMatchObject({
+      statusCode: 409,
+      data: { errorCode: 'EMAIL_TAKEN' },
+    });
+    await expect(setup(request({ email: 'not-an-address' }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(await setup(request({ email: ' admin@example.com ' }))).toMatchObject({
+      success: true,
+      user: { username: 'admin', email: 'admin@example.com' },
+    });
+    const [admin] = await db.select().from(schema.users).where(eq(schema.users.username, 'admin'));
+    expect(admin).toMatchObject({ email: 'admin@example.com', emailVerified: false });
   });
 
   test('stays open, refuses a username a member holds, and closes once an administrator exists', async () => {

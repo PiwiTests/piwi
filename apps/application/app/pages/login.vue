@@ -39,12 +39,28 @@ const setupState = reactive({
   password: '',
   confirmPassword: '',
   name: '',
+  email: '',
   setupToken: '',
 });
 const setupLoading = ref(false);
 const setupError = ref('');
+// The token came in the setup link (`/login#setup=…`), so the form says where it was filled in from.
+const setupTokenFromLink = ref(false);
+
+/** Takes the setup link's token from the address fragment, and leaves the address without it. */
+function takeSetupLink(): string | null {
+  const token = setupLinkToken(window.location.hash);
+  if (token === undefined) return null;
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+  return token;
+}
 
 onMounted(async () => {
+  const linked = takeSetupLink();
+  if (linked) {
+    setupState.setupToken = linked;
+    setupTokenFromLink.value = true;
+  }
   if (config.public.demoMode) {
     needsSetup.value = false;
     return;
@@ -81,6 +97,10 @@ async function handleSetup() {
     setupError.value = 'Passwords do not match';
     return;
   }
+  if (!/^[^\s@]+@[^\s@]+$/.test(setupState.email.trim())) {
+    setupError.value = 'Enter your email address, so you can reset a forgotten password';
+    return;
+  }
   if (setupTokenRequired.value && !setupState.setupToken.trim()) {
     setupError.value = 'Enter the setup token (PIWI_SETUP_TOKEN on the server)';
     return;
@@ -96,6 +116,7 @@ async function handleSetup() {
         username: setupState.username,
         password: setupState.password,
         name: setupState.name || undefined,
+        email: setupState.email.trim(),
         setupToken: setupTokenRequired.value ? setupState.setupToken.trim() : undefined,
       },
     });
@@ -203,7 +224,11 @@ definePageMeta({
           v-if="setupTokenRequired"
           label="Setup token"
           name="setupToken"
-          help="The value of PIWI_SETUP_TOKEN in the server's settings."
+          :help="
+            setupTokenFromLink
+              ? 'Filled in from your setup link.'
+              : 'The value of PIWI_SETUP_TOKEN in the server\'s settings.'
+          "
           required
         >
           <UInput
@@ -233,6 +258,17 @@ definePageMeta({
             type="text"
             placeholder="Administrator (optional)"
             autocomplete="name"
+            :disabled="setupLoading"
+            class="w-full"
+          />
+        </UFormField>
+
+        <UFormField label="Email" name="email" help="To reset a forgotten password." required>
+          <UInput
+            v-model="setupState.email"
+            type="email"
+            placeholder="you@example.com"
+            autocomplete="email"
             :disabled="setupLoading"
             class="w-full"
           />
