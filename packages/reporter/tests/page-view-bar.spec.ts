@@ -298,6 +298,7 @@ describe('the pause bar in a live view of its page', () => {
     }
   });
 
+  // Four JPEG encodes and a decode of a full frame of noise, in JavaScript: seconds each under coverage.
   it('encodes a frame with the bar alone at the lighter quality when it is too long at the view’s', async () => {
     page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
     await page.setContent(NOISY);
@@ -320,7 +321,7 @@ describe('the pause bar in a live view of its page', () => {
       await takeDown();
       await page.close();
     }
-  });
+  }, 30_000);
 
   it('holds the next frame back as long again as the bar’s paint took, not the reads before it', async () => {
     page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
