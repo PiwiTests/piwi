@@ -1434,6 +1434,8 @@ export const accountTokens = pgTable(
     email: text('email'),
     expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
     usedAt: timestamp('used_at', { mode: 'date' }),
+    // 'operator' for an invitation whoever runs the instance asked for; null for one an administrator sent.
+    issuedBy: text('issued_by'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),

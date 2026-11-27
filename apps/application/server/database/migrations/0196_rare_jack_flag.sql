@@ -1,0 +1,1 @@
+ALTER TABLE `account_tokens` ADD `issued_by` text;

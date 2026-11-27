@@ -1373,6 +1373,13 @@
       "when": 1795637459333,
       "tag": "0195_unique_black_bird",
       "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "6",
+      "when": 1795801362130,
+      "tag": "0196_rare_jack_flag",
+      "breakpoints": true
     }
   ]
 }

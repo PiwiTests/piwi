@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { eq, and, exists, gt, inArray, isNull } from 'drizzle-orm';
+import { eq, and, exists, gt, inArray, isNull, or } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
+import { InstanceRole } from '#shared/permissions';
 import { accountTokens, users } from '../database/schema';
 import { hashToken } from './token-hash';
 
@@ -11,6 +12,12 @@ const TTL_MS: Record<TokenPurpose, number> = {
   verify: 24 * 60 * 60 * 1000, // 24 hours
   invite: 72 * 60 * 60 * 1000, // 72 hours
 };
+
+/** A new single-use token for `purpose`: the plaintext to email, the hash to store, and when it ends. */
+export function newAccountToken(purpose: TokenPurpose): { token: string; tokenHash: string; expiresAt: Date } {
+  const token = randomBytes(32).toString('hex');
+  return { token, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + TTL_MS[purpose]) };
+}
 
 /**
  * Mint a new single-use token for a user, to email to `email`. Returns the
@@ -23,9 +30,7 @@ export async function mintAccountToken(
   purpose: TokenPurpose,
   email: string,
 ): Promise<string> {
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + TTL_MS[purpose]);
+  const { token, tokenHash, expiresAt } = newAccountToken(purpose);
 
   // Invalidate any unused tokens of the same purpose for this user
   await db.delete(accountTokens).where(and(eq(accountTokens.userId, userId), eq(accountTokens.purpose, purpose)));
@@ -102,7 +107,14 @@ export async function claimAccountToken(
           db
             .select({ id: users.id })
             .from(users)
-            .where(and(eq(users.id, accountTokens.userId), eq(users.email, accountTokens.email))),
+            .where(
+              and(
+                eq(users.id, accountTokens.userId),
+                eq(users.email, accountTokens.email),
+                // The operator's invitation is for an administrator: it sets nothing once the account is not one.
+                or(isNull(accountTokens.issuedBy), eq(users.role, InstanceRole.ADMINISTRATOR)),
+              ),
+            ),
         ),
       ),
     )
