@@ -196,14 +196,16 @@ export class PrivateAddressError extends Error {
    * @param variable The variable whose list allows the host.
    */
   constructor(url: URL, subject: string, variable: string) {
-    const name = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    const { host: name, port } = hostPlace(url);
+    // With its port always, the scheme's default included: a host listed with another port does not allow this one.
+    const shown = `${isIP(name) === 6 ? `[${name}]` : name}:${port}`;
     const what = isIP(name)
       ? 'is a private address'
       : isPrivateHostName(name)
         ? 'is a name reserved for private addresses'
         : 'resolves to a private address';
     super(
-      `${url.host} ${what}, which ${subject} may not reach. The operator allows it by listing the host in ${variable}.`,
+      `${shown} ${what}, which ${subject} may not reach. The operator allows it by listing the host in ${variable}.`,
     );
     this.name = 'PrivateAddressError';
   }
