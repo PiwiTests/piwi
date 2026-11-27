@@ -74,8 +74,6 @@ export const operatorNoticeInputSchema = z
   })
   .strict();
 
-export type OperatorNoticeInput = z.input<typeof operatorNoticeInputSchema>;
-
 /** The notice as stored and answered: `setAt` names this one, so a dismissed notice shows again once replaced. */
 export type OperatorNotice = {
   level: NoticeLevel;
