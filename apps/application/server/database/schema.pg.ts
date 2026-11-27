@@ -569,7 +569,7 @@ export const appSettings = pgTable('app_settings', {
 // resources), kept by the triggers on those three tables and recounted each night. One row on SQLite (`slot` 0);
 // PostgreSQL spreads its writes over 16 rows by session, so concurrent uploads do not wait on one. The total is their sum.
 export const storageTotals = pgTable('storage_totals', {
-  // A row written without its slot is slot 0, the one the recount writes.
+  // A row inserted through Drizzle without its slot is slot 0, the one the recount writes; the table has no default.
   slot: integer('slot')
     .primaryKey()
     .$defaultFn(() => 0),
