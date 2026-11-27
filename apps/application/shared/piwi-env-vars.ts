@@ -1445,7 +1445,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CI_SERVER_HOSTS: {
     description:
-      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) a CI re-run may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL. A name without a port allows every port of that host. Any other host must resolve to public addresses only. A listed host may also be reached over http.',
+      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) that every request to a CI server may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL: a re-run or Flake Lab dispatch, a CI action’s Check and job listings, and a per-user token test. A name without a port allows every port of that host. Any other host must resolve to public addresses only, or the request is refused before it is sent. A listed host may also be reached over http.',
     category: 'integrations',
     destination: 'Your CI server',
     type: 'list',
