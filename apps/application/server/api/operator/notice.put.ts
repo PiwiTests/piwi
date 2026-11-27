@@ -1,14 +1,14 @@
-import { operatorNoticeInputSchema, type OperatorNotice } from '#shared/operator-notice';
+import { operatorNoticeInputSchema, sameNotice, type OperatorNotice } from '#shared/operator-notice';
 import { getDatabase } from '../../database';
 import { requireOperator } from '../../utils/operator';
-import { writeOperatorNotice } from '../../utils/operator-notice';
+import { readOperatorNotice, writeOperatorNotice } from '../../utils/operator-notice';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Operator'],
     summary: 'Show a notice to the instance’s users',
     description:
-      'Sets the one banner every signed-in user sees at the top of each page, replacing any other: `level` (`info`, `warning`, or `critical`, which cannot be dismissed), `text` (plain text, one line of 500 characters at most), an optional `link` (`url`, http or https, and an optional `label`), an optional `expiresAt` (an ISO 8601 date with its offset, later than now) after which nobody sees it, and `audience` (`everyone`, the default, or `administrators`). A user sees it at their next page load, and a dismissed notice shows again once replaced. Answers the stored notice. Open only to the token of `PIWI_OPERATOR_TOKEN`, as `GET /api/operator/usage` is.',
+      'Sets the one banner every signed-in user sees at the top of each page, replacing any other: `level` (`info`, `warning`, or `critical`, which cannot be dismissed), `text` (one line of plain text, 500 characters at most: no control, separator, bidirectional or zero-width character), an optional `link` (`url`, http or https with no user name or password, 2000 characters at most, and an optional `label` of 80), an optional `expiresAt` (an ISO 8601 date with its offset, later than now) after which nobody sees it, and `audience` (`everyone`, the default, or `administrators`). A user sees it at their next page load. A dismissed notice shows again once replaced by a different one; the same notice set again keeps its `setAt` and stays dismissed. Answers the stored notice. Open only to the token of `PIWI_OPERATOR_TOKEN`, as `GET /api/operator/usage` is.',
     security: [{ operatorToken: [] }],
     requestBody: {
       content: {
@@ -44,17 +44,25 @@ export default eventHandler(async (event) => {
   }
   const now = new Date();
   const { level, text, link, expiresAt, audience } = parsed.data;
-  if (expiresAt && Date.parse(expiresAt) <= now.getTime()) {
+  const end = expiresAt ? new Date(expiresAt) : null;
+  if (end && end.getTime() <= now.getTime()) {
     throw apiError({ statusCode: 400, message: 'expiresAt is not later than now' });
   }
+  if (end && end.getUTCFullYear() > 9999) {
+    throw apiError({ statusCode: 400, message: 'expiresAt is after the year 9999' });
+  }
+  const db = await getDatabase();
   const notice: OperatorNotice = {
     level,
     text,
     link: link ? { url: link.url, label: link.label ?? null } : null,
-    expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+    expiresAt: end ? end.toISOString() : null,
     audience,
     setAt: now.toISOString(),
   };
-  await writeOperatorNotice(await getDatabase(), notice);
+  // The same notice set again keeps its `setAt`, so a browser that dismissed it is not shown it again.
+  const current = await readOperatorNotice(db);
+  if (current && sameNotice(current, notice)) notice.setAt = current.setAt;
+  await writeOperatorNotice(db, notice);
   return { notice };
 });

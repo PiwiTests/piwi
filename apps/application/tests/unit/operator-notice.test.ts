@@ -3,7 +3,13 @@
  * audience), how it is kept, and who sees it: nobody once it has ended, and administrators only when it says so.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { operatorNoticeInputSchema, storedNotice, visibleNotice, type OperatorNotice } from '#shared/operator-notice';
+import {
+  operatorNoticeInputSchema,
+  sameNotice,
+  storedNotice,
+  visibleNotice,
+  type OperatorNotice,
+} from '#shared/operator-notice';
 import { openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -42,6 +48,18 @@ describe('the notice an operator sends', () => {
     expect(accepts({ level: 'info', text: 'x', html: '<b>x</b>' })).toBe(false);
   });
 
+  test('refuses what would hide, reorder or break the line, and what the database cannot store', () => {
+    const hidden = ['\u0085', '\u2028', '\u2029', '\u202e', '\u2066', '\u200b', '\u200f', '\ufeff', '\ud800', '\udc00'];
+    for (const character of hidden) {
+      const code = character.charCodeAt(0).toString(16);
+      expect(accepts({ level: 'info', text: `a${character}b` }), code).toBe(false);
+      const link = { url: 'https://example.com', label: `a${character}b` };
+      expect(accepts({ level: 'info', text: 'x', link }), code).toBe(false);
+    }
+    expect(accepts({ level: 'info', text: 'Déploiement à 06:00, 🚧 travaux' })).toBe(true);
+    expect(accepts({ level: 'info', text: 'x', link: { url: 'https://example.com/\u0000' } })).toBe(false);
+  });
+
   test('takes an http or https link only, and an end with its offset', () => {
     expect(accepts({ level: 'info', text: 'x', link: { url: 'https://example.com/a?b=c' } })).toBe(true);
     expect(
@@ -52,6 +70,8 @@ describe('the notice an operator sends', () => {
       'data:text/html,x',
       'example.com',
       '//example.com',
+      'https://piwi.example.com@evil.example',
+      'https://user:secret@example.com',
       'ftp://example.com',
     ]) {
       expect(accepts({ level: 'info', text: 'x', link: { url } }), url).toBe(false);
@@ -59,6 +79,18 @@ describe('the notice an operator sends', () => {
     expect(accepts({ level: 'info', text: 'x', expiresAt: '2026-12-06T06:30:00Z' })).toBe(true);
     expect(accepts({ level: 'info', text: 'x', expiresAt: '2026-12-06T08:30:00+02:00' })).toBe(true);
     expect(accepts({ level: 'info', text: 'x', expiresAt: 'next Sunday' })).toBe(false);
+  });
+});
+
+describe('the same notice set again', () => {
+  test('is the same whatever its end and whenever it was set, and another once anything it says changes', () => {
+    const again = { ...NOTICE, expiresAt: null, setAt: '2026-11-28T00:00:00.000Z' };
+    expect(sameNotice(NOTICE, again)).toBe(true);
+    expect(sameNotice(NOTICE, { ...again, text: 'Maintenance on Monday.' })).toBe(false);
+    expect(sameNotice(NOTICE, { ...again, level: 'critical' })).toBe(false);
+    expect(sameNotice(NOTICE, { ...again, audience: 'administrators' })).toBe(false);
+    expect(sameNotice(NOTICE, { ...again, link: null })).toBe(false);
+    expect(sameNotice(NOTICE, { ...again, link: { url: 'https://status.example.com', label: null } })).toBe(false);
   });
 });
 

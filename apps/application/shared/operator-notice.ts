@@ -17,13 +17,33 @@ export const NOTICE_URL_MAX = 2000;
 export type NoticeLevel = (typeof NOTICE_LEVELS)[number];
 export type NoticeAudience = (typeof NOTICE_AUDIENCES)[number];
 
-/** Whether `value` holds a control character (a line break, a tab…): a banner is one line of text. */
-function hasControl(value: string): boolean {
+/**
+ * Whether `value` is one line of plain text: well-formed Unicode with no control character (C0, DEL, C1), no line or
+ * paragraph separator and no character that reorders or hides text (bidirectional controls, zero-width characters,
+ * the byte order mark), so what a banner says is what it shows.
+ */
+export function isPlainLine(value: string): boolean {
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return true;
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      index++;
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return false;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false;
+    if ((code >= 0x200b && code <= 0x200f) || (code >= 0x2028 && code <= 0x202e)) return false;
+    if ((code >= 0x2060 && code <= 0x2069) || code === 0xfeff) return false;
   }
-  return false;
+  return true;
+}
+
+/** An http or https address with no user name or password in it, which would hide the host it leads to. */
+function isPlainWebAddress(value: string): boolean {
+  if (!isPlainLine(value) || !URL.canParse(value)) return false;
+  const url = new URL(value);
+  return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password;
 }
 
 const linkSchema = z
@@ -32,15 +52,13 @@ const linkSchema = z
       .string()
       .trim()
       .max(NOTICE_URL_MAX)
-      .refine((value) => URL.canParse(value) && ['https:', 'http:'].includes(new URL(value).protocol), {
-        message: 'an http:// or https:// address',
-      }),
+      .refine(isPlainWebAddress, { message: 'an http:// or https:// address, with no user name or password' }),
     label: z
       .string()
       .trim()
       .min(1)
       .max(NOTICE_LINK_LABEL_MAX)
-      .refine((value) => !hasControl(value))
+      .refine(isPlainLine, { message: 'one line of plain text' })
       .optional(),
   })
   .strict();
@@ -49,12 +67,7 @@ const linkSchema = z
 export const operatorNoticeInputSchema = z
   .object({
     level: z.enum(NOTICE_LEVELS),
-    text: z
-      .string()
-      .trim()
-      .min(1)
-      .max(NOTICE_TEXT_MAX)
-      .refine((value) => !hasControl(value), { message: 'one line of text, with no control character' }),
+    text: z.string().trim().min(1).max(NOTICE_TEXT_MAX).refine(isPlainLine, { message: 'one line of plain text' }),
     link: linkSchema.nullable().optional(),
     expiresAt: z.iso.datetime({ offset: true }).nullable().optional(),
     audience: z.enum(NOTICE_AUDIENCES).default('everyone'),
@@ -86,6 +99,17 @@ const storedSchema = z.object({
 export function storedNotice(value: unknown): OperatorNotice | null {
   const parsed = storedSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+/** Whether two notices say the same thing to the same people, whatever their end and whenever they were set. */
+export function sameNotice(a: OperatorNotice, b: OperatorNotice): boolean {
+  return (
+    a.level === b.level &&
+    a.text === b.text &&
+    a.audience === b.audience &&
+    a.link?.url === b.link?.url &&
+    a.link?.label === b.link?.label
+  );
 }
 
 /** The notice a caller sees now: none once it has ended, and none for a member when it is for administrators. */

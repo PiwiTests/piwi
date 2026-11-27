@@ -19,8 +19,8 @@ test.describe('Operator notice', () => {
   });
 
   test('opens to the operator token only, and refuses a notice it cannot show', async ({ request }) => {
-    const refused: Record<string, string>[] = [{}, { Authorization: `Bearer ${TOKEN}x` }, { 'X-API-Key': TOKEN }];
-    for (const headers of refused) {
+    const strangers: Record<string, string>[] = [{}, { Authorization: `Bearer ${TOKEN}x` }, { 'X-API-Key': TOKEN }];
+    for (const headers of strangers) {
       expect((await request.get('/api/operator/notice', { headers })).status(), JSON.stringify(headers)).toBe(401);
       const put = await request.put('/api/operator/notice', { headers, data: { level: 'info', text: 'x' } });
       expect(put.status(), JSON.stringify(headers)).toBe(401);
@@ -28,7 +28,10 @@ test.describe('Operator notice', () => {
 
     const refused = [
       { level: 'info', text: 'x', link: { url: 'javascript:alert(1)' } },
+      { level: 'info', text: 'x', link: { url: 'https://example.com/\u0000' } },
+      { level: 'info', text: 'a\ud800b' },
       { level: 'info', text: 'x', expiresAt: new Date(Date.now() - 1000).toISOString() },
+      { level: 'info', text: 'x', expiresAt: '9999-12-31T23:59:59-23:59' },
       { level: 'loud', text: 'x' },
       { level: 'info', text: '' },
     ];
@@ -40,20 +43,21 @@ test.describe('Operator notice', () => {
   });
 
   test('shows the notice above every page, until dismissed or replaced', async ({ page, request }) => {
-    const set = await request.put('/api/operator/notice', {
-      headers: OPERATOR,
-      data: {
-        level: 'warning',
-        text: 'Maintenance tonight from 22:00 UTC.',
-        link: { url: 'https://status.example.com/', label: 'Status page' },
-        expiresAt: inAMinute(),
-      },
-    });
+    const warning = {
+      level: 'warning',
+      text: 'Maintenance tonight from 22:00 UTC.',
+      link: { url: 'https://status.example.com/', label: 'Status page' },
+      expiresAt: inAMinute(),
+    };
+    const set = await request.put('/api/operator/notice', { headers: OPERATOR, data: warning });
     expect(set.status()).toBe(200);
     expect(set.headers()['cache-control']).toBe('no-store');
     const { notice } = await set.json();
     expect(notice).toMatchObject({ level: 'warning', audience: 'everyone', setAt: expect.any(String) });
     expect(await (await request.get('/api/operator/notice', { headers: OPERATOR })).json()).toEqual({ notice });
+    // The same notice set again keeps its setAt: a browser that dismissed it is not shown it again.
+    const again = await (await request.put('/api/operator/notice', { headers: OPERATOR, data: warning })).json();
+    expect(again.notice.setAt).toBe(notice.setAt);
 
     // The browser asks for nothing: the server render carries it.
     const asked: string[] = [];
