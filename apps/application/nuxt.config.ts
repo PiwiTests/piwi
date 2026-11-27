@@ -398,7 +398,7 @@ export default defineNuxtConfig({
               in: 'cookie',
               // Sealed-session cookie name, pinned in server/utils/auth.ts
               // (SESSION_COOKIE_NAME) rather than left to h3's `h3` default.
-              name: 'piwi_session',
+              name: '__Host-piwi_session',
               description: 'Session cookie authentication (sealed session cookie). Set via POST /api/auth/login.',
             },
           },
