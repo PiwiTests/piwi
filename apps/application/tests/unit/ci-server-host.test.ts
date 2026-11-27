@@ -49,7 +49,7 @@ describe('a private address', () => {
       `${host} is a private address, which a CI server request may not reach. The operator allows it by listing the host in PIWI_CI_SERVER_HOSTS.`,
     );
     await expect(sendCiServerRequest({ ...request(), url: base.replace('127.0.0.1', 'localhost') })).rejects.toThrow(
-      `localhost:${new URL(base).port} resolves to a private address`,
+      `localhost:${new URL(base).port} is a name reserved for private addresses, which a CI server request may not reach.`,
     );
     expect(hits).toBe(0);
     expect(ciServerBaseUrlProblem(base)).toContain('PIWI_CI_SERVER_HOSTS');

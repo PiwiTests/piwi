@@ -338,6 +338,16 @@ const parseJson = (text: string): unknown => {
   }
 };
 
+/**
+ * What a request that got no answer tells the user: a refusal of Piwi's own (the credential's rules, a private
+ * address) as it is, any other failure as a CI server that could not be reached.
+ */
+function unsentRequestMessage(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  if (error instanceof CredentialRefusedError || privateAddressRefusal(error)) return reason;
+  return `The CI server could not be reached: ${reason}.`;
+}
+
 /** The error a non-2xx answer becomes: its status and, for a JSON answer, its `message`, cut short. */
 export function ciServerAnswerError(answer: CiServerAnswer): Error {
   if (answer.status >= 300 && answer.status < 400) {
@@ -609,13 +619,7 @@ export async function checkCiServerTarget(
             },
       );
     } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      results.push({
-        kind: plan.kind,
-        ok: false,
-        missing: [],
-        message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.`,
-      });
+      results.push({ kind: plan.kind, ok: false, missing: [], message: unsentRequestMessage(e) });
     }
   }
   return results;
@@ -681,8 +685,7 @@ async function readForListing(
     const json = parseJson(answer.text);
     return json === null ? { message: 'The CI server did not answer JSON.' } : { json, carried: request.credential };
   } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    return { message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.` };
+    return { message: unsentRequestMessage(e) };
   }
 }
 

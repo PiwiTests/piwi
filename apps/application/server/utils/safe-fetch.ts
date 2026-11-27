@@ -143,8 +143,24 @@ export function placesAllow(places: readonly HostPlace[], url: string): boolean 
 }
 
 /**
+ * Whether a host name is one reserved for private addresses, refused without a
+ * lookup: none, `localhost`, and the names under `.localhost`, `.local` and
+ * `.internal`. `host` is lowercased, without IPv6 brackets.
+ */
+export function isPrivateHostName(host: string): boolean {
+  return (
+    !host ||
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  );
+}
+
+/**
  * The refusal of `assertPublicHttpUrl` and of `publicOnlyLookup`: the host is a
- * blocked address, a name that resolves to one, or a name that says it is local.
+ * blocked address, a name that resolves to one, or a name reserved for private
+ * addresses.
  */
 export class BlockedHostError extends Error {
   readonly code = 'EADDRNOTAVAIL';
@@ -180,9 +196,14 @@ export class PrivateAddressError extends Error {
    * @param variable The variable whose list allows the host.
    */
   constructor(url: URL, subject: string, variable: string) {
-    const name = url.hostname.replace(/^\[|\]$/g, '');
+    const name = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    const what = isIP(name)
+      ? 'is a private address'
+      : isPrivateHostName(name)
+        ? 'is a name reserved for private addresses'
+        : 'resolves to a private address';
     super(
-      `${url.host} ${isIP(name) ? 'is' : 'resolves to'} a private address, which ${subject} may not reach. The operator allows it by listing the host in ${variable}.`,
+      `${url.host} ${what}, which ${subject} may not reach. The operator allows it by listing the host in ${variable}.`,
     );
     this.name = 'PrivateAddressError';
   }
@@ -208,15 +229,7 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
     throw new Error('Only http(s) URLs are allowed');
   }
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (
-    !host ||
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.internal') ||
-    host.endsWith('.local')
-  ) {
-    throw new BlockedHostError();
-  }
+  if (isPrivateHostName(host)) throw new BlockedHostError();
   if (isIP(host)) {
     if (isBlockedAddress(host)) throw new BlockedHostError();
     return url;

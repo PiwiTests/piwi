@@ -87,7 +87,7 @@ describe('a name rebound to loopback after the check', () => {
     hits = 0;
     const sent = sendCiServerRequest({
       method: 'GET',
-      url: `https://rebind.example.test:${port}/api/json`,
+      url: `http://rebind.example.test:${port}/api/json`,
       headers: {},
       body: null,
       credential: null,

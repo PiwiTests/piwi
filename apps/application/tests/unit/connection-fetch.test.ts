@@ -137,6 +137,9 @@ describe('a request to an address set in Settings', () => {
     expect(((await refusal(`http://127.0.0.1:${port}/echo`)) as Error).message).toBe(
       `127.0.0.1:${port} is a private address, which an address set in Settings may not reach. The operator allows it by listing the host in PIWI_PRIVATE_HOSTS.`,
     );
+    expect(((await refusal('http://metadata.google.internal/')) as Error).message).toMatch(
+      /^metadata\.google\.internal is a name reserved for private addresses, /,
+    );
     expect(((await refusal(`http://rebound.example:${port}/`)) as Error).message).toMatch(
       new RegExp(`^rebound\\.example:${port} resolves to a private address, .* PIWI_PRIVATE_HOSTS\\.$`),
     );

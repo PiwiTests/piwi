@@ -115,7 +115,7 @@ test.describe.serial('Run button', () => {
     const dialog = await openDialog(page, `/failure-clusters/${clusterId}`);
     await dialog.getByRole('button', { name: 'Send' }).click();
     await expect(dialog.getByTestId('run-dialog-error')).toContainText(
-      'localhost:9 resolves to a private address, which a CI server request may not reach',
+      'localhost:9 is a name reserved for private addresses, which a CI server request may not reach',
       { timeout: 20_000 },
     );
   });

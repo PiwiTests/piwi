@@ -16,6 +16,7 @@ import {
   hostPlaces,
   isBlockedAddress,
   isBlockedHostRefusal,
+  isPrivateHostName,
   placesAllow,
   PrivateAddressError,
   publicOnlyLookup,
@@ -77,12 +78,7 @@ export function connectionMayReachPrivateAddress(url: string): boolean {
  */
 function refuseNamedPrivateHost(url: URL): void {
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  const named =
-    !host ||
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.local') ||
-    host.endsWith('.internal');
+  const named = isPrivateHostName(host);
   const literal = /^[\d.]+$/.test(host) || host.includes(':');
   if (named || (literal && isBlockedAddress(host))) throw privateAddress(url);
 }

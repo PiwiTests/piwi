@@ -613,6 +613,8 @@ describe('a per-user credential against a Jenkins', () => {
   /** The tokens the fake Jenkins takes, by user name; any other answers 401. */
   const accounts: Record<string, string> = { 'quinn.qa': TOKEN };
   let anonymous = false;
+  /** The connections opened to the fake Jenkins, a request or not. */
+  let connections = 0;
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -640,6 +642,9 @@ describe('a per-user credential against a Jenkins', () => {
       res.writeHead(201, { Location: `${base}queue/item/7/` });
       res.end();
     });
+    server.on('connection', () => {
+      connections += 1;
+    });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
   });
@@ -648,6 +653,7 @@ describe('a per-user credential against a Jenkins', () => {
     process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
     seen.length = 0;
     anonymous = false;
+    connections = 0;
   });
   afterEach(() => {
     delete process.env.PIWI_CI_SERVER_HOSTS;
@@ -695,7 +701,7 @@ describe('a per-user credential against a Jenkins', () => {
     expect(
       await testCiServerUserToken(db as never, { id, destination }, actor(2), { user: 'quinn.qa', secret: TOKEN }),
     ).toEqual({ ok: false, reason: 'private-address' });
-    expect(seen).toEqual([]);
+    expect(connections).toBe(0);
     expect((await uses()).at(-1)).toMatchObject({
       result: 'failed',
       reason: expect.stringContaining('PIWI_CI_SERVER_HOSTS'),

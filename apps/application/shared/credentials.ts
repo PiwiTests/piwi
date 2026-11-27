@@ -600,7 +600,7 @@ export const USER_TOKEN_TEST_REASONS: Record<Exclude<UserTokenTestResult, { ok: 
   refused: 'The CI server refused this user name and token.',
   unreachable: 'The CI server could not be reached.',
   'private-address':
-    'The CI server’s host resolves to a private address, which Piwi reaches only once an administrator lists the host in PIWI_CI_SERVER_HOSTS.',
+    'The CI server’s host is, or resolves to, a private address, which Piwi reaches only once the operator lists the host in PIWI_CI_SERVER_HOSTS.',
   anonymous: 'The CI server did not recognize this token as a signed-in user.',
 };
 
