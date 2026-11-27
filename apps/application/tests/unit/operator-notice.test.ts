@@ -49,9 +49,13 @@ describe('the notice an operator sends', () => {
   });
 
   test('refuses what would hide, reorder or break the line, and what the database cannot store', () => {
-    const hidden = ['\u0085', '\u2028', '\u2029', '\u202e', '\u2066', '\u200b', '\u200f', '\ufeff', '\ud800', '\udc00'];
+    const hidden = [
+      ...['\u0085', '\u2028', '\u2029', '\u202e', '\u2066', '\u200b', '\u200f', '\ufeff', '\ud800', '\udc00'],
+      // The Arabic letter mark, and the invisible tag characters beyond the first plane.
+      ...['\u061c', '\u{e0001}', '\u{e0041}'],
+    ];
     for (const character of hidden) {
-      const code = character.charCodeAt(0).toString(16);
+      const code = character.codePointAt(0)!.toString(16);
       expect(accepts({ level: 'info', text: `a${character}b` }), code).toBe(false);
       const link = { url: 'https://example.com', label: `a${character}b` };
       expect(accepts({ level: 'info', text: 'x', link }), code).toBe(false);

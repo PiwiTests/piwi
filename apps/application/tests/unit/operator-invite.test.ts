@@ -15,7 +15,7 @@ const { AdminInviteRefused, adminInviteSchema, inviteAdministrator, usernameBase
   await import('../../server/utils/operator-invite');
 const { invitationsShownTo, pendingOperatorInvitations } = await import('#shared/handlers/operator-invitations');
 const { listUserItems } = await import('#shared/handlers/project-access');
-const { mintAccountToken } = await import('../../server/utils/account-tokens');
+const { claimAccountToken, mintAccountToken } = await import('../../server/utils/account-tokens');
 
 describe('the username of an invited address', () => {
   test('is its part before the @, in letters, digits, dots, underscores and hyphens, three characters at least', () => {
@@ -130,6 +130,39 @@ describe('inviting an administrator', () => {
     expect(await db.select().from(schema.users).where(eq(schema.users.email, 'new@example.com'))).toEqual([]);
     expect(await db.select().from(schema.accountTokens)).toEqual([]);
     expect(failing.tellAdministrator).not.toHaveBeenCalled();
+  });
+
+  test('keeps the account a second invitation sent a link for while the first one’s link failed', async () => {
+    const resent = mail();
+    const failing = {
+      sendInvite: vi.fn(async () => {
+        // The same address invited again while the first invitation's email is still being sent.
+        await inviteAdministrator(db, { email: 'new@example.com' }, resent);
+        throw new Error('SMTP down');
+      }),
+      tellAdministrator: vi.fn(async () => {}),
+    };
+    await expect(inviteAdministrator(db, { email: 'new@example.com' }, failing)).rejects.toMatchObject({
+      statusCode: 502,
+      message: 'The invitation email could not be sent: invite the address again',
+    });
+    const [account] = await db.select().from(schema.users).where(eq(schema.users.email, 'new@example.com'));
+    expect(account).toBeDefined();
+    expect(await claimAccountToken(db, resent.sendInvite.mock.calls[0]![1], ['invite'])).toMatchObject({
+      userId: account!.id,
+      purpose: 'invite',
+    });
+  });
+
+  test('sets nothing with the operator’s link while the account is not an administrator', async () => {
+    const sent = mail();
+    await inviteAdministrator(db, { email: 'new@example.com' }, sent);
+    const token = sent.sendInvite.mock.calls[0]![1];
+    const [account] = await db.select().from(schema.users).where(eq(schema.users.email, 'new@example.com'));
+    await db.update(schema.users).set({ role: 'member' }).where(eq(schema.users.id, account!.id));
+    expect(await claimAccountToken(db, token, ['invite'])).toBeNull();
+    await db.update(schema.users).set({ role: 'administrator' }).where(eq(schema.users.id, account!.id));
+    expect(await claimAccountToken(db, token, ['invite'])).toMatchObject({ userId: account!.id });
   });
 
   test('keeps an untaken invitation when its new link cannot be sent', async () => {
