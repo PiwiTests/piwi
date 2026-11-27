@@ -62,6 +62,10 @@ const putToken = underRoutePermission(
   state,
   (await import('../../server/api/credentials/[id]/token/index.put')).default as unknown as TokenRoute,
 );
+const testToken = underRoutePermission(
+  state,
+  (await import('../../server/api/credentials/[id]/token/test.post')).default as unknown as TokenRoute,
+);
 const { ciServerTemplateValues } = await import('#shared/handlers/ci-rerun-target');
 
 const SECRET_KEY = '0123456789abcdef'.repeat(4);
@@ -684,6 +688,20 @@ describe('a per-user credential against a Jenkins', () => {
     expect(seen).toEqual([]);
   });
 
+  test('says when the host resolves to a private address the operator did not list, before anything is sent', async () => {
+    delete process.env.PIWI_CI_SERVER_HOSTS;
+    const destination = base.replace('http:', 'https:');
+    const id = await createPerUser({ destination });
+    expect(
+      await testCiServerUserToken(db as never, { id, destination }, actor(2), { user: 'quinn.qa', secret: TOKEN }),
+    ).toEqual({ ok: false, reason: 'private-address' });
+    expect(seen).toEqual([]);
+    expect((await uses()).at(-1)).toMatchObject({
+      result: 'failed',
+      reason: expect.stringContaining('PIWI_CI_SERVER_HOSTS'),
+    });
+  });
+
   test('dispatches with the starter’s own token, and a 401 marks it refused', async () => {
     const id = await createPerUser({ destination: base });
     await give(id, 2, 'quinn.qa', TOKEN, base);
@@ -751,6 +769,24 @@ describe('giving a token through its route', () => {
       status: 200,
       body: { credential: { id, token: { remoteUser: 'quinn.qa', state: 'ready' } } },
     });
+  });
+
+  test('answers a host on a private address the operator did not list, and keeps the token it holds', async () => {
+    delete process.env.PIWI_CI_SERVER_HOSTS;
+    const destination = base.replace('http:', 'https:');
+    const id = await createPerUser({ destination });
+    state.caller = runner(2);
+    expect(await put(id, { user: 'quinn.qa', secret: TOKEN })).toMatchObject({
+      status: 400,
+      body: { data: { reason: 'private-address' }, message: expect.stringContaining('PIWI_CI_SERVER_HOSTS') },
+    });
+    await give(id, 2, 'quinn.qa', TOKEN, destination);
+    expect(await testToken({ params: { id: String(id) } })).toMatchObject({
+      ok: false,
+      reason: 'private-address',
+      message: expect.stringContaining('PIWI_CI_SERVER_HOSTS'),
+    });
+    expect((await listUserTokens(db as never, id))[0]!.state).toBe('ready');
   });
 
   test('refuses an API key, a password, a credential the person may not use, and an account someone else gave', async () => {

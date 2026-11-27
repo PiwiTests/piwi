@@ -644,7 +644,7 @@ describe('checking a job on a CI server', () => {
     const privateBase = base.replace('http:', 'https:');
     const results = await check(target({ preset: 'jenkins', baseUrl: privateBase, rerun: { job: 'good' } }));
     expect(results).toEqual([
-      expect.objectContaining({ ok: false, message: expect.stringContaining('URL host is not allowed') }),
+      expect.objectContaining({ ok: false, message: expect.stringContaining('PIWI_CI_SERVER_HOSTS') }),
     ]);
     expect(seen).toEqual([]);
   });

@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest';
-import { isBlockedAddress, assertPublicHttpUrl } from '../../server/utils/safe-fetch';
+import {
+  isBlockedAddress,
+  assertPublicHttpUrl,
+  BlockedHostError,
+  isBlockedHostRefusal,
+} from '../../server/utils/safe-fetch';
 
 describe('isBlockedAddress', () => {
   test('blocks private / loopback / link-local / reserved addresses', () => {
@@ -121,6 +126,14 @@ describe('assertPublicHttpUrl', () => {
     await expect(assertPublicHttpUrl('http://[::127.0.0.1]/x')).rejects.toThrow();
     await expect(assertPublicHttpUrl('http://[64:ff9b::169.254.169.254]/latest/meta-data')).rejects.toThrow();
     await expect(assertPublicHttpUrl('http://[fe90::1]/x')).rejects.toThrow();
+  });
+
+  test('refuses a private host with an error the callers recognize, however it is wrapped', async () => {
+    const error = await assertPublicHttpUrl('http://10.0.0.5/x').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(BlockedHostError);
+    expect((error as Error).message).toBe('URL host is not allowed');
+    expect(isBlockedHostRefusal(new TypeError('fetch failed', { cause: error }))).toBe(true);
+    expect(isBlockedHostRefusal(new Error('URL host is not allowed'))).toBe(false);
   });
 
   test('accepts a public literal IP without a DNS lookup', async () => {

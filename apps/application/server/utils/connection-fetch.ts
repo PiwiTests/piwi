@@ -11,7 +11,16 @@
  */
 import type { Agent, RequestInit as UndiciRequestInit } from 'undici';
 import { isDesktopRuntime } from './ai-claude-cli';
-import { hostPlace, hostPlaces, isBlockedAddress, placesAllow, publicOnlyLookup, type HostPlace } from './safe-fetch';
+import {
+  hostPlace,
+  hostPlaces,
+  isBlockedAddress,
+  isBlockedHostRefusal,
+  placesAllow,
+  PrivateAddressError,
+  publicOnlyLookup,
+  type HostPlace,
+} from './safe-fetch';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
 
 /** The keys of the runtime config's `ai` block that hold an AI role's base URL from the environment. */
@@ -27,23 +36,8 @@ const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'x
 const BODY_HEADERS = ['content-type', 'content-length', 'content-encoding', 'content-language', 'content-location'];
 
 /** Why a request is refused, for the person who set the address. */
-export class PrivateAddressError extends Error {
-  constructor(host: string) {
-    super(
-      `${host} is a private address, which an address set in Settings may not reach. The operator allows it by listing the host in PIWI_PRIVATE_HOSTS.`,
-    );
-    this.name = 'PrivateAddressError';
-  }
-}
-
-/** The refusal behind an error, however deep a client library wrapped it, or null. */
-export function privateAddressRefusal(error: unknown): PrivateAddressError | null {
-  let current: unknown = error;
-  for (let depth = 0; current && depth < 5; depth++) {
-    if (current instanceof PrivateAddressError) return current;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return null;
+function privateAddress(url: URL): PrivateAddressError {
+  return new PrivateAddressError(url, 'an address set in Settings', 'PIWI_PRIVATE_HOSTS');
 }
 
 /** The addresses the environment sets for a Jira site or an AI role. */
@@ -90,7 +84,7 @@ function refuseNamedPrivateHost(url: URL): void {
     host.endsWith('.local') ||
     host.endsWith('.internal');
   const literal = /^[\d.]+$/.test(host) || host.includes(':');
-  if (named || (literal && isBlockedAddress(host))) throw new PrivateAddressError(url.host);
+  if (named || (literal && isBlockedAddress(host))) throw privateAddress(url);
 }
 
 let publicOnlyAgent: Agent | null = null;
@@ -113,9 +107,7 @@ async function sendOnce(url: URL, init: RequestInit): Promise<Response> {
     })) as unknown as Response;
   } catch (error) {
     // The lookup of the connection refused an address the name resolves to.
-    if ((error as { cause?: { code?: string } }).cause?.code === 'EADDRNOTAVAIL') {
-      throw new PrivateAddressError(url.host);
-    }
+    if (isBlockedHostRefusal(error)) throw privateAddress(url);
     throw error;
   }
 }

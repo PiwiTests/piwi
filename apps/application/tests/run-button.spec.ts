@@ -114,7 +114,10 @@ test.describe.serial('Run button', () => {
   test('a dispatch Piwi refuses before sending it is said in the dialog', async ({ page }) => {
     const dialog = await openDialog(page, `/failure-clusters/${clusterId}`);
     await dialog.getByRole('button', { name: 'Send' }).click();
-    await expect(dialog.getByTestId('run-dialog-error')).toContainText('URL host is not allowed', { timeout: 20_000 });
+    await expect(dialog.getByTestId('run-dialog-error')).toContainText(
+      'localhost:9 resolves to a private address, which a CI server request may not reach',
+      { timeout: 20_000 },
+    );
   });
 
   test('the project page runs the whole suite on its action, with the choice input', async ({ page }) => {

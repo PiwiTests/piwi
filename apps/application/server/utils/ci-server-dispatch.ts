@@ -24,7 +24,10 @@ import {
   assertPublicHttpUrl,
   hostPlace,
   hostPlaces,
+  isBlockedHostRefusal,
   placesAllow,
+  PrivateAddressError,
+  privateAddressRefusal,
   publicOnlyLookup,
   type HostPlace,
 } from './safe-fetch';
@@ -298,20 +301,28 @@ async function readLimited(
  */
 export async function sendCiServerRequest(request: OutgoingCiRequest): Promise<CiServerAnswer> {
   const undici = await import('undici');
-  let dispatcher: Agent | undefined;
-  if (!mayReachPrivateAddress(request.url)) {
-    await assertPublicHttpUrl(request.url);
-    publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
-    dispatcher = publicOnlyAgent;
+  let res: Awaited<ReturnType<typeof undici.fetch>>;
+  try {
+    let dispatcher: Agent | undefined;
+    if (!mayReachPrivateAddress(request.url)) {
+      await assertPublicHttpUrl(request.url);
+      publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
+      dispatcher = publicOnlyAgent;
+    }
+    res = await undici.fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body ?? undefined,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
+      ...(dispatcher ? { dispatcher } : {}),
+    });
+  } catch (error) {
+    if (isBlockedHostRefusal(error)) {
+      throw new PrivateAddressError(new URL(request.url), 'a CI server request', 'PIWI_CI_SERVER_HOSTS');
+    }
+    throw error;
   }
-  const res = await undici.fetch(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: request.body ?? undefined,
-    redirect: 'manual',
-    signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
-    ...(dispatcher ? { dispatcher } : {}),
-  });
   const { text, truncated } = await readLimited(
     res.body as unknown as ReadableStream<Uint8Array> | null,
     request.maxAnswerBytes ?? MAX_ANSWER_BYTES,
@@ -439,7 +450,7 @@ export async function testCiServerUserToken(
     );
   } catch (e) {
     if (e instanceof CredentialRefusedError) throw e;
-    return { ok: false, reason: 'unreachable' };
+    return { ok: false, reason: privateAddressRefusal(e) ? 'private-address' : 'unreachable' };
   }
   if (answer.status === 401 || answer.status === 403) return { ok: false, reason: 'refused' };
   if (answer.status < 200 || answer.status >= 300) return { ok: false, reason: 'unreachable' };

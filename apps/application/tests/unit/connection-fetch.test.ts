@@ -21,13 +21,10 @@ vi.mock('node:dns', async (importOriginal) => {
 const runtimeAi: Record<string, string> = {};
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: runtimeAi }));
 
-const {
-  connectionFetch,
-  connectionMayReachPrivateAddress,
-  connectionPrivatePlaces,
-  PrivateAddressError,
-  privateAddressRefusal,
-} = await vi.importActual<typeof import('../../server/utils/connection-fetch')>('../../server/utils/connection-fetch');
+const { connectionFetch, connectionMayReachPrivateAddress, connectionPrivatePlaces } = await vi.importActual<
+  typeof import('../../server/utils/connection-fetch')
+>('../../server/utils/connection-fetch');
+const { PrivateAddressError, privateAddressRefusal } = await import('../../server/utils/safe-fetch');
 
 const ENV = [
   'PIWI_PRIVATE_HOSTS',
@@ -134,6 +131,15 @@ describe('a request to an address set in Settings', () => {
       expect(privateAddressRefusal(new Error('Connection error.', { cause: error }))).toBe(error);
     }
     expect(hits).toBe(0);
+  });
+
+  test('names the host and the variable that would allow it, and whether the name resolves there', async () => {
+    expect(((await refusal(`http://127.0.0.1:${port}/echo`)) as Error).message).toBe(
+      `127.0.0.1:${port} is a private address, which an address set in Settings may not reach. The operator allows it by listing the host in PIWI_PRIVATE_HOSTS.`,
+    );
+    expect(((await refusal(`http://rebound.example:${port}/`)) as Error).message).toMatch(
+      new RegExp(`^rebound\\.example:${port} resolves to a private address, .* PIWI_PRIVATE_HOSTS\\.$`),
+    );
   });
 
   test('keeps its refusal readable through the Anthropic client, which wraps it', async () => {
