@@ -12,10 +12,15 @@ const TTL_MS: Record<TokenPurpose, number> = {
   invite: 72 * 60 * 60 * 1000, // 72 hours
 };
 
+/** A new single-use token for `purpose`: the plaintext to email, the hash to store, and when it ends. */
+export function newAccountToken(purpose: TokenPurpose): { token: string; tokenHash: string; expiresAt: Date } {
+  const token = randomBytes(32).toString('hex');
+  return { token, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + TTL_MS[purpose]) };
+}
+
 /**
  * Mint a new single-use token for a user, to email to `email`. Returns the
  * plaintext token. The token acts only while the account still holds `email`.
- * `issuedBy: 'operator'` marks an invitation whoever runs the instance asked for.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function mintAccountToken(
@@ -23,18 +28,13 @@ export async function mintAccountToken(
   userId: number,
   purpose: TokenPurpose,
   email: string,
-  options: { issuedBy?: 'operator' } = {},
 ): Promise<string> {
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + TTL_MS[purpose]);
+  const { token, tokenHash, expiresAt } = newAccountToken(purpose);
 
   // Invalidate any unused tokens of the same purpose for this user
   await db.delete(accountTokens).where(and(eq(accountTokens.userId, userId), eq(accountTokens.purpose, purpose)));
 
-  await db
-    .insert(accountTokens)
-    .values({ userId, purpose, tokenHash, email, expiresAt, issuedBy: options.issuedBy ?? null });
+  await db.insert(accountTokens).values({ userId, purpose, tokenHash, email, expiresAt });
   return token;
 }
 

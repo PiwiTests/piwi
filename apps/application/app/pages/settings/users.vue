@@ -15,6 +15,9 @@ import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 
 const { data: usersData, refresh } = await useFetch<UsersListResponse>('/api/users');
 const { data: groupsData, refresh: refreshGroups } = await useFetch<GroupsListResponse>('/api/groups');
+// The banner that names the operator's untaken invitations follows the list: a deleted, demoted or re-invited account
+// leaves it as the list changes.
+watch(usersData, () => refreshNuxtData('operator-notice'));
 const toast = useToast();
 const { authState, can, fetchUser, refreshDemoAccess } = useAuth();
 
@@ -311,6 +314,8 @@ async function handleInviteUser(user: UserListItem) {
       { method: 'POST' },
     );
     toast.add({ title: 'Invite sent', description: `Invitation sent to ${user.email}`, color: 'success' });
+    // An administrator's invite replaces the operator's, whose mark the list then drops.
+    await refresh();
   } catch (e) {
     toast.add({ title: 'Failed to send invite', description: errorMessage(e, 'An error occurred'), color: 'error' });
   } finally {

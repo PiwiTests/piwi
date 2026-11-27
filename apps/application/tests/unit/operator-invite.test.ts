@@ -1,8 +1,8 @@
 /**
  * The administrator invitation whoever runs the instance asks for: an account without a password, a one-time link sent
- * to the invited address only, every other administrator told, nothing kept when the link cannot be sent, and an
- * address an account holds refused. The invitation stays pending, on the Users page, until a password is set or a
- * sign-in provider linked.
+ * to the invited address only, every other administrator who can sign in told, nothing kept when the link cannot be
+ * sent, and an address another account holds refused. The invitation stays pending, on the Users page and to
+ * administrators only on the banner, until it is taken; the same address invited again meanwhile gets a new link.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -13,7 +13,7 @@ delete process.env.PIWI_DATABASE_URL;
 
 const { AdminInviteRefused, adminInviteSchema, inviteAdministrator, usernameBase } =
   await import('../../server/utils/operator-invite');
-const { pendingOperatorInvitations } = await import('#shared/handlers/operator-invitations');
+const { invitationsShownTo, pendingOperatorInvitations } = await import('#shared/handlers/operator-invitations');
 const { listUserItems } = await import('#shared/handlers/project-access');
 const { mintAccountToken } = await import('../../server/utils/account-tokens');
 
@@ -24,6 +24,7 @@ describe('the username of an invited address', () => {
     expect(usernameBase('jo@example.com')).toBe('jo-admin');
     expect(usernameBase('+@example.com')).toBe('admin');
     expect(usernameBase(`${'x'.repeat(300)}@example.com`).length).toBeLessThanOrEqual(192);
+    expect(usernameBase(`${'x'.repeat(191)}-y@example.com`)).toBe('x'.repeat(191));
   });
 });
 
@@ -79,6 +80,32 @@ describe('inviting an administrator', () => {
     expect(items.find((item) => item.username === 'owner')?.operatorInvitation).toBeNull();
   });
 
+  test('gives an untaken invitation a new link when the address is invited again, and refuses one taken', async () => {
+    const first = mail();
+    await inviteAdministrator(db, { email: 'new@example.com' }, first);
+    const again = mail();
+    await inviteAdministrator(db, { email: 'NEW@example.com' }, again);
+
+    expect(await db.select().from(schema.users).where(eq(schema.users.email, 'new@example.com'))).toHaveLength(1);
+    expect(again.sendInvite).toHaveBeenCalledWith('new@example.com', expect.any(String), 'new');
+    expect(again.sendInvite.mock.calls[0]![1]).not.toBe(first.sendInvite.mock.calls[0]![1]);
+    const tokens = await db.select().from(schema.accountTokens);
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).toMatchObject({ issuedBy: 'operator', usedAt: null });
+
+    await db.update(schema.users).set({ password: 'hash' }).where(eq(schema.users.email, 'new@example.com'));
+    await expect(inviteAdministrator(db, { email: 'new@example.com' }, mail())).rejects.toMatchObject({
+      errorCode: 'EMAIL_TAKEN',
+    });
+  });
+
+  test('tells no other invitee who has not signed in yet', async () => {
+    await inviteAdministrator(db, { email: 'first@example.com' }, mail());
+    const sent = mail();
+    await inviteAdministrator(db, { email: 'second@example.com' }, sent);
+    expect(sent.tellAdministrator.mock.calls).toEqual([['owner@example.com', 'second@example.com']]);
+  });
+
   test('refuses an address an account holds, whatever its letter case, and takes a free username', async () => {
     await expect(inviteAdministrator(db, { email: 'MEMBER@example.com' }, mail())).rejects.toMatchObject({
       statusCode: 409,
@@ -102,6 +129,18 @@ describe('inviting an administrator', () => {
     expect(failing.tellAdministrator).not.toHaveBeenCalled();
   });
 
+  test('keeps an untaken invitation when its new link cannot be sent', async () => {
+    await inviteAdministrator(db, { email: 'new@example.com' }, mail());
+    const failing = {
+      sendInvite: vi.fn(async () => Promise.reject(new Error('SMTP down'))),
+      tellAdministrator: vi.fn(),
+    };
+    await expect(inviteAdministrator(db, { email: 'new@example.com' }, failing)).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(await pendingOperatorInvitations(db)).toHaveLength(1);
+  });
+
   test('is still invited when an administrator could not be told', async () => {
     const sent = {
       sendInvite: vi.fn(async () => {}),
@@ -111,10 +150,18 @@ describe('inviting an administrator', () => {
     expect(await pendingOperatorInvitations(db)).toHaveLength(1);
   });
 
-  test('stops being pending once a password is set, a provider linked, the link used, or an administrator resends it', async () => {
+  test('stops being pending once taken, resent by an administrator, moved to another address or demoted', async () => {
     const pendingFor = async (email: string) =>
       (await pendingOperatorInvitations(db)).filter((invitation) => invitation.email === email).length;
-    for (const email of ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com']) {
+    const emails = [
+      'a@example.com',
+      'b@example.com',
+      'c@example.com',
+      'd@example.com',
+      'e@example.com',
+      'f@example.com',
+    ];
+    for (const email of emails) {
       await inviteAdministrator(db, { email }, mail());
     }
     const idOf = async (email: string) =>
@@ -133,9 +180,28 @@ describe('inviting an administrator', () => {
       .set({ usedAt: new Date() })
       .where(eq(schema.accountTokens.userId, await idOf('c@example.com')));
     await mintAccountToken(db, await idOf('d@example.com'), 'invite', 'd@example.com');
+    const movedId = await idOf('e@example.com');
+    await db.update(schema.users).set({ email: 'moved@example.com' }).where(eq(schema.users.id, movedId));
+    await db
+      .update(schema.users)
+      .set({ role: 'member' })
+      .where(eq(schema.users.id, await idOf('f@example.com')));
 
-    for (const email of ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com']) {
+    for (const email of emails) {
       expect(await pendingFor(email), email).toBe(0);
     }
+    expect(await pendingFor('moved@example.com')).toBe(0);
+  });
+
+  test('is named on the banner to administrators only, and only until it ends', async () => {
+    const { expiresAt } = await inviteAdministrator(db, { email: 'new@example.com' }, mail());
+    const before = new Date(expiresAt.getTime() - 1000);
+    expect(await invitationsShownTo(db, { administrator: false, now: before })).toEqual([]);
+    expect(await invitationsShownTo(db, { administrator: true, now: before })).toEqual([
+      { userId: expect.any(Number), email: 'new@example.com', expiresAt: expiresAt.toISOString() },
+    ]);
+    expect(await invitationsShownTo(db, { administrator: true, now: expiresAt })).toEqual([]);
+    // Ended, it is still pending: the Users page says it ended.
+    expect(await pendingOperatorInvitations(db)).toHaveLength(1);
   });
 });
