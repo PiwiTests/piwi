@@ -110,8 +110,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
-  // The operator's usage, for whoever runs the instance with PIWI_OPERATOR_TOKEN: the browser demo has no server to
-  // run, and no token.
+  // The operator's usage and notice, for whoever runs the instance with PIWI_OPERATOR_TOKEN: the browser demo has no
+  // server to run, and no token.
   'GET /api/operator/usage',
   'GET /api/operator/notice',
   'PUT /api/operator/notice',

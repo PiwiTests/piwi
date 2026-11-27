@@ -33,9 +33,10 @@ export default defineAppConfig({
     dashboardPanel: {
       slots: {
         // At least as tall as the space under the demo's banner (`--demo-banner-height`,
-        // unset outside the demo), where the dashboard sits, and over the desktop app's
-        // docked Local runs tray (`--desktop-runs-height`, unset while it is closed).
-        root: 'min-h-[calc(100svh-var(--demo-banner-height,0px)-var(--desktop-runs-height,0px))]',
+        // unset outside the demo), where the dashboard sits, and the operator's notice
+        // above the page (`--operator-notice-height`, unset while none shows), and over the
+        // desktop app's docked Local runs tray (`--desktop-runs-height`, unset while it is closed).
+        root: 'min-h-[calc(100svh-var(--demo-banner-height,0px)-var(--operator-notice-height,0px)-var(--desktop-runs-height,0px))]',
         // The page gutter of every page: 16 px around the content and between its
         // blocks. Pages add no padding of their own. Below `sm` the page has no side
         // gutter: cards are full-bleed and their own 12 px padding is the only inset.
