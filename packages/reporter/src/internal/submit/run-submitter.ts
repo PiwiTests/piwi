@@ -3,7 +3,7 @@ import type { FullResult } from '@playwright/test/reporter';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { HttpError, runTokenHeaders } from '../transport/http-client.js';
+import { HttpError, refusedAsReadOnly, runTokenHeaders } from '../transport/http-client.js';
 import { heldRepeat, uploadCaseFilesInTurn } from './uploader.js';
 import type { Uploader, RunPayload, ReportOptions, FoundReport, HeldRun } from './uploader.js';
 import { quotaRefusesRun, type StorageQuota } from './storage-quota.js';
@@ -216,6 +216,12 @@ export class RunSubmitter {
     // The dashboard refused the run for its storage quota, as the global setup or the stream heard: nothing of the run
     // is sent, and no copy is saved for a later run.
     if (this.storageQuota.refusesRun) return null;
+    // The dashboard is read-only, as the global setup, the stream or the replay of a saved run heard: nothing more is
+    // sent, and the run is saved for a later run.
+    if (this.httpClient.readOnly) {
+      this.stopForReadOnly(this.buildRunPayload(run, overallStatus, duration));
+      return null;
+    }
 
     let auth: string | null;
     try {
@@ -232,6 +238,10 @@ export class RunSubmitter {
     const requested = requestedRunTarget() !== null;
     if (!sm && !requested) await this.recovery.tryUpload(this.httpClient, auth, this.storageQuota);
     if (this.storageQuota.refusesRun) return null;
+    if (this.httpClient.readOnly) {
+      this.stopForReadOnly(this.buildRunPayload(run, overallStatus, duration));
+      return null;
+    }
 
     // The reports on disk that go with the run, found once for every rung.
     const reports = this.uploader.findReports(this.reportOptions(run));
@@ -441,6 +451,7 @@ export class RunSubmitter {
       }
       return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus, { runUrl: sm.runUrl }) };
     } catch (error) {
+      if (refusedAsReadOnly(error)) return this.stopForReadOnly(this.buildRunPayload(run, overallStatus, duration));
       this.logger.warn(`Failed to finalize streaming run: ${errorMessage(error)}`);
       this.logger.info('Falling back to batch upload...');
       return { done: false, output: null };
@@ -457,8 +468,9 @@ export class RunSubmitter {
 
   /**
    * Post the run's `/finish`, asked again when its answer may have been lost, since the dashboard may have finished
-   * the run already: then it refuses the request again as the run's stream is closed (409) or its token spent (403),
-   * which means the earlier request finished it. Throws when the run was not finished.
+   * the run already: then it refuses the request again as the run's stream is closed (409, unless the dashboard is
+   * read-only) or its token spent (403), which means the earlier request finished it. Throws when the run was not
+   * finished.
    */
   private async postFinish(runId: number, body: Record<string, unknown>, auth: string | null): Promise<void> {
     await this.askAgainWhenLost("The run's /finish", async (attempt) => {
@@ -467,7 +479,8 @@ export class RunSubmitter {
           headers: runTokenHeaders(typeof body.streamToken === 'string' ? body.streamToken : null),
         });
       } catch (error) {
-        if (attempt > 0 && error instanceof HttpError && (error.status === 409 || error.status === 403)) {
+        const finished = error instanceof HttpError && (error.status === 409 || error.status === 403);
+        if (attempt > 0 && finished && !refusedAsReadOnly(error)) {
           this.logger.debug(`Run #${runId} was finished by an earlier /finish whose answer was lost.`);
           return;
         }
@@ -514,6 +527,7 @@ export class RunSubmitter {
         output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
       };
     } catch (error) {
+      if (refusedAsReadOnly(error)) return this.stopForReadOnly(payload);
       if (quotaRefusesRun(error)) return this.stopForStorageQuota(payload);
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
@@ -649,6 +663,7 @@ export class RunSubmitter {
         output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
       };
     } catch (error) {
+      if (refusedAsReadOnly(error)) return this.stopForReadOnly(payload);
       if (quotaRefusesRun(error)) return this.stopForStorageQuota(payload);
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);
@@ -707,6 +722,17 @@ export class RunSubmitter {
     } else {
       this.storageQuota.refuseRun();
     }
+    return { done: true, output: null };
+  }
+
+  /**
+   * The dashboard is read-only, said once a run as it first answered so: every other rung would be refused alike, so
+   * the ladder stops, and `payload` is saved as the run's recovery copy, which a later run sends once the dashboard is
+   * writable again, naming the streamed run it replaces (`replacesRun`, a shard's aside). A requested run keeps no
+   * copy. The test run's own result stays what Playwright made it.
+   */
+  private stopForReadOnly(payload: RunPayload): SubmitOutcome {
+    if (requestedRunTarget() === null) this.saveRecovery(payload);
     return { done: true, output: null };
   }
 

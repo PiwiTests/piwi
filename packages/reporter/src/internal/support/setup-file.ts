@@ -40,6 +40,8 @@ interface SetupFailure {
   failed: string;
   /** The dashboard refused the run for its storage quota, which the global setup said already. */
   storageQuota?: true;
+  /** The dashboard is read-only, which the global setup said already. */
+  readOnly?: true;
 }
 
 /** Write this process's setup info file, readable by its owner alone, replacing whatever was at its path. */
@@ -49,11 +51,20 @@ export function writeSetupInfo(info: SetupInfo): void {
 
 /**
  * Write in this process's setup file that the global setup could not register the run, and why, for the reporter to
- * say; with `storageQuota`, that the dashboard refused the run for its storage quota, which the global setup said.
- * Never throws.
+ * say; with `refusal`, that the dashboard refused the run for its storage quota or as it is read-only, which the global
+ * setup said. Never throws.
  */
-export function writeSetupFailure(projectName: string, failed: string, storageQuota = false): void {
-  const failure: SetupFailure = { projectName, failed, ...(storageQuota && { storageQuota: true as const }) };
+export function writeSetupFailure(
+  projectName: string,
+  failed: string,
+  refusal: 'storage-quota' | 'read-only' | null = null,
+): void {
+  const failure: SetupFailure = {
+    projectName,
+    failed,
+    ...(refusal === 'storage-quota' && { storageQuota: true as const }),
+    ...(refusal === 'read-only' && { readOnly: true as const }),
+  };
   try {
     writePrivateFile(getSetupFilePath(projectName), JSON.stringify(failure));
   } catch {
@@ -100,6 +111,11 @@ export function peekSetupFailure(projectName: string): string | null {
 /** Whether the global setup of this process said the dashboard refused the project's run for its storage quota. */
 export function peekSetupRefusedForQuota(projectName: string): boolean {
   return peekSetupFile(projectName)?.storageQuota === true;
+}
+
+/** Whether the global setup of this process said the dashboard is read-only. */
+export function peekSetupReadOnly(projectName: string): boolean {
+  return peekSetupFile(projectName)?.readOnly === true;
 }
 
 /** Read and delete this process's setup file for the given project: its registration, `null` when it holds none. */

@@ -10,6 +10,7 @@ import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import {
   getSetupFilePath,
   peekSetupFailure,
+  peekSetupReadOnly,
   peekSetupRefusedForQuota,
   readSetupInfo,
 } from '../src/internal/support/setup-file.js';
@@ -426,6 +427,33 @@ describe('createGlobalSetup', () => {
       expect(peekSetupFailure('global-setup-quota')).toBe(
         'Request failed with status 409: The storage is past its quota.',
       );
+    } finally {
+      warn.mockRestore();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('says once that the dashboard is read-only, sends nothing more, and leaves that for the reporter', async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 409, { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } }),
+    );
+    cleanupNames.push('global-setup-read-only');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let userSetupCalled = false;
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-read-only' }, async () => {
+        userSetupCalled = true;
+      });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+
+      expect(userSetupCalled).toBe(true);
+      expect(requests.map((r) => r.url)).toEqual(['/api/test-runs/setup']);
+      expect(warn.mock.calls.map(([line]) => line)).toEqual([
+        "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected: this run's results are saved on this machine, and a later run sends them once the dashboard is writable again.",
+      ]);
+      expect(peekSetupReadOnly('global-setup-read-only')).toBe(true);
+      expect(peekSetupRefusedForQuota('global-setup-read-only')).toBe(false);
+      expect(readSetupInfo('global-setup-read-only')).toBeNull();
     } finally {
       warn.mockRestore();
       await new Promise<void>((r) => server.close(() => r()));

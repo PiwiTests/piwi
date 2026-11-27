@@ -33,6 +33,7 @@ import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
 import { StorageQuota } from '../internal/submit/storage-quota.js';
+import { sayWhenReadOnly } from '../internal/submit/read-only.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
@@ -85,6 +86,7 @@ import {
 import {
   peekSetupFailure,
   peekSetupInfo,
+  peekSetupReadOnly,
   peekSetupRefusedForQuota,
   readSetupInfo,
   type SetupInfo,
@@ -431,6 +433,7 @@ export class PiwiDashboardReporter {
       undefined,
       usedDesktopToken() ? (this.options.apiKey ?? null) : null,
     );
+    sayWhenReadOnly(this.httpClient, logger);
     this.fileHandler = new FileHandler(logger);
     this.storageQuota = new StorageQuota(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger, this.storageQuota);
@@ -484,6 +487,7 @@ export class PiwiDashboardReporter {
    */
   async preprocess(params: { config: FullConfig; suite: Suite; testRun: PreprocessTestRun }): Promise<void> {
     this.metadataCollector.readSuiteModes(params.suite, params.testRun);
+    this.heedSetupReadOnly();
     try {
       await this.editRun(params.config, params.suite, params.testRun);
     } catch (error) {
@@ -687,6 +691,7 @@ export class PiwiDashboardReporter {
     }
     // The global setup said already that the dashboard refused the run for its storage quota: nothing of it is sent.
     if (peekSetupRefusedForQuota(this.options.projectName!)) this.storageQuota.refuseRun(true);
+    this.heedSetupReadOnly();
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
     this.htmlReport = htmlReportFolder(config.reporter, this.testPathBase);
@@ -918,8 +923,8 @@ export class PiwiDashboardReporter {
       if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change; a run the
-      // dashboard refused for its storage quota was told so by the global setup.
-      else if (why !== 'local' && !this.storageQuota.refusesRun) {
+      // dashboard refused for its storage quota, or as it is read-only, was told so by the global setup.
+      else if (why !== 'local' && !this.storageQuota.refusesRun && !this.httpClient.readOnly) {
         const failure = why === 'setup-failed' ? peekSetupFailure(this.options.projectName!) : null;
         this.logger.info(ciLiveViewNote(why, failure));
       }
@@ -941,6 +946,14 @@ export class PiwiDashboardReporter {
         'Live view ready: this run can be shared live from the editor or Piwi Picker. Nothing is sent until it is.',
       );
     }
+  }
+
+  /**
+   * The global setup said already that the dashboard is read-only: the run sends nothing to it, saves its copy for a
+   * later run, and says nothing more. Its global setup runs before `preprocess` and `onBegin`, which both heed it.
+   */
+  private heedSetupReadOnly(): void {
+    if (this.enabled && peekSetupReadOnly(this.options.projectName!)) this.httpClient.markReadOnly();
   }
 
   /** Why the run holds no live view key, from what its global setup left (`setup`, its registration, if any). */
@@ -1756,14 +1769,14 @@ export class PiwiDashboardReporter {
         },
         result,
       );
-      // A requested run's token starts the run alone: coverage and manifests are not taken from it.
-      const requested = this.requestedRun.instance !== null;
-      if (submitted && this.coverage && !requested) {
-        await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
-      }
-      if (submitted && this.manifests && !requested) {
-        const branch = resolveScmBranch(process.env) ?? null;
-        await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
+      // A requested run's token starts the run alone: coverage and manifests are not taken from it, nor from a run
+      // the dashboard took before it turned read-only.
+      if (submitted && this.requestedRun.instance === null && !this.httpClient.readOnly) {
+        if (this.coverage) await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
+        if (this.manifests) {
+          const branch = resolveScmBranch(process.env) ?? null;
+          await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
+        }
       }
     } catch (error) {
       // Playwright counts an error thrown by a reporter as a failure of the

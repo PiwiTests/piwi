@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { errorMessage } from '../support/errors.js';
 import { legacyPrivateTempDir, privateTempDir, readPrivateFile, writePrivateFile } from '../support/private-file.js';
-import { HttpError, deliveredRunId, type HttpClient } from '../transport/http-client.js';
+import { HttpError, deliveredRunId, refusedAsReadOnly, type HttpClient } from '../transport/http-client.js';
 import { Logger } from '../support/logger.js';
 import { quotaRefusesRun, type StorageQuota } from '../submit/storage-quota.js';
 
@@ -136,11 +136,13 @@ export class CrashRecovery {
    * anything else keeps it for the next run. A refusal for the dashboard's
    * storage quota keeps it too, and refuses this run in `storageQuota`, when
    * given: the dashboard refuses new runs. A run the global setup registered
-   * goes on, so its caller gives none.
+   * goes on, so its caller gives none. A refusal as the dashboard is read-only
+   * leaves the file too, which the run that replays it, sending nothing more,
+   * replaces with its own copy (`HttpClient.readOnly`).
    */
   async tryUpload(httpClient: HttpClient, auth?: string | null, storageQuota?: StorageQuota): Promise<void> {
     const data = this.load();
-    if (!data || recoveryServer(httpClient.baseUrl) !== this.serverUrl) return;
+    if (!data || httpClient.readOnly || recoveryServer(httpClient.baseUrl) !== this.serverUrl) return;
 
     this.logger.info('Found saved test data from a previous run, uploading...');
 
@@ -159,6 +161,12 @@ export class CrashRecovery {
       this.logger.info('Successfully uploaded saved test data');
       this.clear();
     } catch (error) {
+      if (refusedAsReadOnly(error)) {
+        this.logger.info(
+          "The dashboard is read-only: the saved test data of an earlier run is not sent, and this run's own copy replaces it on this machine.",
+        );
+        return;
+      }
       if (quotaRefusesRun(error)) {
         storageQuota?.refuseRun();
         this.logger.info(

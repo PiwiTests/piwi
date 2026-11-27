@@ -931,8 +931,8 @@ instance even when results were lost on the way. A run that does not finish ther
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`
 beside the counts of the files its copy left out, so the dashboard can say how the run arrived. A stream the
-dashboard ends while it runs (a 409 to its events or its heartbeat: another run with the same run label started and
-cancelled it) sends nothing more, and the run skips rung 1 for the batch, with the reason `run-ended`.
+dashboard ends while it runs (a 409 to its events or its heartbeat, read-only aside: another run with the same run label
+started and cancelled it) sends nothing more, and the run skips rung 1 for the batch, with the reason `run-ended`.
 
 The dashboard's storage quota answers with a 409 that names its `errorCode` (`internal/submit/storage-quota.ts`, one
 `StorageQuota` a run, the uploader's, shared with the stream and the global setup's setup file), each said once a run and
@@ -951,6 +951,17 @@ neither changing the run's exit code:
   of a run the global setup registered, which still `/begin`s, and a batch rung's after the run's stream opened,
   where the dashboard keeps what streamed: the ladder stops, said in a line of its own, with the recovery copy saved,
   which a later run sends to replace the streamed run (`replacesRun`).
+
+A dashboard switched read-only refuses every write with a 409 named **`READ_ONLY`** (`refusedAsReadOnly`), from any
+route. The run's `HttpClient` keeps the first such answer, and every later write (`postJSON`, `putJSON`,
+`postFormData`) fails with it at once, unsent; a GET and a login still go (`HttpClient.readOnly`). It is said once a
+run (`internal/submit/read-only.ts`, `sayWhenReadOnly`), by the global setup, which writes it to the setup file for the
+reporter (`peekSetupReadOnly`, heeded in `preprocess` and `onBegin`), or by the reporter, and never changes the exit
+code. Then the stream stops for good (no event, heartbeat or file, `stopForReadOnly`, the run keeping its id and
+token), the ladder stops with no other rung, and the recovery copy is saved: it names a streamed run it replaces
+(`replacesRun`) and keeps the storage quota's counts. A replay of a saved run refused so leaves its file, which the
+run's own copy then replaces (one file a dashboard and project). A run the dashboard took before (a `/finish`
+answered, results held) keeps no copy, nor does a requested run.
 
 A 409 without one of these codes (an older dashboard) keeps the meaning it has above.
 
@@ -1016,7 +1027,8 @@ src/
                report (the step results init and skills print)
   internal/
     submit/     run-submitter, uploader, serializer, storage-quota (the dashboard's
-                storage quota as it answered the run)
+                storage quota as it answered the run), read-only (the line said
+                once a run as the dashboard refuses a write as read-only)
     transport/  http-client (+ HttpError), backend-request
     streaming/  stream-manager, stream-buffer, bounded-queue, crash-recovery,
                 live-resources (a watched run's CPU, memory and open pages,
