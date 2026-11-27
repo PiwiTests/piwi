@@ -4778,8 +4778,7 @@ const SCENES = [
   },
   {
     name: 'operator-notice',
-    description:
-      'The operator’s notice: a warning banner above the Projects page, with its link and its dismiss button',
+    description: 'The operator’s notice: a warning banner above the Home page, with its link and its dismiss button',
     tags: ['docs'],
     out: 'docs',
     route: '/',
