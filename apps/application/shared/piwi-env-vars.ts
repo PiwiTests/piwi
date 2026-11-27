@@ -448,7 +448,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_STORAGE_QUOTA_BYTES: {
     description:
-      'The stored bytes the administrators are warned against: at 80% and then 95% of it, Piwi emails every administrator and shows them a banner, and Settings → Storage shows the usage against it. It counts what Settings → Storage totals, the stored files and the traces. Unset, there is no quota and no warning.',
+      'The stored bytes the administrators are warned against: at 80% and then 95% of it, Piwi emails every administrator and shows them a banner, and Settings → Storage shows the usage against it. It counts what Settings → Storage totals, the stored files and the traces, and the results the reporter sent for each run. Unset, there is no quota and no warning.',
     category: 'storage',
     type: 'number',
     min: 1024 * 1024,

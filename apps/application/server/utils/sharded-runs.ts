@@ -67,6 +67,8 @@ export interface BatchShardTally {
   setupSteps: BatchRunBody['setupSteps'];
   /** The shard's errors outside any test, as the run stores them (`storableRunErrors`). */
   runErrors: WireRunError[] | null;
+  /** The size of the shard's results as it sent them, which the run counts toward the storage quota. */
+  resultsBytes: number;
 }
 
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
@@ -102,8 +104,12 @@ export function countFlakyBatchCases(testCases: ReadonlyArray<BatchCase>): numbe
   return flakyFinalAttempts(rows).size;
 }
 
-/** A batch shard's tally, from its run-level counters and its test cases. */
-export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<BatchCase>): BatchShardTally {
+/** A batch shard's tally, from its run-level counters, its test cases and the size of its results. */
+export function batchShardTally(
+  body: BatchRunBody,
+  testCases: ReadonlyArray<BatchCase>,
+  resultsBytes: number,
+): BatchShardTally {
   return {
     totalTests: body.totalTests ?? 0,
     passedTests: body.passedTests ?? 0,
@@ -121,6 +127,7 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
     durations: testCases.map((tc) => tc.duration),
     setupSteps: body.setupSteps,
     runErrors: storableRunErrors(body.runErrors),
+    resultsBytes,
   };
 }
 
@@ -204,6 +211,7 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
       flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+      resultsBytes: sql`${testRuns.resultsBytes} + ${tally.resultsBytes}`,
     },
     tally.setupSteps ?? [],
     tally.runErrors ?? [],

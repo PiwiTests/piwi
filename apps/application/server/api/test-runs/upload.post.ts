@@ -152,6 +152,8 @@ async function handleUpload(
   // Non-trace attachments: test case index -> array of { name, contentType, originalName }
   const attachmentMeta: Map<number, { name: string; contentType: string; originalName: string }[]> = new Map();
   const attachmentFiles: Map<number, UploadedFile[]> = new Map();
+  // The size of the results as sent (the `testRun` and `testCases` fields), which a run counts toward the storage quota.
+  let resultsBytes = 0;
 
   for (const part of multipart.files) {
     const file = { filename: sanitizeFilename(part.filename), path: part.path, size: part.size };
@@ -181,6 +183,7 @@ async function handleUpload(
     } else if (name === 'projectName') {
       projectName = value;
     } else if (name === 'testRun') {
+      resultsBytes += Buffer.byteLength(value);
       try {
         testRunData = JSON.parse(value);
       } catch {
@@ -190,6 +193,7 @@ async function handleUpload(
         });
       }
     } else if (name === 'testCases') {
+      resultsBytes += Buffer.byteLength(value);
       try {
         testCasesData = JSON.parse(value);
       } catch {
@@ -369,6 +373,7 @@ async function handleUpload(
           filterDetails: testRunData.filterDetails || null,
           ...(testRunData.setupSteps && { setupSteps: testRunData.setupSteps }),
           runErrors: storableRunErrors(testRunData.runErrors),
+          resultsBytes,
         })
         .returning();
 
@@ -574,7 +579,7 @@ async function handleUpload(
     }
 
     if (isBatchShard) {
-      await addBatchShard(db, testRun.id, batchShardTally(testRunData, testCasesData));
+      await addBatchShard(db, testRun.id, batchShardTally(testRunData, testCasesData, resultsBytes));
       if (!(await finalizeShardedRun(db, testRun.id, 'run-submitted'))) await publishShardProgress(db, testRun.id);
     } else if (!attachingToExistingRun) {
       // Once stored, the run takes the place of the run its reporter streamed, which it names, finalizing too.

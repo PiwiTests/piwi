@@ -3,6 +3,7 @@ import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { runReporterId } from '../../../utils/run-viewer';
 import { checkSubmitBody } from '../../../utils/batch-payload';
+import { declaredBodyBytes } from '../../../utils/body-limit';
 import { createBatchRun, renewHeldRunToken } from '../../../utils/batch-run';
 import { deliverOnce, readDeliveryKey } from '../../../utils/run-deliveries';
 import { runEventBus } from '../../../utils/run-events';
@@ -60,6 +61,7 @@ export default eventHandler(async (event) => {
     const testRun = await createBatchRun(db, project.id, body, {
       awaitingFiles: { streamToken },
       reporterId: runReporterId(event, user),
+      resultsBytes: declaredBodyBytes(getRequestHeader(event, 'content-length')),
     });
 
     runEventBus.publishGlobal({

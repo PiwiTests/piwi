@@ -2,15 +2,16 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { nextStorageWarning, type StorageWarningLevel } from '#shared/storage-quota';
 import { getDialect } from '../database';
-import { files, storageTotals, traceBlobs, traceResources } from '../database/schema';
+import { files, storageTotals, testRuns, traceBlobs, traceResources } from '../database/schema';
 import { administratorEmails } from './administrators';
 import { getAppSetting, setAppSetting } from './app-settings';
 
 /**
  * The stored bytes against `PIWI_STORAGE_QUOTA_BYTES`. The total is the `storage_totals` rows, which the database's
  * triggers keep as files, trace blobs and trace resources are written and deleted (counted as Settings → Storage
- * counts them), and `reconcileStorageTotal` recounts each night. `watchStorageQuota` tells the administrators, by
- * email, each time the usage crosses 80% or 95% of the quota.
+ * counts them), and as runs' results arrive and runs are deleted (`test_runs.results_bytes`), and
+ * `reconcileStorageTotal` recounts each night. `watchStorageQuota` tells the administrators, by email, each time the
+ * usage crosses 80% or 95% of the quota.
  */
 
 /** The `app_settings` key of the level the administrators were last told of. */
@@ -31,16 +32,17 @@ export function storageQuotaBytes(): number | null {
   return null;
 }
 
-/** The bytes Settings → Storage counts, as the triggers keep them. */
+/** The bytes Settings → Storage counts, and the runs' results, as the triggers keep them. */
 export async function storageUsedBytes(db: DrizzleDB): Promise<number> {
   const [row] = await db.select({ bytes: sql<number>`coalesce(sum(${storageTotals.bytes}), 0)` }).from(storageTotals);
   return Number(row?.bytes ?? 0);
 }
 
-/** The bytes counted from the tables themselves: the same rule as the triggers and Settings → Storage. */
+/** The bytes counted from the tables themselves: the same rule as the triggers, Settings → Storage's and the results. */
 const COUNTED_BYTES = sql`(SELECT coalesce(sum(CASE WHEN ${files.blobId} IS NULL THEN coalesce(${files.size}, 0) ELSE 0 END), 0) FROM ${files})
   + (SELECT coalesce(sum(coalesce(${traceBlobs.storedSize}, ${traceBlobs.size})), 0) FROM ${traceBlobs})
-  + (SELECT coalesce(sum(${traceResources.size}), 0) FROM ${traceResources})`;
+  + (SELECT coalesce(sum(${traceResources.size}), 0) FROM ${traceResources})
+  + (SELECT coalesce(sum(${testRuns.resultsBytes}), 0) FROM ${testRuns})`;
 
 /**
  * Recounts the total from the tables: slot 0 takes the count and every other slot 0, so what the triggers missed (a

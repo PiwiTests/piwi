@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs" ADD COLUMN "results_bytes" bigint DEFAULT 0 NOT NULL;

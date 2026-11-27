@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The storage quota's running total on PostgreSQL: the statement triggers add each statement's rows at once, spread
- * over the sessions' slots, and the total always agrees with what Settings → Storage counts, also when sessions write
- * at the same time and when a statement deletes many rows. Runs against `PIWI_POSTGRES_TEST_URL`, in a database of
- * its own.
+ * over the sessions' slots, and the total always agrees with what Settings → Storage counts plus the runs' results,
+ * also when sessions write at the same time and when a statement deletes many rows. Runs against
+ * `PIWI_POSTGRES_TEST_URL`, in a database of its own.
  */
 
 const postgresUrl = process.env.PIWI_POSTGRES_TEST_URL;
@@ -22,7 +22,7 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
   const { default: postgres } = await import('postgres');
   const { drizzle } = await import('drizzle-orm/postgres-js');
   const { migrate } = await import('drizzle-orm/postgres-js/migrator');
-  const { eq, ne } = await import('drizzle-orm');
+  const { eq, ne, sql } = await import('drizzle-orm');
   const schema = await import('../../server/database/schema.pg');
   const { reconcileStorageTotal, storageUsedBytes } = await import('../../server/utils/storage-quota');
   const { getStorageAnalysis } = await import('#shared/handlers/admin-storage');
@@ -33,7 +33,12 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
   let projectId: number;
 
   const used = () => storageUsedBytes(db as never);
-  const counted = async () => (await getStorageAnalysis(db as never)).totalBytes;
+  const counted = async () => {
+    const [results] = await db
+      .select({ bytes: sql<number>`coalesce(sum(${schema.testRuns.resultsBytes}), 0)` })
+      .from(schema.testRuns);
+    return (await getStorageAnalysis(db as never)).totalBytes + Number(results!.bytes);
+  };
 
   beforeAll(async () => {
     await admin.unsafe(`DROP DATABASE IF EXISTS ${databaseName}`);
@@ -88,6 +93,34 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
     expect(await used()).toBe(await counted());
   });
 
+  test("follows the runs' results, many runs to a statement, and leaves other run updates alone", async () => {
+    const before = await used();
+    const runs = await db
+      .insert(schema.testRuns)
+      .values(
+        Array.from({ length: 20 }, (_, index) => ({
+          projectId,
+          status: 'running',
+          startTime: new Date(),
+          resultsBytes: index * 10,
+        })),
+      )
+      .returning({ id: schema.testRuns.id });
+    expect(await used()).toBe(before + 1900);
+
+    await db
+      .update(schema.testRuns)
+      .set({ resultsBytes: sql`${schema.testRuns.resultsBytes} + 5` })
+      .where(eq(schema.testRuns.id, runs[0]!.id));
+    await db.update(schema.testRuns).set({ passedTests: 2 });
+    expect(await used()).toBe(before + 1905);
+    expect(await used()).toBe(await counted());
+
+    await db.delete(schema.testRuns);
+    expect(await used()).toBe(before);
+    expect(await used()).toBe(await counted());
+  });
+
   test('agrees with the tables when sessions write at the same time', async () => {
     await Promise.all(
       Array.from({ length: 4 }, (_, session) =>
@@ -122,16 +155,19 @@ describe.skipIf(!postgresUrl)('the storage total on PostgreSQL', async () => {
     expect(await used()).toBe(await counted());
   });
 
-  test('keeps its triggers through a second run of their migration, and makes missing slots again', async () => {
-    const migration = readFileSync(
-      fileURLToPath(new URL('../../server/database/migrations-pg/0200_storage_total_triggers.sql', import.meta.url)),
-      'utf8',
-    );
-    for (const statement of migration.split('--> statement-breakpoint')) await client.unsafe(statement);
+  test('keeps its triggers through a second run of their migrations, and makes missing slots again', async () => {
+    for (const name of ['0200_storage_total_triggers.sql', '0202_storage_total_results.sql']) {
+      const migration = readFileSync(
+        fileURLToPath(new URL(`../../server/database/migrations-pg/${name}`, import.meta.url)),
+        'utf8',
+      );
+      for (const statement of migration.split('--> statement-breakpoint')) await client.unsafe(statement);
+    }
     await db.delete(schema.storageTotals).where(ne(schema.storageTotals.slot, 0));
     await reconcileStorageTotal(db as never);
     expect(await db.select().from(schema.storageTotals)).toHaveLength(16);
     await db.insert(schema.files).values({ type: 'video', path: 'project-1/after.webm', size: 3 });
+    await db.insert(schema.testRuns).values({ projectId, status: 'passed', startTime: new Date(), resultsBytes: 9 });
     expect(await used()).toBe(await counted());
   });
 

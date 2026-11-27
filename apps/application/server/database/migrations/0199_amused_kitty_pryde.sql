@@ -1,0 +1,1 @@
+ALTER TABLE `test_runs` ADD `results_bytes` integer DEFAULT 0 NOT NULL;

@@ -1,7 +1,7 @@
 /**
  * The storage quota: the running total the database's triggers keep (counted as Settings → Storage counts, so the two
- * always agree), its nightly recount, the levels administrators are warned at, and the watch that tells them once per
- * level crossed.
+ * always agree, plus the results each run's reporter sent), its nightly recount, the levels administrators are warned
+ * at, and the watch that tells them once per level crossed.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -74,7 +74,13 @@ describe('the running total', () => {
     await close();
   });
 
-  const analysisTotal = async () => (await getStorageAnalysis(db)).totalBytes;
+  /** What Settings → Storage counts, plus the runs' results. */
+  const analysisTotal = async () => {
+    const [results] = await db
+      .select({ bytes: sql<number>`coalesce(sum(${schema.testRuns.resultsBytes}), 0)` })
+      .from(schema.testRuns);
+    return (await getStorageAnalysis(db)).totalBytes + Number(results!.bytes);
+  };
 
   test('follows every write and delete of files, trace blobs and trace resources, as Settings → Storage counts them', async () => {
     expect(await storageUsedBytes(db)).toBe(0);
@@ -114,11 +120,38 @@ describe('the running total', () => {
     expect(await storageUsedBytes(db)).toBe(0);
   });
 
+  test('follows the results each run counts, as they arrive and as runs are deleted', async () => {
+    const run = (resultsBytes?: number) => ({
+      projectId,
+      status: 'running',
+      startTime: new Date(),
+      ...(resultsBytes === undefined ? {} : { resultsBytes }),
+    });
+    const [streamed] = await db.insert(schema.testRuns).values(run()).returning();
+    await db.insert(schema.testRuns).values([run(4000), run(600)]);
+    expect(await storageUsedBytes(db)).toBe(4600);
+
+    // An events batch adds its size; an update of anything else changes nothing.
+    await db
+      .update(schema.testRuns)
+      .set({ resultsBytes: sql`${schema.testRuns.resultsBytes} + 250` })
+      .where(eq(schema.testRuns.id, streamed!.id));
+    await db.update(schema.testRuns).set({ passedTests: 3 });
+    expect(await storageUsedBytes(db)).toBe(4850);
+    expect(await storageUsedBytes(db)).toBe(await analysisTotal());
+
+    await db.delete(schema.testRuns).where(eq(schema.testRuns.id, streamed!.id));
+    expect(await storageUsedBytes(db)).toBe(4600);
+    await db.delete(schema.testRuns);
+    expect(await storageUsedBytes(db)).toBe(0);
+  });
+
   test('is recounted from the tables each night', async () => {
     await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/a.png', size: 1000 });
+    await db.insert(schema.testRuns).values({ projectId, status: 'passed', startTime: new Date(), resultsBytes: 300 });
     await db.update(schema.storageTotals).set({ bytes: 12345 });
     expect(await storageUsedBytes(db)).toBe(12345);
-    expect(await reconcileStorageTotal(db)).toBe(1000);
+    expect(await reconcileStorageTotal(db)).toBe(1300);
     expect(await storageUsedBytes(db)).toBe(await analysisTotal());
   });
 
@@ -159,14 +192,18 @@ describe('the running total', () => {
     expect(sent).toHaveBeenCalledOnce();
   });
 
-  test('keeps its triggers through a second run of their migration', async () => {
+  test('keeps its triggers through a second run of their migrations', async () => {
     await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/a.png', size: 1000 });
-    const migration = readFileSync(
-      fileURLToPath(new URL('../../server/database/migrations/0198_storage_total_triggers.sql', import.meta.url)),
-      'utf8',
-    );
-    for (const statement of migration.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
+    await db.insert(schema.testRuns).values({ projectId, status: 'passed', startTime: new Date(), resultsBytes: 70 });
+    for (const name of ['0198_storage_total_triggers.sql', '0200_storage_total_results.sql']) {
+      const migration = readFileSync(
+        fileURLToPath(new URL(`../../server/database/migrations/${name}`, import.meta.url)),
+        'utf8',
+      );
+      for (const statement of migration.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
+    }
     await db.insert(schema.files).values({ type: 'screenshot', path: 'project-1/b.png', size: 500 });
-    expect(await storageUsedBytes(db)).toBe(1500);
+    await db.insert(schema.testRuns).values({ projectId, status: 'passed', startTime: new Date(), resultsBytes: 30 });
+    expect(await storageUsedBytes(db)).toBe(1600);
   });
 });

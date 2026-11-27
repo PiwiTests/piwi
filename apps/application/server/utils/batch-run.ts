@@ -33,6 +33,7 @@ import { resolveRunEnvironment } from '#shared/handlers/environments';
  * `reporterId` is the person whose credentials delivered it (`runReporterId`). `awaitingFiles` holds the run `finalizing` until its files are in: the status the delivery sent waits in its
  * metadata (`withPendingStatus`), and the run keeps the digest of the stream token its files go with
  * (`/case-files`). An upload with `runId` settles it (`settleFinalizingRun`), or the stale-run sweep does.
+ * `resultsBytes` is the size of the delivery's results, which the run counts toward the storage quota.
  *
  * Returns the run as inserted.
  */
@@ -40,7 +41,11 @@ export async function createBatchRun(
   db: DbClient,
   projectId: number,
   body: TestRunSubmitPayload,
-  { awaitingFiles, reporterId = null }: { awaitingFiles?: { streamToken: string }; reporterId?: number | null } = {},
+  {
+    awaitingFiles,
+    reporterId = null,
+    resultsBytes = 0,
+  }: { awaitingFiles?: { streamToken: string }; reporterId?: number | null; resultsBytes?: number } = {},
 ): Promise<typeof testRuns.$inferSelect> {
   const shardTotal = body.shardTotal;
   const instanceId = body.instanceId || null;
@@ -81,6 +86,7 @@ export async function createBatchRun(
       filterDetails: body.filterDetails ?? null,
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
       runErrors: storableRunErrors(body.runErrors),
+      resultsBytes,
     })
     .returning();
 

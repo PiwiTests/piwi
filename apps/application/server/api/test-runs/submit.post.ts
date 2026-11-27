@@ -4,6 +4,7 @@ import { runReporterId } from '../../utils/run-viewer';
 import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { checkSubmitBody } from '../../utils/batch-payload';
+import { declaredBodyBytes } from '../../utils/body-limit';
 import { runEventBus } from '../../utils/run-events';
 import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
 import { createBatchRun, renewHeldRunToken } from '../../utils/batch-run';
@@ -99,13 +100,16 @@ export default eventHandler(async (event) => {
       await saveEnvironmentSnapshots(db, run.id, body.environments);
       await applyReporterKeep(db, run.id, body.keep);
       if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(mapWireCaseToRunCase));
-      await addBatchShard(db, run.id, batchShardTally(body, testCases));
+      await addBatchShard(db, run.id, batchShardTally(body, testCases, declaredBodyBytes(getRequestHeader(event, 'content-length'))));
       if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
       return { success: true, runId: run.id, runUrl: publicRunUrl(run.id), projectId: project.id };
     }
 
     // A run of its own: not sharded, or sharded with no instance id to join its shards by
-    const testRun = await createBatchRun(db, project.id, body, { reporterId: runReporterId(event, user) });
+    const testRun = await createBatchRun(db, project.id, body, {
+      reporterId: runReporterId(event, user),
+      resultsBytes: declaredBodyBytes(getRequestHeader(event, 'content-length')),
+    });
 
     runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 

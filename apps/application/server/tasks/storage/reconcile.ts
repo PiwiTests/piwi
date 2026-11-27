@@ -5,7 +5,7 @@ export default defineTask({
   meta: {
     name: 'storage:reconcile',
     description:
-      'Recount the stored bytes from the files, trace blobs and trace resources, putting right what the running total missed',
+      'Recount the stored bytes from the files, trace blobs, trace resources and the results of runs, putting right what the running total missed',
   },
   async run() {
     const db = await getDatabase();
