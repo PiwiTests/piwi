@@ -3,6 +3,7 @@ import { assistantTurnOfRequest } from '../../../../utils/assistant/turn-token';
 import { answerTurnMcp, serverInfo } from '../../../../utils/assistant/turn-mcp';
 import { openListenStream, readMcpHeaders } from '../../../../utils/mcp/protocol';
 import { streamHeaders } from '#shared/stream-headers';
+import { dashboardVersion } from '../../../../utils/app-version';
 
 defineRouteMeta({
   openAPI: {
@@ -22,7 +23,7 @@ export default eventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => null);
   const reply = await answerTurnMcp(turn, body, {
-    version: String(useRuntimeConfig(event).public.appVersion ?? ''),
+    version: dashboardVersion(event),
     acceptsStream: (getRequestHeader(event, 'accept') ?? '').includes('text/event-stream'),
     headers: readMcpHeaders((name) => getRequestHeader(event, name)),
     toolsChanged: () => turn.listeners.toolsChanged(),
@@ -33,7 +34,7 @@ export default eventHandler(async (event) => {
     return '';
   }
   if (reply.kind === 'listen') {
-    const version = String(useRuntimeConfig(event).public.appVersion ?? '');
+    const version = dashboardVersion(event);
     const stream = openListenStream(event.node.res, reply.id, reply.honored, serverInfo(version));
     stream.onClose(turn.listeners.add({ toolsChanged: () => stream.toolsChanged(), end: () => stream.end() }));
     return;

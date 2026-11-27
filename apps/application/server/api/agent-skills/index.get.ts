@@ -5,6 +5,7 @@ import { stampSkill } from '@piwitests/core/skill-stamp';
 import { SKILL_PROMPTS } from '#shared/mcp-prompts';
 import { bundledSkill, splitSkill } from '../../utils/mcp/prompts';
 import { requireAuth } from '../../utils/auth';
+import { dashboardVersion } from '../../utils/app-version';
 
 defineRouteMeta({
   openAPI: {
@@ -18,7 +19,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   await requireAuth(event);
-  const version = String(useRuntimeConfig(event).public.appVersion ?? '');
+  const version = dashboardVersion(event);
   const items = [];
   for (const [prompt, slug] of SKILL_PROMPTS) {
     const markdown = await bundledSkill(slug);

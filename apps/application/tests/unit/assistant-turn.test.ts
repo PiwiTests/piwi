@@ -35,7 +35,8 @@ vi.stubGlobal('useRuntimeConfig', () => ({
   ai: {},
   authEnabled: false,
   app: { baseURL: '/' },
-  public: { appVersion: '0.59.0' },
+  appVersion: '0.59.0',
+  public: {},
 }));
 
 const schema = await import('../../server/database/schema.sqlite');

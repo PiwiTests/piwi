@@ -64,6 +64,7 @@ import { assetText, bundledChangelog } from '../bundled-assets';
 import { dropNulls } from './json';
 import { serveableTools } from './served';
 import type { McpContext } from './tools';
+import { dashboardVersion } from '../app-version';
 
 // ── Bundled material ──────────────────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ function optionalString(raw: unknown): string | null {
 }
 
 function appVersion(): string {
-  return String(useRuntimeConfig().public.appVersion ?? '');
+  return dashboardVersion();
 }
 
 /** The feature catalog's words for a list of prerequisites; an empty list means the reporter alone. */

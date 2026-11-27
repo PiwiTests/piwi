@@ -21,7 +21,7 @@ import { ASSISTANT_BLOCK_LIMITS } from '#shared/assistant-blocks';
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
 
-const RUNTIME_CONFIG = () => ({ ai: {}, authEnabled: false, app: { baseURL: '/' }, public: { appVersion: '0.59.0' } });
+const RUNTIME_CONFIG = () => ({ ai: {}, authEnabled: false, app: { baseURL: '/' }, appVersion: '0.59.0', public: {} });
 vi.stubGlobal('useRuntimeConfig', RUNTIME_CONFIG);
 // Nitro auto-imports it into the server code these tests load.
 vi.stubGlobal('getRequestHeader', getRequestHeader);

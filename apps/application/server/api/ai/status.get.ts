@@ -1,17 +1,19 @@
 import { getDatabase } from '../../database';
 import { resolveAiConfig } from '../../utils/ai-provider';
+import { requireAuth } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['AI'],
     summary: 'Get AI configuration status',
     description:
-      'Returns public AI configuration status including whether AI diagnosis is configured, the provider, model, and auto-diagnose setting.',
-    security: [],
+      'Returns the AI configuration status: whether AI diagnosis is configured, the provider, model, and auto-diagnose setting. Requires signing in.',
+    'x-required-permission': 'signed-in',
   },
 });
 
-export default eventHandler(async (_event) => {
+export default eventHandler(async (event) => {
+  await requireAuth(event);
   const db = await getDatabase();
   const config = await resolveAiConfig(db);
 

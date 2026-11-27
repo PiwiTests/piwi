@@ -37,7 +37,7 @@ vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
 
 const { mintShareLink } = await import('../../server/utils/share-links');
-const { openShareLink } = await import('../../server/utils/share-view');
+const { openShareLink, shareLinkReport } = await import('../../server/utils/share-view');
 const { deleteUserRecord } = await import('../../shared/handlers/users');
 
 let db: TempDb;
@@ -85,7 +85,7 @@ async function mintExecution(createdBy: number | null, projectId = WEB) {
   return (await mintShareLink(db, { projectId, entityKind: 'execution', entityId: 42, createdBy })).token;
 }
 
-async function mintReport(projectIds: number[] | null) {
+async function mintReport(projectIds: number[] | null, bundle: Record<string, unknown> = {}) {
   const [snapshot] = await db
     .insert(schema.reportSnapshots)
     .values({
@@ -94,7 +94,7 @@ async function mintReport(projectIds: number[] | null) {
       projectIds,
       periodFrom: new Date(0),
       periodTo: new Date(1000),
-      bundle: {},
+      bundle,
     })
     .returning();
   return (await mintShareLink(db, { projectId: null, entityKind: 'report', entityId: snapshot!.id, createdBy: ROBIN }))
@@ -133,6 +133,14 @@ describe('a share link and the access of its minter', () => {
     await unbind(API);
     expect(await open(token)).toBe(404);
     expect(await open(token, true)).toBe(404);
+  });
+
+  test('a report link opens a document that names no Piwi version', async () => {
+    const token = await mintReport([WEB], { piwiVersion: '0.78.0', language: 'en' });
+    const opened = await openShareLink({ params: { token } } as never, { gonePage: true });
+    if ('gone' in opened) throw new Error('the link should open');
+    const report = await shareLinkReport(opened.db, opened.link);
+    expect(report?.bundle).toMatchObject({ piwiVersion: null, language: 'en' });
   });
 
   test('a report link over every project needs a minter who reads every project', async () => {

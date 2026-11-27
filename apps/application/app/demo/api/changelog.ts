@@ -2,10 +2,11 @@
  * `GET /api/changelog` in the demo. The demo build copies `CHANGELOG.md` beside
  * the seed (`demo/changelog.md`, written by the `nitro:build:public-assets` hook
  * of nuxt.config.ts), and the handler pages it with the server's
- * `changelogPage`. The service worker knows no app version, so
- * `runningVersion` is empty, as the demo's `/api/version` names none.
+ * `changelogPage`, running the version the demo was built from, as the demo's
+ * `/api/version` names it.
  */
 import { changelogPage, parseChangelog, type ChangelogPage, type ChangelogRelease } from '#shared/changelog';
+import { version as demoAppVersion } from '../../../package.json';
 import { getDemoDbBaseUrl } from '../db.client';
 
 let releases: Promise<ChangelogRelease[] | null> | null = null;
@@ -31,7 +32,7 @@ function demoChangelog(): Promise<ChangelogRelease[] | null> {
 
 export async function apiDemoChangelog(query?: URLSearchParams): Promise<ChangelogPage> {
   return changelogPage(await demoChangelog(), {
-    runningVersion: '',
+    runningVersion: demoAppVersion,
     cursor: query?.get('cursor') ?? undefined,
     limit: query?.get('limit') ?? undefined,
   });

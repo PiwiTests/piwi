@@ -33,7 +33,7 @@ import { factIn, normalizeFactText } from '../live/assistant-scoring';
 
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, appVersion: '0.59.0', public: {} }));
 
 const { CORE_ASSISTANT_TOOLS, PAGE_TOOLS, createAssistantToolbox } = await import('../../server/utils/assistant/tools');
 

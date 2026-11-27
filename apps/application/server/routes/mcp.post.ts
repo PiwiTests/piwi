@@ -31,6 +31,7 @@ import { narrowToolsByModule } from '../utils/mcp/filter';
 import { logMcpToolCall } from '../utils/mcp/write-log';
 import { callDesktopRunTool, desktopRunTools, isDesktopRunTool } from '../utils/mcp/run-tools';
 import { DESKTOP_AGENT_WORDS } from '../utils/desktop-runs';
+import { dashboardVersion } from '../utils/app-version';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
@@ -177,7 +178,7 @@ async function handleRequest(
 }
 
 function serverInfo(event: H3Event) {
-  return mcpServerInfo(useRuntimeConfig(event).public.appVersion as string, { desktop: IS_DESKTOP });
+  return mcpServerInfo(dashboardVersion(event), { desktop: IS_DESKTOP });
 }
 
 /** What the server says it is for and how to use it, in `initialize` and `server/discover` alike. */
@@ -312,7 +313,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
         baseUrl,
         authEnabled: isAuthEnabled(event),
         args: p.arguments ?? {},
-        version: String(useRuntimeConfig(event).public.appVersion ?? ''),
+        version: dashboardVersion(event),
       });
       return ok(id, result);
     }

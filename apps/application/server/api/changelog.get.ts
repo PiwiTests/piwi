@@ -1,6 +1,7 @@
 import { changelogPage } from '#shared/changelog';
 import { requireAuth } from '../utils/auth';
 import { bundledChangelog } from '../utils/bundled-assets';
+import { dashboardVersion } from '../utils/app-version';
 
 defineRouteMeta({
   openAPI: {
@@ -32,7 +33,7 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
   const query = getQuery(event);
   return changelogPage(await bundledChangelog(), {
-    runningVersion: String(useRuntimeConfig(event).public.appVersion ?? ''),
+    runningVersion: dashboardVersion(event),
     cursor: query.cursor,
     limit: query.limit,
   });

@@ -281,7 +281,7 @@ isolates the environment.
 
 ## Health checks
 
-`GET /api/health` verifies database connectivity and returns `200 {"status":"ok","database":"ok"}` when healthy, `503 {"status":"error","database":"unreachable"}` otherwise — use it for load-balancer targets, uptime monitors, and container orchestration. The Docker image ships a built-in `HEALTHCHECK` against it, so `docker ps` shows `healthy`/`unhealthy` out of the box. The version endpoint additionally reports the running version and database backend ([Upgrading](./upgrading#verifying-the-upgrade-landed)).
+`GET /api/health` verifies database connectivity and returns `200 {"status":"ok","database":"ok"}` when healthy, `503 {"status":"error","database":"unreachable"}` otherwise — use it for load-balancer targets, uptime monitors, and container orchestration. The Docker image ships a built-in `HEALTHCHECK` against it, so `docker ps` shows `healthy`/`unhealthy`. The version endpoint reports the version and database backend behind sign-in when authentication is on ([Upgrading](./upgrading#verifying-the-upgrade-landed)).
 
 ## Reverse proxy (HTTPS)
 
