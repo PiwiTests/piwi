@@ -277,7 +277,10 @@ export const selfHostingSidebar: SidebarGroup[] = [
   },
   {
     text: 'Upgrade',
-    items: [{ text: 'Upgrading', link: '/operate/upgrading' }],
+    items: [
+      { text: 'Upgrading', link: '/operate/upgrading' },
+      { text: 'Operator token', link: '/operate/operator-token' },
+    ],
   },
 ];
 

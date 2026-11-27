@@ -1930,7 +1930,11 @@ const SCENE_SERVER_ENV = {
   PIWI_JIRA_BASE_URL: '',
   PIWI_JIRA_EMAIL: '',
   PIWI_JIRA_API_TOKEN: '',
+  // Opens the operator routes, through which the operator-notice scene sets its banner.
+  PIWI_OPERATOR_TOKEN:
+    process.env.PIWI_OPERATOR_TOKEN || createHash('sha256').update('piwi feature screenshots operator').digest('hex'),
 };
+const OPERATOR_HEADERS = { Authorization: `Bearer ${SCENE_SERVER_ENV.PIWI_OPERATOR_TOKEN}` };
 
 /** The db-managed connection the required-fields scenes bind; its dead port means no Jira is contacted. */
 let jiraSceneConnectionId = 0;
@@ -4770,6 +4774,39 @@ const SCENES = [
         .catch(() => {});
       await settle();
       await shoot(undefined, { of: '[data-shot="storage-analysis"]', pad: 12 });
+    },
+  },
+  {
+    name: 'operator-notice',
+    description:
+      'The operator’s notice: a warning banner above the Projects page, with its link and its dismiss button',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 560 },
+    // Set through the operator route, for ten minutes at most, and cleared once shot: every other scene's server
+    // render would show it.
+    prepare: async ({ base, request }) => {
+      const set = await request.put(`${base}/api/operator/notice`, {
+        headers: OPERATOR_HEADERS,
+        data: {
+          level: 'warning',
+          text: 'Maintenance on Sunday from 06:00 to 06:30 UTC: uploads wait until it ends.',
+          link: { url: 'https://status.example.com', label: 'Status page' },
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        },
+      });
+      if (!set.ok())
+        throw new Error(`setting the notice answered ${set.status()}: is PIWI_OPERATOR_TOKEN the scene's?`);
+    },
+    async run({ page, base, shoot, settle }) {
+      try {
+        await page.locator('[data-shot="operator-notice"]').waitFor({ timeout: 15000 });
+        await settle();
+        await shoot();
+      } finally {
+        await page.request.delete(`${base}/api/operator/notice`, { headers: OPERATOR_HEADERS });
+      }
     },
   },
   {
