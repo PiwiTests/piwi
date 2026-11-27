@@ -169,7 +169,7 @@ export default defineNuxtConfig({
           meta: [
             { name: 'description', content: demoDescription },
             { property: 'og:type', content: 'website' },
-            { property: 'og:site_name', content: 'Piwi Dashboard' },
+            { property: 'og:site_name', content: 'Piwi' },
             { property: 'og:title', content: 'Piwi: a Playwright dashboard (live demo)' },
             { property: 'og:description', content: demoDescription },
             { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
@@ -378,7 +378,7 @@ export default defineNuxtConfig({
       // bake the spec into a static file; 'runtime' serves it live from the real SSR server.
       production: isDemo ? 'prerender' : 'runtime',
       meta: {
-        title: 'Piwi Dashboard API',
+        title: 'Piwi API',
         description:
           'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
         version: pkg.version as string,

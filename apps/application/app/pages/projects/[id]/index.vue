@@ -67,7 +67,7 @@ const refresh = refetchKeeping(project, () =>
 provideExternalIdUrl(() => project.value?.externalIdUrl);
 provideTestManagementKeys(() => project.value?.id);
 
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi` })));
 
 const toast = useToast();
 

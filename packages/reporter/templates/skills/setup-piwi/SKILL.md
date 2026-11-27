@@ -1,11 +1,11 @@
 ---
 name: setup-piwi
-description: Use when the user asks to "set up Piwi", "connect Playwright to the dashboard", "start reporting test results", or mentions a Piwi or dashboard server URL. Wires a Playwright project up to a Piwi Dashboard — install the reporter, wrap the config, add capture fixtures, and confirm a run lands.
+description: Use when the user asks to "set up Piwi", "connect Playwright to the dashboard", "start reporting test results", or mentions a Piwi or dashboard server URL. Wires a Playwright project up to a Piwi server — install the reporter, wrap the config, add capture fixtures, and confirm a run lands.
 ---
 
 # Set up Piwi in a Playwright project
 
-Connect a Playwright test suite to a [Piwi Dashboard](https://piwitests.dev) so every run is uploaded, kept, and analyzed. The mechanical work is done by a deterministic command; your job is to gather the right inputs, run it, finish anything it flags, and prove a run reaches the dashboard.
+Connect a Playwright test suite to a [Piwi](https://piwitests.dev) instance so every run is uploaded, kept, and analyzed. The mechanical work is done by a deterministic command; your job is to gather the right inputs, run it, finish anything it flags, and prove a run reaches the dashboard.
 
 ## Before you start
 

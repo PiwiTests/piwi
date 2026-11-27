@@ -35,7 +35,7 @@ export {
  * apart and namespaces their tools separately.
  */
 export function mcpServerInfo(appVersion: string, opts?: { desktop?: boolean }) {
-  return { name: opts?.desktop ? 'piwi-desktop' : 'piwi-dashboard', version: appVersion };
+  return { name: opts?.desktop ? 'piwi-desktop' : 'piwi', version: appVersion };
 }
 
 /** The answer of the MCP endpoint to a method other than POST: 405, naming POST. */

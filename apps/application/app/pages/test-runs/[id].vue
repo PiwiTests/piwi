@@ -1207,7 +1207,7 @@ useHead(
     // the page the breadcrumb carries the project.
     const project = testRun.value?.project?.label || testRun.value?.project?.name;
     return {
-      title: tabRunTitle(`Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`, tabIndicator.value),
+      title: tabRunTitle(`Test run #${runId}${project ? ` — ${project}` : ''} — Piwi`, tabIndicator.value),
     };
   }),
 );

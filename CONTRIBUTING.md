@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving Piwi Dashboard! This file covers dev setup, tests, and commit/PR conventions. See [AGENTS.md](AGENTS.md) for architecture, project structure, and the full development guide.
+Thanks for your interest in improving Piwi! This file covers dev setup, tests, and commit/PR conventions. See [AGENTS.md](AGENTS.md) for architecture, project structure, and the full development guide.
 
 ## Getting set up
 

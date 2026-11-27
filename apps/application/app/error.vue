@@ -26,7 +26,7 @@ const view = computed(() => {
 
 const loginLink = computed(() => ({ path: '/login', query: { redirect: route.fullPath } }));
 
-useSeoMeta({ title: () => `${view.value.statusMessage} — Piwi Dashboard` });
+useSeoMeta({ title: () => `${view.value.statusMessage} — Piwi` });
 
 useHead({
   htmlAttrs: {

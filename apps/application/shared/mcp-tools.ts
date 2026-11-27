@@ -1,6 +1,6 @@
 /**
  * MCP tool catalog — the single source of truth for tool names, descriptions,
- * and input schemas exposed by the Piwi Dashboard MCP server.
+ * and input schemas exposed by the Piwi MCP server.
  *
  * Lives in `shared/` because it is consumed from two places:
  *  - `server/utils/mcp/tools.ts` attaches a DB-backed handler to each entry and

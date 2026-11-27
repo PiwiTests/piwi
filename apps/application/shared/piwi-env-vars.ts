@@ -1395,7 +1395,7 @@ export const PIWI_ENV_VARS = {
   PIWI_SMTP_FROM_NAME: {
     description: 'Display name for the from address (optional).',
     category: 'smtp',
-    default: 'Piwi Dashboard',
+    default: 'Piwi',
     relevantWhen: { PIWI_SMTP_HOST: '*' },
   },
   PIWI_SMTP_SECURE: {

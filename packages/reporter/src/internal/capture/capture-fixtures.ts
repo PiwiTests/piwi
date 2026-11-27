@@ -4331,7 +4331,7 @@ export interface PiwiWorkerFixtures {
  * `browser.newContext()`. The calls a test makes through an API request
  * context (the `request` fixture, `playwright.request.newContext()`,
  * `page.request`) are recorded with its network requests. Collected data is
- * attached as `piwi-*` test-info attachments which the Piwi Dashboard reporter
+ * attached as `piwi-*` test-info attachments which the Piwi reporter
  * parses on `onTestEnd`.
  */
 export const piwiFixtures: Fixtures<

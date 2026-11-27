@@ -26,7 +26,7 @@ export function unsavedTestTarget(type: DeliverableChannelType, config: Record<s
 }
 
 /** The text a test message to a Slack channel carries. */
-export const CHANNEL_TEST_TEXT = ':bell: Test notification from Piwi Dashboard';
+export const CHANNEL_TEST_TEXT = ':bell: Test notification from Piwi';
 
 /** The short text a chat webhook answers a refusal with (`no_service`, `invalid_payload`), or ''. */
 async function refusalDetail(res: Response): Promise<string> {
@@ -51,7 +51,7 @@ export async function deliverChannelTest(target: ChannelTestTarget): Promise<voi
     if (!to) throw new Error('No email address configured');
     if (!isEmailConfigured()) throw new Error('SMTP not configured');
     const { html, text } = renderTestEmail(to);
-    await sendEmail({ to, subject: 'Test notification — Piwi Dashboard', html, text });
+    await sendEmail({ to, subject: 'Test notification — Piwi', html, text });
     return;
   }
   if (type === 'slack' && slackDelivery(config) === 'api') {
@@ -72,9 +72,7 @@ export async function deliverChannelTest(target: ChannelTestTarget): Promise<voi
     const res = await safeFetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        teamsMessage([{ type: 'TextBlock', text: 'Test notification from Piwi Dashboard', wrap: true }]),
-      ),
+      body: JSON.stringify(teamsMessage([{ type: 'TextBlock', text: 'Test notification from Piwi', wrap: true }])),
     });
     if (!res.ok) throw await refusal('Microsoft Teams', res);
     return;

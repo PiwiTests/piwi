@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./apps/docs/public/logo-wide-dark.svg">
-    <img src="./apps/docs/public/logo-wide.svg" alt="Piwi Dashboard" height="64">
+    <img src="./apps/docs/public/logo-wide.svg" alt="Piwi" height="64">
   </picture>
 </p>
 
@@ -279,4 +279,4 @@ See [License](https://piwitests.dev/guide/license) for what is and is not allowe
 
 ---
 
-<sub>**Disclaimer:** Piwi Dashboard is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way. "Piwi" is a playful, unrelated name with no connection to any existing product or brand. Playwright is a trademark of Microsoft Corporation.</sub>
+<sub>**Disclaimer:** Piwi is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way. "Piwi" is a playful, unrelated name with no connection to any existing product or brand. Playwright is a trademark of Microsoft Corporation.</sub>

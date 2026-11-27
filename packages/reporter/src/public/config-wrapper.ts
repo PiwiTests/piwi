@@ -93,7 +93,7 @@ function resolveSetupModule(): string {
 }
 
 /**
- * Wrap a Playwright config to auto-inject the Piwi Dashboard reporter and
+ * Wrap a Playwright config to auto-inject the Piwi reporter and
  * chain its global setup module. Returns a new config object (shallow merge)
  * without mutating the original.
  *
@@ -116,7 +116,7 @@ function resolveSetupModule(): string {
  * false` (or `PIWI_DEFAULT_CAPTURE=false`).
  *
  * @param config      The user's Playwright config.
- * @param piwiOptions Optional Piwi Dashboard options (serverUrl, projectName, …).
+ * @param piwiOptions Optional Piwi options (serverUrl, projectName, …).
  */
 export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOptions?: PiwiDashboardOptions): T {
   if (piwiOptions) applyOptionsToEnv(piwiOptions);

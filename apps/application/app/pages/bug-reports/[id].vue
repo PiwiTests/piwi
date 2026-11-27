@@ -23,7 +23,7 @@ const reportId = Number(route.params.id);
 const { data: report, error, refresh } = await useFetch<BugReportDetail>(`/api/bug-reports/${reportId}`);
 if (error.value) showPageLoadError(error.value, 'bug report');
 
-useHead(computed(() => ({ title: `${report.value?.title ?? 'Bug report'} — Piwi Dashboard` })));
+useHead(computed(() => ({ title: `${report.value?.title ?? 'Bug report'} — Piwi` })));
 
 // Filing the issue and changing the report's status, each for the holders of its permission on the project.
 const canCreateIssue = computed(() => can('issue:create', report.value?.projectId));

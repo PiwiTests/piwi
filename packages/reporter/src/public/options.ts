@@ -13,7 +13,7 @@ export interface ShardInfo {
 }
 
 /**
- * Options for configuring the Piwi Dashboard reporter.
+ * Options for configuring the Piwi reporter.
  *
  * Piwi options only — the Playwright config belongs in `defineConfig` (i.e. in
  * `wrapConfig`'s first argument). These go in `wrapConfig`'s second argument or
@@ -24,7 +24,7 @@ export interface PiwiDashboardOptions {
   /** Explicitly enable or disable the reporter. Defaults to `true` when `serverUrl` is set. Set to `false` to disable even if `serverUrl` is provided. */
   enabled?: boolean;
   /**
-   * URL of the Piwi Dashboard server: a whole `http://` or `https://` address. Any other value leaves the reporter
+   * URL of the Piwi server: a whole `http://` or `https://` address. Any other value leaves the reporter
    * off, with a warning.
    */
   serverUrl?: string;

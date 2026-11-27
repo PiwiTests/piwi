@@ -57,7 +57,7 @@ function openProjectMarker(markerId: number) {
 
 useHead(
   computed(() => ({
-    title: `${testCase.value?.title || `Test #${testCaseId}`} — Piwi Dashboard`,
+    title: `${testCase.value?.title || `Test #${testCaseId}`} — Piwi`,
   })),
 );
 

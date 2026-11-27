@@ -34,7 +34,7 @@ const items = computed(() => data.value?.items ?? []);
 
 useHead(
   computed(() => ({
-    title: `Bug reports — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Bug reports — ${project.value?.label || project.value?.name || 'Project'} — Piwi`,
   })),
 );
 </script>

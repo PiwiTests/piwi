@@ -1,6 +1,6 @@
 # Functional Tests
 
-This directory contains functional tests for the Piwi Dashboard using Playwright Test.
+This directory contains functional tests for the dashboard using Playwright Test.
 
 ## Running Tests
 

@@ -20,7 +20,7 @@ npx @piwitests/reporter <command> [options]
 
 | Command | What it does |
 |---|---|
-| [`init`](#init) | Wire a Playwright project up to a Piwi Dashboard |
+| [`init`](#init) | Wire a Playwright project up to a Piwi server |
 | [`skills`](#skills) | Install the Piwi agent skills into this project |
 | [`gate`](#gate) | Fail a CI job on the dashboard's analysis of a run |
 | [`report`](#report) | Print a [quality report](/features/quality-reports) as Markdown, PDF, HTML, CSV or JSON |

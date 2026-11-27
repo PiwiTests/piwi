@@ -15,14 +15,14 @@ const websiteJsonLd: HeadConfig = [
   JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'Piwi Dashboard',
-    alternateName: ['Piwi', 'PiwiTests'],
+    name: 'Piwi',
+    alternateName: ['Piwi Dashboard', 'PiwiTests'],
     url: `${siteUrl}/`,
   }),
 ]
 
 export default defineConfig({
-  title: 'Piwi Dashboard',
+  title: 'Piwi',
   titleTemplate: TITLE_TEMPLATE,
   description:
     'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.',
@@ -77,8 +77,8 @@ export default defineConfig({
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
     ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
     ['meta', { property: 'og:type', content: 'website' }],
-    ['meta', { property: 'og:site_name', content: 'Piwi Dashboard' }],
-    ['meta', { property: 'og:title', content: 'Piwi Dashboard — Your Playwright results, kept and explained' }],
+    ['meta', { property: 'og:site_name', content: 'Piwi' }],
+    ['meta', { property: 'og:title', content: 'Piwi — Your Playwright results, kept and explained' }],
     [
       'meta',
       {
@@ -127,7 +127,7 @@ export default defineConfig({
 
     footer: {
       message:
-        'Fair source, released under the <a href="/guide/license">FSL-1.1-MIT license</a>; the reporter and integrations are MIT. Zero telemetry — Piwi never phones home.<br>Piwi Dashboard is not affiliated with, endorsed by, or connected to Microsoft Corporation. Playwright is a trademark of Microsoft.',
+        'Fair source, released under the <a href="/guide/license">FSL-1.1-MIT license</a>; the reporter and integrations are MIT. Zero telemetry — Piwi never phones home.<br>Piwi is not affiliated with, endorsed by, or connected to Microsoft Corporation. Playwright is a trademark of Microsoft.',
       copyright: 'Copyright © 2025-present Fabien Ménager',
     },
   },

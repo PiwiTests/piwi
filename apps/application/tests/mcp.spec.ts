@@ -79,7 +79,7 @@ test.describe.serial('MCP server', () => {
       clientInfo: { name: 'test', version: '1.0' },
     });
     expect(body.result.protocolVersion).toBe('2024-11-05');
-    expect(body.result.serverInfo.name).toBe('piwi-dashboard');
+    expect(body.result.serverInfo.name).toBe('piwi');
     expect(body.result.capabilities.tools).toBeDefined();
     expect(body.result.capabilities.prompts).toBeDefined();
   });
@@ -127,7 +127,7 @@ test.describe.serial('MCP server', () => {
       resultType: 'complete',
       supportedVersions: expect.arrayContaining(['2026-07-28', '2025-11-25']),
       capabilities: { tools: {}, prompts: {} },
-      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-dashboard' } },
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi' } },
     });
     const listed = await modern('tools/list');
     expect((await listed.json()).result).toMatchObject({ resultType: 'complete', ttlMs: 0, cacheScope: 'private' });

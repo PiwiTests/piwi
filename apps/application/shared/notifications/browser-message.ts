@@ -7,7 +7,7 @@ import { durationShort } from '#shared/relative-time';
  */
 
 /** The title every such notification carries. */
-export const NOTIFICATION_MESSAGE_TITLE = 'Piwi Dashboard';
+export const NOTIFICATION_MESSAGE_TITLE = 'Piwi';
 
 /** A notification event as the notification stream sends it: its type and the fields of its payload the message reads. */
 export interface NotificationEventData {

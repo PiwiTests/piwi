@@ -1,6 +1,6 @@
 # @piwitests/server
 
-Run the self-hosted [Piwi Dashboard](https://piwitests.dev) server — a permanent
+Run the self-hosted [Piwi](https://piwitests.dev) server — a permanent
 home for your Playwright test results — with a single command, no Docker required.
 
 > **Docker is the recommended way to run Piwi in production** (pinned runtime, isolated
