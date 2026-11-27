@@ -401,6 +401,12 @@ export default defineNuxtConfig({
               name: '__Host-piwi_session',
               description: 'Session cookie authentication (sealed session cookie). Set via POST /api/auth/login.',
             },
+            operatorToken: {
+              type: 'http',
+              scheme: 'bearer',
+              description:
+                'The operator token of PIWI_OPERATOR_TOKEN, for the operator routes alone: never a session or an API key.',
+            },
           },
         },
         // Default security requirement for all endpoints.

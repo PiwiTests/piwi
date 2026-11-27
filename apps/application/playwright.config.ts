@@ -34,6 +34,9 @@ process.env.PIWI_SECRET_KEY ||= 'test-encryption-secret-key-not-for-production';
 // share route, so every test server opts in (inherited via process.env).
 process.env.PIWI_SHARE_LINKS_ENABLED = 'true';
 
+// The operator routes answer 404 without a token; the suite calls them with this one.
+process.env.PIWI_OPERATOR_TOKEN ||= 'test-operator-token-not-for-production-0123456789';
+
 // `PIWI_AUTH_*` is resolved into `runtimeConfig` when the Nuxt config is
 // evaluated, which for a production build is build time. Nitro maps the
 // `NUXT_`-prefixed forms onto the same keys at startup, so auth-enabled servers
