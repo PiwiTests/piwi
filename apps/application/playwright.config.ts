@@ -30,6 +30,10 @@ const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() ||
 // channel flows the suite exercises can save.
 process.env.PIWI_SECRET_KEY ||= 'test-encryption-secret-key-not-for-production';
 
+// The mock Jira and AI servers the suite starts listen on the loopback address, which an address set in Settings
+// reaches only when the operator allows it.
+process.env.PIWI_PRIVATE_HOSTS ||= '127.0.0.1,localhost';
+
 // Share links are off by default; the suite exercises minting and the public
 // share route, so every test server opts in (inherited via process.env).
 process.env.PIWI_SHARE_LINKS_ENABLED = 'true';

@@ -15,6 +15,7 @@ import {
   type AiKeyScope,
 } from './ai-credentials';
 import { CredentialRefusedError, withCredential, type CredentialActor } from './credentials';
+import { connectionFetch, privateAddressRefusal } from './connection-fetch';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -351,6 +352,12 @@ export interface StreamResult {
   costUsd?: number | null;
 }
 
+/** What a failed AI call says: a refused private address by its own words, whatever client wrapped it. */
+function aiErrorMessage(err: unknown): string {
+  const reason = privateAddressRefusal(err) ?? err;
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   assertAiKey(config);
   try {
@@ -364,7 +371,7 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
     }
     return await callOpenAiCompat(config, opts);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = aiErrorMessage(err);
     throw new Error(`[${config.provider}] ${msg.slice(0, 500)}`, { cause: err });
   }
 }
@@ -377,6 +384,7 @@ export async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic
   return new anthropicSdk.default({
     apiKey: config.apiKey,
     baseURL: config.baseUrl || undefined,
+    fetch: connectionFetch as typeof fetch,
     timeout: 120_000,
     maxRetries: 1,
   });
@@ -596,7 +604,7 @@ async function callOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions): Pr
 
   const { res, errorBody } = await postOpenAiWithFallbacks(
     (attempt) =>
-      fetch(url, {
+      connectionFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(buildOpenAiBody(config, opts, attempt)),
@@ -650,8 +658,7 @@ export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOpti
       yield* streamOpenAiCompat(config, opts);
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    yield { type: 'error', data: msg };
+    yield { type: 'error', data: aiErrorMessage(err) };
   }
 }
 
@@ -720,7 +727,7 @@ async function* streamOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions):
   const timeoutId = setTimeout(() => controller.abort(), 120_000);
 
   const post = (attempt: OpenAiAttempt) =>
-    fetch(url, {
+    connectionFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({

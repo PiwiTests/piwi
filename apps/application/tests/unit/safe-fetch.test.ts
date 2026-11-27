@@ -26,6 +26,24 @@ describe('isBlockedAddress', () => {
     }
   });
 
+  test('blocks the documentation, protocol-assignment, relay, discard and Teredo ranges', () => {
+    for (const ip of [
+      '192.0.0.8',
+      '192.0.2.1',
+      '198.51.100.7',
+      '203.0.113.9',
+      '192.88.99.1',
+      '2001:db8::1',
+      '2001::1',
+      '100::1',
+    ]) {
+      expect(isBlockedAddress(ip), ip).toBe(true);
+    }
+    for (const ip of ['192.0.1.1', '198.51.101.1', '203.0.114.1', '2001:4860::8888', '100:1::1']) {
+      expect(isBlockedAddress(ip), ip).toBe(false);
+    }
+  });
+
   test('allows public addresses', () => {
     for (const ip of ['8.8.8.8', '1.1.1.1', '93.184.216.34', '::ffff:8.8.8.8']) {
       expect(isBlockedAddress(ip)).toBe(false);

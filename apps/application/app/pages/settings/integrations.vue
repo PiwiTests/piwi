@@ -480,8 +480,8 @@ function errorMessage(err: unknown): string {
 
         <template #footer>
           <p v-if="provider.kind === 'tracker'" class="text-xs text-muted" data-tour="integration-private-host">
-            A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host
-            works.
+            A site on a private address is reached only when the environment sets it, when
+            <code>PIWI_PRIVATE_HOSTS</code> lists its host, or in the desktop app.
             <HelpHint topic="settings.integrations.private-host" />
           </p>
           <p v-else class="text-xs text-muted">
