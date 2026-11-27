@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { deleteUserRecord, findUserByEmail } from '#shared/handlers/users';
@@ -6,6 +6,7 @@ import { isPlainLine } from '#shared/operator-notice';
 import { InstanceRole } from '#shared/permissions';
 import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import type { ErrorCode } from '#shared/utils/error-codes';
+import { getDialect } from '../database';
 import { accountTokens, users } from '../database/schema';
 import { newAccountToken } from './account-tokens';
 
@@ -129,6 +130,30 @@ async function createInvitee(
 }
 
 /**
+ * Removes the account an invitation made once its link could not be sent, unless another invitation of the address
+ * gave the account a link of its own meanwhile: that link went out, and the account is its. On PostgreSQL the
+ * account's row is locked first, which waits for such an invitation to commit, so the check reads what it wrote.
+ * Answers whether the account was removed.
+ */
+async function removeUnsentInvitee(db: DrizzleDB, userId: number, tokenHash: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    if (getDialect() === 'postgres') {
+      // The client is typed as SQLite's; on PostgreSQL its transaction runs raw SQL with `execute`.
+      await (tx as unknown as { execute(query: SQL): Promise<unknown> }).execute(
+        sql`SELECT ${users.id} FROM ${users} WHERE ${users.id} = ${userId} FOR UPDATE`,
+      );
+    }
+    const [own] = await tx
+      .select({ id: accountTokens.id })
+      .from(accountTokens)
+      .where(and(eq(accountTokens.userId, userId), eq(accountTokens.tokenHash, tokenHash)));
+    if (!own) return false;
+    await deleteUserRecord(tx as unknown as DrizzleDB, userId);
+    return true;
+  });
+}
+
+/**
  * Makes the administrator, or gives a still-untaken operator invitation a new link, and sends it; a new account is
  * removed again when its link cannot be sent. Answers when the link ends. The other administrators are told after,
  * and a message that fails is only logged.
@@ -166,20 +191,21 @@ export async function inviteAdministrator(
     await mail.sendInvite(invitee.email, link.token, invitee.username);
   } catch (error) {
     console.error('[operator/admin-invite] The invitation could not be sent:', (error as Error).message);
-    if (!existing) {
-      await deleteUserRecord(db, invitee.userId).catch((cleanup: unknown) =>
+    const removed =
+      !existing &&
+      (await removeUnsentInvitee(db, invitee.userId, link.tokenHash).catch((cleanup: unknown) => {
         console.error(
           '[operator/admin-invite] The unsent invitation could not be removed:',
           (cleanup as Error).message,
-        ),
-      );
-    }
+        );
+        return false;
+      }));
     throw new AdminInviteRefused(
       502,
       'INVITE_NOT_SENT',
-      existing
-        ? 'The invitation email could not be sent: invite the address again'
-        : 'The invitation email could not be sent: nothing was kept',
+      removed
+        ? 'The invitation email could not be sent: nothing was kept'
+        : 'The invitation email could not be sent: invite the address again',
     );
   }
 

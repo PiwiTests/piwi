@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { eq, and, exists, gt, inArray, isNull } from 'drizzle-orm';
+import { eq, and, exists, gt, inArray, isNull, or } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
+import { InstanceRole } from '#shared/permissions';
 import { accountTokens, users } from '../database/schema';
 import { hashToken } from './token-hash';
 
@@ -106,7 +107,14 @@ export async function claimAccountToken(
           db
             .select({ id: users.id })
             .from(users)
-            .where(and(eq(users.id, accountTokens.userId), eq(users.email, accountTokens.email))),
+            .where(
+              and(
+                eq(users.id, accountTokens.userId),
+                eq(users.email, accountTokens.email),
+                // The operator's invitation is for an administrator: it sets nothing once the account is not one.
+                or(isNull(accountTokens.issuedBy), eq(users.role, InstanceRole.ADMINISTRATOR)),
+              ),
+            ),
         ),
       ),
     )
