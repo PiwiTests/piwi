@@ -15,14 +15,22 @@ import { migrateToLatest } from './temp-db';
  */
 
 delete process.env.PIWI_DATABASE_URL;
-const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false }));
+const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false, raceEmail: null as string | null }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/auth', async (importOriginal) => {
   const auth = await importOriginal<typeof import('../../server/utils/auth')>();
   return {
     ...auth,
-    createUser: (...args: Parameters<typeof auth.createUser>) =>
-      state.hashBusy ? Promise.reject(Object.assign(new Error('busy'), { statusCode: 503 })) : auth.createUser(...args),
+    createUser: async (...args: Parameters<typeof auth.createUser>) => {
+      if (state.hashBusy) throw Object.assign(new Error('busy'), { statusCode: 503 });
+      // A provider sign-in that takes the address between the setup's check and its insert.
+      if (state.raceEmail) {
+        const { users } = await import('../../server/database/schema.sqlite');
+        const db = state.db as { insert: (table: unknown) => { values: (row: unknown) => Promise<unknown> } };
+        await db.insert(users).values({ username: 'raced', password: '', role: 'member', email: state.raceEmail });
+      }
+      return auth.createUser(...args);
+    },
   };
 });
 
@@ -95,6 +103,24 @@ describe('first-admin setup while only members exist', () => {
     });
     const [admin] = await db.select().from(schema.users).where(eq(schema.users.username, 'admin'));
     expect(admin).toMatchObject({ email: 'admin@example.com', emailVerified: false });
+  });
+
+  test('takes an empty or null email as none, and answers an address taken meanwhile as taken', async () => {
+    expect(await setup(request({ email: '  ' }))).toMatchObject({ success: true, user: { email: null } });
+    const db = state.db as ReturnType<typeof drizzle<typeof schema>>;
+    await db.delete(schema.users).where(eq(schema.users.username, 'admin'));
+    address += 1;
+    state.raceEmail = 'raced@example.com';
+    try {
+      await expect(setup(request({ email: 'Raced@example.com' }))).rejects.toMatchObject({
+        statusCode: 409,
+        data: { errorCode: 'EMAIL_TAKEN' },
+      });
+    } finally {
+      state.raceEmail = null;
+    }
+    address += 1;
+    expect(await setup(request({ email: null }))).toMatchObject({ success: true, user: { email: null } });
   });
 
   test('stays open, refuses a username a member holds, and closes once an administrator exists', async () => {

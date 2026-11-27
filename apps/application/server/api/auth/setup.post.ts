@@ -1,3 +1,4 @@
+import { accountEmailSchema } from '#shared/account-email';
 import { findUserByEmail } from '#shared/handlers/users';
 import { InstanceRole } from '#shared/permissions';
 import { USERNAME_MAX_LENGTH } from '#shared/project-access';
@@ -12,6 +13,7 @@ import {
   usernameTaken,
 } from '../../utils/auth';
 import { getDatabase } from '../../database';
+import { isUniqueViolation } from '../../utils/db-errors';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError, releaseRateLimit } from '../../utils/rate-limit';
 import { z } from 'zod';
 
@@ -25,11 +27,22 @@ defineRouteMeta({
   },
 });
 
+const emailTaken = () =>
+  apiError({
+    statusCode: 409,
+    errorCode: 'EMAIL_TAKEN',
+    message: 'An account already uses this email address. Choose another one.',
+  });
+
 const createAdminSchema = z.object({
   username: z.string().min(3).max(USERNAME_MAX_LENGTH),
   password: z.string().min(8),
   name: z.string().optional(),
-  email: z.string().trim().max(254).email().optional(),
+  // An empty or null email is no email, as a script that always sends the key means it.
+  email: z.preprocess(
+    (value) => (value === null || (typeof value === 'string' && !value.trim()) ? undefined : value),
+    accountEmailSchema.optional(),
+  ),
   setupToken: z.string().optional(),
 });
 
@@ -78,13 +91,7 @@ export default eventHandler(async (event) => {
   if (await usernameTaken(username)) {
     throw apiError({ statusCode: 409, message: 'An account already uses this username. Choose another one.' });
   }
-  if (email && (await findUserByEmail(await getDatabase(), email))) {
-    throw apiError({
-      statusCode: 409,
-      errorCode: 'EMAIL_TAKEN',
-      message: 'An account already uses this email address. Choose another one.',
-    });
-  }
+  if (email && (await findUserByEmail(await getDatabase(), email))) throw emailTaken();
 
   // Two concurrent setup requests can both pass the needsInitialSetup() check
   // above. claimInitialSetup() lets exactly one of them create the
@@ -115,6 +122,8 @@ export default eventHandler(async (event) => {
     // back the request's rate-limit slot.
     releaseRateLimit(rateKey);
     await releaseInitialSetup();
+    // An account a provider sign-in made meanwhile with the same address.
+    if (email && isUniqueViolation(err) && (await findUserByEmail(await getDatabase(), email))) throw emailTaken();
     throw err;
   }
 });

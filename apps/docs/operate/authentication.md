@@ -40,7 +40,7 @@ A Member's rights inside a project come from the **project roles** granted to th
 
 While authentication is on and no administrator exists (even after members signed in through OAuth), the login page
 shows a **Create the first admin account** form instead of the sign-in form, which signs you in as the administrator.
-It also asks for an email address, for password resets. A script can make the same call:
+It also asks for an email address, for password resets once email is set up. A script can make the same call:
 
 ::: code-group
 
@@ -59,7 +59,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 The endpoint is rate-limited per client address. On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to
 a random value: the form asks for it, and the API call carries it as `"setupToken"`, so a stranger cannot become the
 administrator first. The Railway, Render and Coolify [one-click deploy templates](./one-click-deploy) generate it. A
-link to `/login#setup=<token>` fills it in, and the page removes it from the address.
+link to `/login#setup=<token>`, the token percent-encoded, fills it in, and the page removes it from the address.
 
 ## Logging in
 
@@ -119,7 +119,7 @@ The new account stores the provider's email, unverified unless the provider veri
 
 Each later sign-in updates the name, avatar and email from the provider, keeping the email when the provider sends none or one another account uses.
 
-Piwi keeps no provider token: the access token serves the sign-in, then is discarded. The demo has no OAuth.
+Piwi keeps no provider token. The demo has no OAuth.
 
 ### Connecting / disconnecting a provider
 

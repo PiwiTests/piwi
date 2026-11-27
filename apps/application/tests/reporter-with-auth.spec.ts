@@ -97,6 +97,9 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // Setup logs the new admin in and lands on the dashboard.
     await expect(page.getByText('Admin account created', { exact: true })).toBeVisible();
     await page.waitForURL(`${AUTH_SERVER_URL}/`);
+    // The token stays out of the history the navigation wrote.
+    await page.goBack();
+    await expect(page).toHaveURL(`${AUTH_SERVER_URL}/login`);
   });
 
   test('setup endpoint should reject a second call once users exist', async ({ request }) => {

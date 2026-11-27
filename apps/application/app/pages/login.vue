@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { safeReturnPath } from '#shared/return-path';
+import { accountEmailSchema } from '#shared/account-email';
 import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 
 const { login } = useAuth();
@@ -44,22 +45,15 @@ const setupState = reactive({
 });
 const setupLoading = ref(false);
 const setupError = ref('');
-// The token came in the setup link (`/login#setup=…`), so the form says where it was filled in from.
-const setupTokenFromLink = ref(false);
-
-/** Takes the setup link's token from the address fragment, and leaves the address without it. */
-function takeSetupLink(): string | null {
-  const token = setupLinkToken(window.location.hash);
-  if (token === undefined) return null;
-  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
-  return token;
-}
+// The token the setup link (`/login#setup=…`) filled in, so the form says where it came from while it is unchanged.
+const linkedSetupToken = ref<string | null>(null);
 
 onMounted(async () => {
-  const linked = takeSetupLink();
-  if (linked) {
-    setupState.setupToken = linked;
-    setupTokenFromLink.value = true;
+  const linked = setupLinkToken(window.location.hash);
+  if (linked !== undefined) {
+    // Through the router, so neither the address nor the router's own record of it keeps the token.
+    void router.replace({ path: route.path, query: route.query, hash: '' });
+    if (linked) setupState.setupToken = linkedSetupToken.value = linked;
   }
   if (config.public.demoMode) {
     needsSetup.value = false;
@@ -97,8 +91,10 @@ async function handleSetup() {
     setupError.value = 'Passwords do not match';
     return;
   }
-  if (!/^[^\s@]+@[^\s@]+$/.test(setupState.email.trim())) {
-    setupError.value = 'Enter your email address, so you can reset a forgotten password';
+  if (!accountEmailSchema.safeParse(setupState.email).success) {
+    setupError.value = setupState.email.trim()
+      ? 'Enter a full email address, such as you@example.com'
+      : 'Enter your email address, so you can reset a forgotten password';
     return;
   }
   if (setupTokenRequired.value && !setupState.setupToken.trim()) {
@@ -225,7 +221,7 @@ definePageMeta({
           label="Setup token"
           name="setupToken"
           :help="
-            setupTokenFromLink
+            linkedSetupToken && setupState.setupToken === linkedSetupToken
               ? 'Filled in from your setup link.'
               : 'The value of PIWI_SETUP_TOKEN in the server\'s settings.'
           "
@@ -263,7 +259,12 @@ definePageMeta({
           />
         </UFormField>
 
-        <UFormField label="Email" name="email" help="To reset a forgotten password." required>
+        <UFormField
+          label="Email"
+          name="email"
+          help="Where a password reset link goes, once the server can send email."
+          required
+        >
           <UInput
             v-model="setupState.email"
             type="email"
