@@ -42,9 +42,6 @@ const COUNTED_BYTES = sql`(SELECT coalesce(sum(CASE WHEN ${files.blobId} IS NULL
   + (SELECT coalesce(sum(coalesce(${traceBlobs.storedSize}, ${traceBlobs.size})), 0) FROM ${traceBlobs})
   + (SELECT coalesce(sum(${traceResources.size}), 0) FROM ${traceResources})`;
 
-/** The rows the triggers write to: one on SQLite, 16 on PostgreSQL, where a session writes to `pid % 16`. */
-const SLOTS = getDialect() === 'postgres' ? 16 : 1;
-
 /**
  * Recounts the total from the tables: slot 0 takes the count and every other slot 0, so what the triggers missed (a
  * row written while they did not exist, a restore) is put right, and a missing slot is made again. On PostgreSQL the
@@ -52,12 +49,15 @@ const SLOTS = getDialect() === 'postgres' ? 16 : 1;
  * written, so none of them is lost. Answers the total.
  */
 export async function reconcileStorageTotal(db: DrizzleDB): Promise<number> {
+  const postgres = getDialect() === 'postgres';
+  // The rows the triggers write to: one on SQLite, 16 on PostgreSQL, where a session writes to `pid % 16`.
+  const slots = postgres ? 16 : 1;
   await db
     .insert(storageTotals)
-    .values(Array.from({ length: SLOTS }, (_, slot) => ({ slot, bytes: 0 })))
+    .values(Array.from({ length: slots }, (_, slot) => ({ slot, bytes: 0 })))
     .onConflictDoNothing();
   await db.transaction(async (tx) => {
-    if (getDialect() === 'postgres') {
+    if (postgres) {
       // The client is typed as SQLite's; on PostgreSQL its transaction runs raw SQL with `execute`.
       await (tx as unknown as { execute(query: SQL): Promise<unknown> }).execute(
         sql`LOCK TABLE ${storageTotals} IN EXCLUSIVE MODE`,
