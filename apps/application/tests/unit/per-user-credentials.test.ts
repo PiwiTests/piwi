@@ -62,6 +62,10 @@ const putToken = underRoutePermission(
   state,
   (await import('../../server/api/credentials/[id]/token/index.put')).default as unknown as TokenRoute,
 );
+const testToken = underRoutePermission(
+  state,
+  (await import('../../server/api/credentials/[id]/token/test.post')).default as unknown as TokenRoute,
+);
 const { ciServerTemplateValues } = await import('#shared/handlers/ci-rerun-target');
 
 const SECRET_KEY = '0123456789abcdef'.repeat(4);
@@ -609,6 +613,8 @@ describe('a per-user credential against a Jenkins', () => {
   /** The tokens the fake Jenkins takes, by user name; any other answers 401. */
   const accounts: Record<string, string> = { 'quinn.qa': TOKEN };
   let anonymous = false;
+  /** The connections opened to the fake Jenkins, a request or not. */
+  let connections = 0;
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -636,6 +642,9 @@ describe('a per-user credential against a Jenkins', () => {
       res.writeHead(201, { Location: `${base}queue/item/7/` });
       res.end();
     });
+    server.on('connection', () => {
+      connections += 1;
+    });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
   });
@@ -644,6 +653,7 @@ describe('a per-user credential against a Jenkins', () => {
     process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
     seen.length = 0;
     anonymous = false;
+    connections = 0;
   });
   afterEach(() => {
     delete process.env.PIWI_CI_SERVER_HOSTS;
@@ -682,6 +692,20 @@ describe('a per-user credential against a Jenkins', () => {
       testCiServerUserToken(db as never, { id, destination: base }, actor(2), { user: 'quinn.qa', secret: TOKEN }),
     ).rejects.toBeInstanceOf(CredentialRefusedError);
     expect(seen).toEqual([]);
+  });
+
+  test('says when the host resolves to a private address the operator did not list, before anything is sent', async () => {
+    delete process.env.PIWI_CI_SERVER_HOSTS;
+    const destination = base.replace('http:', 'https:');
+    const id = await createPerUser({ destination });
+    expect(
+      await testCiServerUserToken(db as never, { id, destination }, actor(2), { user: 'quinn.qa', secret: TOKEN }),
+    ).toEqual({ ok: false, reason: 'private-address' });
+    expect(connections).toBe(0);
+    expect((await uses()).at(-1)).toMatchObject({
+      result: 'failed',
+      reason: expect.stringContaining('PIWI_CI_SERVER_HOSTS'),
+    });
   });
 
   test('dispatches with the starter’s own token, and a 401 marks it refused', async () => {
@@ -751,6 +775,24 @@ describe('giving a token through its route', () => {
       status: 200,
       body: { credential: { id, token: { remoteUser: 'quinn.qa', state: 'ready' } } },
     });
+  });
+
+  test('answers a host on a private address the operator did not list, and keeps the token it holds', async () => {
+    delete process.env.PIWI_CI_SERVER_HOSTS;
+    const destination = base.replace('http:', 'https:');
+    const id = await createPerUser({ destination });
+    state.caller = runner(2);
+    expect(await put(id, { user: 'quinn.qa', secret: TOKEN })).toMatchObject({
+      status: 400,
+      body: { data: { reason: 'private-address' }, message: expect.stringContaining('PIWI_CI_SERVER_HOSTS') },
+    });
+    await give(id, 2, 'quinn.qa', TOKEN, destination);
+    expect(await testToken({ params: { id: String(id) } })).toMatchObject({
+      ok: false,
+      reason: 'private-address',
+      message: expect.stringContaining('PIWI_CI_SERVER_HOSTS'),
+    });
+    expect((await listUserTokens(db as never, id))[0]!.state).toBe('ready');
   });
 
   test('refuses an API key, a password, a credential the person may not use, and an account someone else gave', async () => {

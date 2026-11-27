@@ -15,7 +15,8 @@ import {
   type AiKeyScope,
 } from './ai-credentials';
 import { CredentialRefusedError, withCredential, type CredentialActor } from './credentials';
-import { connectionFetch, privateAddressRefusal } from './connection-fetch';
+import { connectionFetch } from './connection-fetch';
+import { privateAddressRefusal } from './safe-fetch';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 

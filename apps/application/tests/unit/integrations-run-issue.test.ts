@@ -8,6 +8,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
+import { PrivateAddressError } from '../../server/utils/safe-fetch';
 
 /**
  * Issues a person files about a run, or about an execution with no failure
@@ -49,6 +50,8 @@ let failCreatesWith: number | null = null;
 let dropCreateAnswers = false;
 /** Refuses the connection for the next creates, so nothing reaches Jira. */
 let refuseConnections = false;
+/** Refuses the next creates for a private address, as the guard of an address set in Settings does. */
+let refusePrivateAddress = false;
 /** Times the next creates out, as `AbortSignal.timeout` does, with no answer from Jira. */
 let timeOutCreates = false;
 /** Answers the next comments with this status instead of adding them. */
@@ -65,6 +68,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   if (/\/rest\/api\/3\/issue\/createmeta\//.test(url.pathname)) return json({ total: 0, fields: [] });
   if (url.pathname === '/rest/api/3/issue' && init?.method === 'POST') {
     if (refuseConnections) throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
+    if (refusePrivateAddress) throw new PrivateAddressError(url, 'an address set in Settings', 'PIWI_PRIVATE_HOSTS');
     if (timeOutCreates) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     if (failCreatesWith) return json({ errorMessages: ['Unavailable'] }, failCreatesWith);
     await onCreate?.();
@@ -196,6 +200,7 @@ beforeEach(() => {
   failCreatesWith = null;
   dropCreateAnswers = false;
   refuseConnections = false;
+  refusePrivateAddress = false;
   timeOutCreates = false;
   onCreate = null;
   failCommentsWith = null;
@@ -431,6 +436,15 @@ describe('a create whose worker stopped during the call', () => {
     const pending = await file('test_run', 7, { submissionId });
     expect(pending).toMatchObject({ status: 'pending' });
     refuseConnections = false;
+    expect(await file('test_run', 7, { submissionId })).toMatchObject({ status: 'done' });
+    expect(creates).toHaveLength(1);
+  });
+
+  test('a create refused for a private address never reached Jira: the retry files', async () => {
+    refusePrivateAddress = true;
+    const submissionId = '00000000-0000-4000-8000-00000000000f';
+    expect(await file('test_run', 7, { submissionId })).toMatchObject({ status: 'pending' });
+    refusePrivateAddress = false;
     expect(await file('test_run', 7, { submissionId })).toMatchObject({ status: 'done' });
     expect(creates).toHaveLength(1);
   });

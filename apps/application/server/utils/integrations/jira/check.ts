@@ -1,7 +1,8 @@
 import type { ConnectionCheckResult } from '#shared/integrations/types';
 import { JIRA_NO_PROJECTS_HINT, jiraFailureHint, type JiraCheckFailure } from '#shared/integrations/jira-setup';
 import { JiraClient, JiraError } from './client';
-import { connectionFetch, PrivateAddressError } from '../../connection-fetch';
+import { connectionFetch } from '../../connection-fetch';
+import { PrivateAddressError } from '../../safe-fetch';
 
 /** The site probe answers from public endpoints, so it gets a shorter budget than REST calls. */
 const SITE_PROBE_TIMEOUT_MS = 8_000;

@@ -640,12 +640,12 @@ describe('checking a job on a CI server', () => {
     expect(await listCiServerJobs(db as never, 1, elsewhere, USE)).toMatchObject({ jobs: null });
   });
 
-  test('reaches no private address the operator did not list', async () => {
+  test('reaches no private address the operator did not list, and says which host and variable', async () => {
     const privateBase = base.replace('http:', 'https:');
-    const results = await check(target({ preset: 'jenkins', baseUrl: privateBase, rerun: { job: 'good' } }));
-    expect(results).toEqual([
-      expect.objectContaining({ ok: false, message: expect.stringContaining('URL host is not allowed') }),
-    ]);
+    const refused = `${new URL(base).host} is a private address, which a CI server request may not reach. The operator allows it by listing the host in PIWI_CI_SERVER_HOSTS.`;
+    const privateTarget = target({ preset: 'jenkins', baseUrl: privateBase, rerun: { job: 'good' } });
+    expect(await check(privateTarget)).toEqual([expect.objectContaining({ ok: false, message: refused })]);
+    expect(await listCiServerJobs(db as never, 1, privateTarget, USE)).toMatchObject({ jobs: null, message: refused });
     expect(seen).toEqual([]);
   });
 });

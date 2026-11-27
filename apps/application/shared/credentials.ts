@@ -543,7 +543,7 @@ export interface MyCredentialEntry {
 /** What a token test answers: the account it names, or why it failed, never the service's own text. */
 export type UserTokenTestResult =
   | { ok: true; remoteUser: string }
-  | { ok: false; reason: 'refused' | 'unreachable' | 'anonymous' };
+  | { ok: false; reason: 'refused' | 'unreachable' | 'private-address' | 'anonymous' };
 
 /** How many tests one person may run on one credential in {@link USER_TOKEN_TEST_WINDOW_MS}. */
 export const USER_TOKEN_TEST_LIMIT = 10;
@@ -599,6 +599,8 @@ export function readWhoAmI(json: unknown): UserTokenTestResult {
 export const USER_TOKEN_TEST_REASONS: Record<Exclude<UserTokenTestResult, { ok: true }>['reason'], string> = {
   refused: 'The CI server refused this user name and token.',
   unreachable: 'The CI server could not be reached.',
+  'private-address':
+    'The CI server’s host is, or resolves to, a private address, which Piwi reaches only once the operator lists the host in PIWI_CI_SERVER_HOSTS.',
   anonymous: 'The CI server did not recognize this token as a signed-in user.',
 };
 

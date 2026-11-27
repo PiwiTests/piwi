@@ -143,6 +143,80 @@ export function placesAllow(places: readonly HostPlace[], url: string): boolean 
 }
 
 /**
+ * Whether a host name is one reserved for private addresses, refused without a
+ * lookup: none, `localhost`, and the names under `.localhost`, `.local` and
+ * `.internal`. `host` is lowercased, without IPv6 brackets.
+ */
+export function isPrivateHostName(host: string): boolean {
+  return (
+    !host ||
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  );
+}
+
+/**
+ * The refusal of `assertPublicHttpUrl` and of `publicOnlyLookup`: the host is a
+ * blocked address, a name that resolves to one, or a name reserved for private
+ * addresses.
+ */
+export class BlockedHostError extends Error {
+  readonly code = 'EADDRNOTAVAIL';
+  constructor(message = 'URL host is not allowed') {
+    super(message);
+    this.name = 'BlockedHostError';
+  }
+}
+
+/** The errors an error was wrapped around, itself first: a client library puts the one it caught in `cause`. */
+function causeChain(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  for (let current = error; current && chain.length < 5; current = (current as { cause?: unknown }).cause) {
+    chain.push(current);
+  }
+  return chain;
+}
+
+/** Whether a request failed because its host is private, however deep a client library wrapped the refusal. */
+export function isBlockedHostRefusal(error: unknown): boolean {
+  return causeChain(error).some((item) => item instanceof BlockedHostError);
+}
+
+/**
+ * A request refused because its host is a private address, or a name that
+ * resolves to one, which the variable that would allow it does not list: the
+ * message names the host and the variable, for the person who set the address.
+ */
+export class PrivateAddressError extends Error {
+  /**
+   * @param url The address refused.
+   * @param subject What sent the request, as the message names it ("a CI server request").
+   * @param variable The variable whose list allows the host.
+   */
+  constructor(url: URL, subject: string, variable: string) {
+    const { host: name, port } = hostPlace(url);
+    // With its port always, the scheme's default included: a host listed with another port does not allow this one.
+    const shown = `${isIP(name) === 6 ? `[${name}]` : name}:${port}`;
+    const what = isIP(name)
+      ? 'is a private address'
+      : isPrivateHostName(name)
+        ? 'is a name reserved for private addresses'
+        : 'resolves to a private address';
+    super(
+      `${shown} ${what}, which ${subject} may not reach. The operator allows it by listing the host in ${variable}.`,
+    );
+    this.name = 'PrivateAddressError';
+  }
+}
+
+/** The explained refusal behind an error, however deep a client library wrapped it, or null. */
+export function privateAddressRefusal(error: unknown): PrivateAddressError | null {
+  return causeChain(error).find((item): item is PrivateAddressError => item instanceof PrivateAddressError) ?? null;
+}
+
+/**
  * Validate that `rawUrl` is an `http(s)` URL whose host is public. Resolves the
  * hostname and rejects if any resolved address is blocked. Throws on violation.
  */
@@ -157,23 +231,15 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
     throw new Error('Only http(s) URLs are allowed');
   }
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (
-    !host ||
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.internal') ||
-    host.endsWith('.local')
-  ) {
-    throw new Error('URL host is not allowed');
-  }
+  if (isPrivateHostName(host)) throw new BlockedHostError();
   if (isIP(host)) {
-    if (isBlockedAddress(host)) throw new Error('URL host is not allowed');
+    if (isBlockedAddress(host)) throw new BlockedHostError();
     return url;
   }
   const resolved = await lookup(host, { all: true });
   if (resolved.length === 0) throw new Error('URL host did not resolve');
   for (const { address } of resolved) {
-    if (isBlockedAddress(address)) throw new Error('URL host is not allowed');
+    if (isBlockedAddress(address)) throw new BlockedHostError();
   }
   return url;
 }
@@ -187,9 +253,7 @@ export const publicOnlyLookup: LookupFunction = (hostname, options, callback) =>
   dnsLookup(hostname, { ...options, all: true }, (err, addresses: LookupAddress[]) => {
     if (err) return callback(err, '', 0);
     if (addresses.length === 0 || addresses.some(({ address }) => isBlockedAddress(address))) {
-      const refused: NodeJS.ErrnoException = new Error(`URL host is not allowed: ${hostname}`);
-      refused.code = 'EADDRNOTAVAIL';
-      return callback(refused, '', 0);
+      return callback(new BlockedHostError(`URL host is not allowed: ${hostname}`), '', 0);
     }
     if (options.all) return callback(null, addresses);
     callback(null, addresses[0]!.address, addresses[0]!.family);

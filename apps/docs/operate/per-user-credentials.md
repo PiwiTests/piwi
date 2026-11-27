@@ -41,7 +41,8 @@ by reading Jenkins' `whoAmI` at the root of the destination, and keeps the accou
 - **One account per person**: a token for a Jenkins account another person already gave is refused, so a shared
   service account cannot be saved as someone's own.
 - **10 tests per person and credential in 10 minutes**, and a failed test says only that Jenkins refused the token,
-  did not recognize it as a signed-in user, or could not be reached, never Jenkins' own answer.
+  did not recognize it as a signed-in user, could not be reached, or is on a private address `PIWI_CI_SERVER_HOSTS`
+  does not list, never Jenkins' own answer.
 
 **Test** sends the saved token again; **Remove** takes it out of Piwi. A removed token stays valid on Jenkins: revoke
 it there too.

@@ -24,7 +24,10 @@ import {
   assertPublicHttpUrl,
   hostPlace,
   hostPlaces,
+  isBlockedHostRefusal,
   placesAllow,
+  PrivateAddressError,
+  privateAddressRefusal,
   publicOnlyLookup,
   type HostPlace,
 } from './safe-fetch';
@@ -298,20 +301,28 @@ async function readLimited(
  */
 export async function sendCiServerRequest(request: OutgoingCiRequest): Promise<CiServerAnswer> {
   const undici = await import('undici');
-  let dispatcher: Agent | undefined;
-  if (!mayReachPrivateAddress(request.url)) {
-    await assertPublicHttpUrl(request.url);
-    publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
-    dispatcher = publicOnlyAgent;
+  let res: Awaited<ReturnType<typeof undici.fetch>>;
+  try {
+    let dispatcher: Agent | undefined;
+    if (!mayReachPrivateAddress(request.url)) {
+      await assertPublicHttpUrl(request.url);
+      publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
+      dispatcher = publicOnlyAgent;
+    }
+    res = await undici.fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body ?? undefined,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
+      ...(dispatcher ? { dispatcher } : {}),
+    });
+  } catch (error) {
+    if (isBlockedHostRefusal(error)) {
+      throw new PrivateAddressError(new URL(request.url), 'a CI server request', 'PIWI_CI_SERVER_HOSTS');
+    }
+    throw error;
   }
-  const res = await undici.fetch(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: request.body ?? undefined,
-    redirect: 'manual',
-    signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
-    ...(dispatcher ? { dispatcher } : {}),
-  });
   const { text, truncated } = await readLimited(
     res.body as unknown as ReadableStream<Uint8Array> | null,
     request.maxAnswerBytes ?? MAX_ANSWER_BYTES,
@@ -326,6 +337,16 @@ const parseJson = (text: string): unknown => {
     return null;
   }
 };
+
+/**
+ * What a request that got no answer tells the user: a refusal of Piwi's own (the credential's rules, a private
+ * address) as it is, any other failure as a CI server that could not be reached.
+ */
+function unsentRequestMessage(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  if (error instanceof CredentialRefusedError || privateAddressRefusal(error)) return reason;
+  return `The CI server could not be reached: ${reason}.`;
+}
 
 /** The error a non-2xx answer becomes: its status and, for a JSON answer, its `message`, cut short. */
 export function ciServerAnswerError(answer: CiServerAnswer): Error {
@@ -439,7 +460,7 @@ export async function testCiServerUserToken(
     );
   } catch (e) {
     if (e instanceof CredentialRefusedError) throw e;
-    return { ok: false, reason: 'unreachable' };
+    return { ok: false, reason: privateAddressRefusal(e) ? 'private-address' : 'unreachable' };
   }
   if (answer.status === 401 || answer.status === 403) return { ok: false, reason: 'refused' };
   if (answer.status < 200 || answer.status >= 300) return { ok: false, reason: 'unreachable' };
@@ -598,13 +619,7 @@ export async function checkCiServerTarget(
             },
       );
     } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      results.push({
-        kind: plan.kind,
-        ok: false,
-        missing: [],
-        message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.`,
-      });
+      results.push({ kind: plan.kind, ok: false, missing: [], message: unsentRequestMessage(e) });
     }
   }
   return results;
@@ -670,8 +685,7 @@ async function readForListing(
     const json = parseJson(answer.text);
     return json === null ? { message: 'The CI server did not answer JSON.' } : { json, carried: request.credential };
   } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    return { message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.` };
+    return { message: unsentRequestMessage(e) };
   }
 }
 
