@@ -21,7 +21,7 @@ const SUBMIT_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
 // The routes that take a small body: those that read it before checking any credential (sign-in, the first
 // administrator, the password reset, the OAuth registration, token and revocation endpoints of MCP clients, the connect
 // request of Piwi Picker and the editors and its poll, the desktop app's pairing request, and a streaming run's
-// heartbeat, whose body carries its stream token), and the desktop app's run-target routes.
+// heartbeat, whose body carries its stream token), the desktop app's run-target routes, and the operator's routes.
 const OPEN_ROUTE_PATHS = [
   /^\/api\/auth\/(?:login|setup|forgot-password|reset-password)$/,
   /^\/oauth\/(?:register|token|revoke)$/,
@@ -29,6 +29,7 @@ const OPEN_ROUTE_PATHS = [
   /^\/api\/desktop\/picker-pairings$/,
   /^\/api\/desktop\/run-target(?:\/|$)/,
   /^\/api\/test-runs\/[^/]+\/heartbeat$/,
+  /^\/api\/operator\//,
 ];
 
 // A streaming run's batch of events, up to `MAX_EVENT_BATCH_BYTES`.

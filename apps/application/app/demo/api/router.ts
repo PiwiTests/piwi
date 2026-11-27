@@ -4679,6 +4679,13 @@ const routes: RouteEntry[] = [
     handler: (_, _body, query) => apiDemoChangelog(query),
   },
 
+  // The operator's notice: the demo has no operator, and no token to set one with.
+  {
+    method: 'GET',
+    pattern: /^\/api\/notice$/,
+    handler: () => Promise.resolve({ notice: null }),
+  },
+
   // Health — demo runs entirely client-side, so "the database" is always the
   // in-browser sql.js instance; touch it the same way the server's liveness
   // probe does (a lightweight query) so this stays a real check, not a stub.

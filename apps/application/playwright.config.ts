@@ -204,6 +204,24 @@ const baseConfig = defineConfig({
                 reuseExistingServer: false,
                 timeout: 90 * 1000,
               },
+              // Operator notice server used by operator-notice.spec.ts: a notice shows on every page its server
+              // renders, so the spec has a server and a database of its own, and no other spec meets its banner.
+              {
+                command: serverCommand,
+                url: 'http://localhost:3095/api/health',
+                env: {
+                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'notice-test.db'),
+                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'notice-test-storage'),
+                  NITRO_PORT: '3095',
+                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-notice'),
+                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
+                  // (inherited via process.env) can't repoint this server's backend.
+                  PIWI_DATABASE_URL: '',
+                  PIWI_STORAGE_TYPE: 'local',
+                },
+                reuseExistingServer: false,
+                timeout: 90 * 1000,
+              },
             ]
           : []),
         // PostgreSQL-backed server used by postgresql.spec.ts.
