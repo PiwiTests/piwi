@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { safeReturnPath } from '#shared/return-path';
 import { USERNAME_MAX_LENGTH } from '#shared/project-access';
+import { READ_ONLY_MESSAGE } from '#shared/operator-limits';
 
 const { login } = useAuth();
 const router = useRouter();
@@ -134,6 +135,7 @@ onMounted(() => {
       'link-requires-login': 'Please sign in before connecting a provider.',
       'auth-disabled': 'Authentication is not enabled',
       'invalid-provider': 'Invalid OAuth provider',
+      'read-only': READ_ONLY_MESSAGE,
     };
     error.value = messages[oauthError] || 'Authentication failed';
   }

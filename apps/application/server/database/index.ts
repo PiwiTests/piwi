@@ -8,6 +8,7 @@ import {
   backfillAliasSamples,
   reclusterFailureFingerprints,
 } from '#shared/handlers/failure-cluster-recluster';
+import { heldOperatorLimits, readOnlySetting } from '#shared/operator-limits';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { openPostgresPool, postgresPoolMax } from './postgres-pool';
@@ -312,6 +313,59 @@ async function importProjectCiServerTokens(target: DB): Promise<void> {
 }
 
 /**
+ * The passes each start makes once the schema is current: the ones startup waits for, then the ones it starts without
+ * waiting. Each runs once per instance or keeps its own record of what it did.
+ */
+async function runStartupPasses(target: DB): Promise<void> {
+  await reclusterFailureClusters(target);
+  await rekeyResourceFindings(target);
+  await releaseUnannouncedClusterClaims(target);
+  await redactStoredShareTokens(target);
+  await importProjectCiServerTokens(target);
+  rewriteRouteKeys(target);
+  backfillTraceResourceLinks();
+  backfillAnalyticsRollups();
+  backfillAttemptHistories();
+  backfillRunEnvironmentIds();
+  hideSecretsInStoredErrors();
+}
+
+/** The startup passes a read-only start left for the first request once the instance is writable. */
+let deferredStartupPasses: (() => Promise<void>) | null = null;
+let runningStartupPasses: Promise<void> | null = null;
+
+/**
+ * Run the startup passes, unless the operator's limits make the instance read-only: they then wait for the first
+ * call of `getDatabase` that finds it writable (`awaitDeferredStartupPasses`), which waits for them as startup does.
+ * The limits' module is imported when asked for, as it imports this one.
+ */
+async function startupPassesUnlessReadOnly(target: DB): Promise<void> {
+  const { readOnlyNow } = await import('../utils/operator-limits');
+  if (await readOnlyNow(target as any)) {
+    console.log('[Database] The instance is read-only: the startup passes wait until it is writable');
+    deferredStartupPasses = () => runStartupPasses(target);
+    return;
+  }
+  await runStartupPasses(target);
+}
+
+/**
+ * The startup passes a read-only start left, run once the limits this process holds make the instance writable, and
+ * waited for by every request that arrives while they run.
+ */
+async function awaitDeferredStartupPasses(): Promise<void> {
+  if (!runningStartupPasses) {
+    if (!deferredStartupPasses || readOnlySetting(heldOperatorLimits()).value) return;
+    const passes = deferredStartupPasses;
+    deferredStartupPasses = null;
+    runningStartupPasses = passes().finally(() => {
+      runningStartupPasses = null;
+    });
+  }
+  await runningStartupPasses;
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -342,17 +396,7 @@ async function openDatabase(): Promise<DB> {
           const target = postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder }));
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
-          await reclusterFailureClusters(db);
-          await rekeyResourceFindings(db);
-          await releaseUnannouncedClusterClaims(db);
-          await redactStoredShareTokens(db);
-          await importProjectCiServerTokens(db);
-          rewriteRouteKeys(db as any);
-          backfillTraceResourceLinks();
-          backfillAnalyticsRollups();
-          backfillAttemptHistories();
-          backfillRunEnvironmentIds();
-          hideSecretsInStoredErrors();
+          await startupPassesUnlessReadOnly(db);
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -401,17 +445,7 @@ async function openDatabase(): Promise<DB> {
             migrationClient.close();
           }
           console.log('[Database] SQLite migrations completed successfully');
-          await reclusterFailureClusters(db);
-          await rekeyResourceFindings(db);
-          await releaseUnannouncedClusterClaims(db);
-          await redactStoredShareTokens(db);
-          await importProjectCiServerTokens(db);
-          rewriteRouteKeys(db);
-          backfillTraceResourceLinks();
-          backfillAnalyticsRollups();
-          backfillAttemptHistories();
-          backfillRunEnvironmentIds();
-          hideSecretsInStoredErrors();
+          await startupPassesUnlessReadOnly(db);
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -472,6 +506,7 @@ export async function getDatabase() {
     await migrationPromise;
     migrationPromise = null;
   }
+  await awaitDeferredStartupPasses();
 
   return db;
 }

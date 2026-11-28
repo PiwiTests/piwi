@@ -13,6 +13,8 @@ useHead({ title: 'Connect an MCP client' });
 
 /** Why the authorize endpoint refused a request. Nothing was sent to the client. */
 const START_ERRORS: Record<AuthorizationStartError, string> = {
+  read_only:
+    'This instance is read-only for now, so no MCP client can connect to it. Nothing was sent to the client; connect it again once the instance is writable.',
   invalid_client:
     'This MCP client is not registered on this instance. Remove the server from your client and add it again: it registers on its own.',
   invalid_client_metadata:

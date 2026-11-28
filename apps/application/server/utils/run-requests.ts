@@ -16,6 +16,7 @@ import {
 import { runRequests, runTargets, testRuns, type RunRequestRow, type RunTarget, type User } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
 import { apiError } from './api-error';
+import { isReadOnly } from './operator-limits';
 import { extractApiKey, getUserAccessCached, isAuthEnabled, resolveApiKey } from './auth';
 import { RUN_TARGET_PERMISSIONS, type RunTargetPermission } from './extension-connect';
 import { readProjectRepositoryUrl } from './scm/project-repository';
@@ -96,8 +97,8 @@ export interface RunTargetCaller {
  * made by the device flow for the desktop app or Piwi Runner) whose target is still connected, and that holds the
  * route's `permission`: `run:receive` for the run requests, `project:read` for the comparison with the team's CI. Any
  * other credential, a session or a key with its owner's access, is refused: these routes serve connected apps only.
- * Records that the target was seen, unless `seen` is false: a check the instance makes on its own, such as an open
- * stream's, is no sign the app is there.
+ * Records that the target was seen, unless `seen` is false (a check the instance makes on its own, such as an open
+ * stream's, is no sign the app is there) or the instance is read-only.
  */
 export async function requireRunTarget(
   event: H3Event,
@@ -132,7 +133,7 @@ export async function requireRunTarget(
   const access = await getUserAccessCached(db, resolved.user);
   event.context.access = access;
   const permissions = holds as RunTargetPermission[];
-  if (!seen) return { db, user: resolved.user, target, access, permissions };
+  if (!seen || isReadOnly()) return { db, user: resolved.user, target, access, permissions };
   const now = new Date();
   await db.update(runTargets).set({ lastSeenAt: now }).where(eq(runTargets.id, target.id));
   return { db, user: resolved.user, target: { ...target, lastSeenAt: now }, access, permissions };
@@ -311,7 +312,8 @@ export async function mayReceiveOn(db: DbClient, access: AccessSummary, projectI
  * to end, or a request that ended at a stop within the last 10 minutes (a claim to stop showing, or a run the second
  * stop ended). `held` names the requests the instance counts as the target's, claimed or with their run, so a target
  * that started again ends those it no longer holds. `projects` names the projects of those requests and the ones the
- * target has a folder for, where its owner holds `run:receive`.
+ * target has a folder for, where its owner holds `run:receive`. A waiting request whose stored values no longer pass
+ * the parser is left out, and ended unless the instance is read-only.
  */
 export async function requestsForTarget(
   { db, target, access }: RunTargetCaller,
@@ -340,7 +342,7 @@ export async function requestsForTarget(
     if (!on.get(row.projectId)) continue;
     const request = runRequestOfferOf(row);
     if (request) requests.push(request);
-    else await endUnreadableRequest(db, row.id, now);
+    else if (!isReadOnly()) await endUnreadableRequest(db, row.id, now);
   }
   const stops = await db
     .select({ id: runRequests.id })

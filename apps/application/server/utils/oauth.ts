@@ -1,6 +1,8 @@
 import { publicBaseUrl } from './public-base-url';
 import type { H3Event } from 'h3';
 import { apiError } from './api-error';
+import { isReadOnly } from './operator-limits';
+import { READ_ONLY_MESSAGE } from '#shared/operator-limits';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and, inArray } from 'drizzle-orm';
@@ -390,10 +392,22 @@ async function enforceAllowlists(
 // Find existing OAuth user or create a new one
 // ---------------------------------------------------------------------------
 
+/** The refusal of a sign-in or a link that would write an account while the instance is read-only. */
+function readOnlySignInError() {
+  return apiError({
+    statusCode: 409,
+    errorCode: 'READ_ONLY',
+    data: { oauthError: 'read-only' },
+    message: READ_ONLY_MESSAGE,
+  });
+}
+
 /**
  * The account a provider sign-in opens: the one linked to this identity, the
  * one linked by a verified email, or a new one (`resolveProvisioningAction`
- * decides which). A new account takes the first free username.
+ * decides which). A new account takes the first free username. While the
+ * instance is read-only, the account linked to this identity signs in as it is
+ * stored, and a sign-in that would link or create one is refused.
  */
 export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB): Promise<User> {
   const { provider, providerId } = profile;
@@ -436,6 +450,10 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB
 
     case 'refresh':
     case 'link': {
+      if (isReadOnly()) {
+        if (action.kind === 'refresh' && identityMatch) return identityMatch;
+        throw readOnlySignInError();
+      }
       const updated = await db
         .update(users)
         .set({ ...action.set, updatedAt: new Date() })
@@ -445,6 +463,7 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB
     }
 
     case 'create': {
+      if (isReadOnly()) throw readOnlySignInError();
       const taken = await db
         .select({ username: users.username })
         .from(users)
@@ -473,6 +492,7 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB
 // ---------------------------------------------------------------------------
 
 export async function linkProviderToUser(userId: number, profile: OAuthProfile, database?: DrizzleDB): Promise<User> {
+  if (isReadOnly()) throw readOnlySignInError();
   const db = database ?? (await getDatabase());
   const { provider, providerId } = profile;
 

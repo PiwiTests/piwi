@@ -4,6 +4,7 @@ import {
   getFlakeExperimentPlan,
   type FlakeExperimentSource,
 } from '#shared/handlers/flake-lab';
+import { isReadOnly } from '../../../utils/operator-limits';
 import { requireResolvedProjectAccess, requireRouteId, resolveCaseProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -11,7 +12,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Flake-lab plan for a test case',
     description:
-      'The experiment `piwi flake` runs on one test: the control arm (no condition), then one arm per suspect of the test’s flake profile, most likely first, each condition in the flake plan-file shape (an `alongside` or `after` test named by `{ file, title, suite }`), and `combined`, every arm’s conditions at once. It carries the `flakeErrorSignature` of each of the test’s failures in the profile window, the commit of its latest failure, the Playwright project its failures ran in and the median duration of its passes. With `kind=verify` it reruns the arm of the test’s latest reproduced experiment and its control, for enough runs that a failure at the reproduced rate would have shown with 95% confidence (⌈ln 0.05 / ln(1 − rate)⌉, at least 5; 409 when nothing reproduced it yet). Records an unfinished experiment and returns its id unless `record=false`.',
+      'The experiment `piwi flake` runs on one test: the control arm (no condition), then one arm per suspect of the test’s flake profile, most likely first, each condition in the flake plan-file shape (an `alongside` or `after` test named by `{ file, title, suite }`), and `combined`, every arm’s conditions at once. It carries the `flakeErrorSignature` of each of the test’s failures in the profile window, the commit of its latest failure, the Playwright project its failures ran in and the median duration of its passes. With `kind=verify` it reruns the arm of the test’s latest reproduced experiment and its control, for enough runs that a failure at the reproduced rate would have shown with 95% confidence (⌈ln 0.05 / ln(1 − rate)⌉, at least 5; 409 when nothing reproduced it yet). Records an unfinished experiment and returns its id unless `record=false` or the instance is read-only, when `experimentId` is null.',
     'x-required-permission': ['run:submit', 'run:control'],
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
@@ -71,7 +72,7 @@ export default eventHandler(async (event) => {
     return await getFlakeExperimentPlan(db, testCaseId, {
       kind,
       runs,
-      record: query.record !== 'false' && query.record !== '0',
+      record: !isReadOnly() && query.record !== 'false' && query.record !== '0',
       commit: text(query.commit, 64),
       source,
       machine: text(query.machine, 128),

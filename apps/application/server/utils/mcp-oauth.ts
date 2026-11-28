@@ -10,6 +10,7 @@ import { getDatabase } from '../database';
 import { publicBaseUrl } from './public-base-url';
 import { timingSafeEqualStr } from './timing-safe';
 import { hashToken } from './token-hash';
+import { isReadOnly } from './operator-limits';
 import {
   ACCESS_TOKEN_PREFIX,
   ACCESS_TOKEN_TTL_MS,
@@ -219,6 +220,7 @@ async function touchClient(db: DbClient, client: OAuthClient, now: Date): Promis
 
 /** Why the authorize endpoint refuses a request; the consent page explains each one. */
 export type AuthorizationStartError =
+  | 'read_only'
   | 'invalid_client'
   | 'invalid_client_metadata'
   | 'invalid_redirect_uri'
@@ -252,7 +254,9 @@ export type AuthorizationStart =
  * it for the consent page. A request it refuses is never sent back to the
  * client's redirect URI: anyone can register one, so redirecting there before
  * the user answers would turn this instance into an open redirector
- * (RFC 9700 §4.11.2). The consent page shows the error instead.
+ * (RFC 9700 §4.11.2). The consent page shows the error instead. While the
+ * instance is read-only, every request is refused (`read_only`) and nothing is
+ * stored.
  */
 export async function startAuthorization(
   db: DbClient,
@@ -263,6 +267,7 @@ export async function startAuthorization(
 ): Promise<AuthorizationStart> {
   const urls = mcpOAuthUrls(baseUrl);
   const refuse = (error: AuthorizationStartError): AuthorizationStart => ({ kind: 'refused', error });
+  if (isReadOnly()) return refuse('read_only');
   let client: OAuthClient | null;
   if (clientMetadataDocumentsEnabled() && isClientMetadataUrl(query.client_id)) {
     // The document is fetched only for a request that is complete otherwise, its redirect URI named.
@@ -676,7 +681,7 @@ export function isOAuthAccessToken(token: string | null | undefined): token is s
  * The user and the grant's API key behind an access token, or null when it is
  * unknown, expired, revoked, or a token of a client identified by its metadata
  * document while those are off. Writes the key's `last_used_at` at most hourly,
- * as an API key's own use does.
+ * as an API key's own use does, and never while the instance is read-only.
  */
 export async function resolveOAuthAccessToken(
   db: DbClient,
@@ -699,7 +704,8 @@ export async function resolveOAuthAccessToken(
   if (!row || row.grant.accessExpiresAt.getTime() <= now.getTime()) return null;
   // A client known by its metadata document is unknown while documents are off.
   if (!clientMetadataDocumentsEnabled() && isClientMetadataUrl(row.clientId)) return null;
-  if (!row.keyLastUsedAt || now.getTime() - row.keyLastUsedAt.getTime() > LAST_USED_WRITE_INTERVAL_MS) {
+  const stale = !row.keyLastUsedAt || now.getTime() - row.keyLastUsedAt.getTime() > LAST_USED_WRITE_INTERVAL_MS;
+  if (stale && !isReadOnly()) {
     await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.grant.apiKeyId));
   }
   return { user: row.user, keyId: row.grant.apiKeyId };
