@@ -22,6 +22,13 @@ const storageEnvVars = envVarsByCategory('storage').map((name) => ({
   ...getEnvVarMeta(name),
 }));
 
+/** Who sets a storage variable's value: the operator, for a quota they set in its place, else the environment. */
+function storageVarSetBy(name: string): 'environment' | 'operator' {
+  return name === 'PIWI_STORAGE_QUOTA_BYTES' && storage.value?.limits?.storageQuotaBytes.source === 'operator'
+    ? 'operator'
+    : 'environment';
+}
+
 const periodOptions = [
   { label: '7 days', value: 7 },
   { label: '14 days', value: 14 },
@@ -97,15 +104,16 @@ async function handleCleanup() {
       <div class="space-y-3">
         <div class="flex items-center gap-2 text-sm text-muted">
           <UIcon name="i-lucide-info" class="size-4" />
-          Storage backend selection (local disk or S3) and its credentials are set via the environment. Each variable
-          below is shown read-only — hover the lock to see what it controls.
+          Storage backend selection (local disk or S3) and its credentials are set via the environment; the storage
+          quota too, unless the operator set it in its place. Each variable below is shown read-only — hover the lock to
+          see what it controls.
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <template v-for="v in storageEnvVars" :key="v.name">
             <div class="text-muted">{{ v.name.replace('PIWI_S3_', 'S3 ').replace('PIWI_STORAGE_', 'Storage ') }}</div>
             <div class="flex items-center gap-2 font-mono">
               <code class="text-xs">{{ v.name }}</code>
-              <EnvManagedBadge :env-vars="[v.name]" />
+              <EnvManagedBadge :env-vars="[v.name]" :set-by="storageVarSetBy(v.name)" />
             </div>
           </template>
         </div>

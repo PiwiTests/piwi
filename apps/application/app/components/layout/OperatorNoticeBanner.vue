@@ -9,16 +9,29 @@ import type { ApiResponse } from '~~/types/api';
  * (`PUT /api/operator/limits`), which cannot be dismissed, the notice they set (`PUT /api/operator/notice`) and, to
  * administrators, the administrators they invited that nobody took yet (in one alert of three addresses at most) and
  * the storage once it reaches 80% or 95% of its quota, the quota itself (files are refused) or its ceiling (new runs
- * are refused). Read in the server render, so it costs the browser no request.
+ * are refused). Read in the server render, so it costs the browser no request, then again on each move to another
+ * page and every five minutes, so read-only mode or a notice set since shows on an open page.
  * Dismissing the notice hides it in this browser until another replaces it, and the 80% storage warning for a week; a
  * critical notice, an invitation and every other storage warning stay.
  * Their height is `--operator-notice-height` on the page, which the page panel's minimum height leaves out, so no page
  * runs past the bottom of the window.
  */
 
-const { data } = useFetch<ApiResponse<typeof import('~~/server/api/notice.get').default>>('/api/notice', {
+const { data, refresh } = useFetch<ApiResponse<typeof import('~~/server/api/notice.get').default>>('/api/notice', {
   key: 'operator-notice',
   dedupe: 'defer',
+});
+
+/** How often an open page reads the notices again. */
+const NOTICE_REFRESH_MS = 5 * 60 * 1000;
+const route = useRoute();
+watch(
+  () => route.path,
+  () => refresh(),
+);
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  refreshTimer = setInterval(() => refresh(), NOTICE_REFRESH_MS);
 });
 
 const ONE_YEAR_S = 60 * 60 * 24 * 365;
@@ -86,7 +99,10 @@ useResizeObserver(bannerEl, (entries) => {
 watch(shown, (visible) => {
   if (!visible && import.meta.client) document.documentElement.style.removeProperty(HEIGHT_VARIABLE);
 });
-onUnmounted(() => document.documentElement.style.removeProperty(HEIGHT_VARIABLE));
+onUnmounted(() => {
+  clearInterval(refreshTimer);
+  document.documentElement.style.removeProperty(HEIGHT_VARIABLE);
+});
 
 function dismissStorage() {
   storageDismissed.value = 80;

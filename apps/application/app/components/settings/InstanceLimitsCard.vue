@@ -3,7 +3,7 @@
  * The limits the instance applies, on the Storage settings page: the storage quota, the largest upload and results
  * document, and the days of runs the nightly cleanup keeps, each with where it comes from. A value its variable sets
  * carries the environment's lock, one the operator set (`/api/operator/limits`) the operator's, and a default none. A
- * lowered retention waiting its 14 days is said under its row.
+ * lowered retention waiting its 14 days is said under its rows, with who lowered it and when the wait ends.
  */
 import type { InstanceLimits, LimitSource } from '#shared/operator-limits';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
@@ -38,7 +38,22 @@ const rows = computed(() => {
 });
 
 const pending = computed(() => props.limits.retentionDays.pending);
-const operatorSet = computed(() => rows.value.some((row) => row.source === 'operator') || pending.value !== null);
+const operatorSet = computed(
+  () => rows.value.some((row) => row.source === 'operator') || pending.value?.source === 'operator',
+);
+/** When the wait ends, in the viewer's time zone and naming it: the nightly cleanup after it applies the retention. */
+const pendingEnds = computed(() =>
+  pending.value
+    ? new Date(pending.value.appliesAt).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      })
+    : '',
+);
 </script>
 
 <template>
@@ -55,8 +70,10 @@ const operatorSet = computed(() => rows.value.some((row) => row.source === 'oper
       </template>
     </dl>
     <p v-if="pending" class="mt-3 text-xs text-muted" data-shot="retention-pending">
-      The operator lowered the runs kept to {{ keptRuns(pending.value).toLowerCase() }}, which applies on
-      <ClientDate :date="pending.appliesAt" date-only />: a lowered retention waits 14 days, so runs it would delete can
+      <template v-if="pending.source === 'operator'">The operator lowered</template>
+      <template v-else><code class="font-mono">PIWI_RETENTION_DAYS</code> lowers</template>
+      the runs kept to {{ keptRuns(pending.value).toLowerCase() }}, which the first nightly cleanup after
+      <ClientOnly>{{ pendingEnds }}</ClientOnly> applies: a lowered retention waits 14 days, so runs it would delete can
       still be kept or exported.
     </p>
   </SectionCard>
