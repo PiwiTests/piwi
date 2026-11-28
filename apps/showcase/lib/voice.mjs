@@ -8,11 +8,13 @@ import * as path from 'node:path';
 
 /**
  * The voice: Piper's `en_US-bryce-medium`, a young US man's voice whose recordings their speaker put in the public
- * domain, from the piper-voices repository (MIT) at a fixed revision, each file checked by its SHA-256. Piper itself
- * (GPL-3.0) runs as a program of its own, installed beside the showcase, never bundled.
+ * domain, from the piper-voices repository (MIT) at a fixed revision, each file checked by its SHA-256, read livelier
+ * than its defaults (0.667 and 0.8) at its own speed (`settings`: Piper's options). Piper itself (GPL-3.0) runs as a
+ * program of its own, installed beside the showcase, never bundled.
  */
 export const VOICE = {
   name: 'en_US-bryce-medium',
+  settings: { '--noise-scale': '0.9', '--noise-w-scale': '1.0' },
   base: 'https://huggingface.co/rhasspy/piper-voices/resolve/613b6e5ad36ddca4e70e171957291483dc244d9f/en/en_US/bryce/medium/',
   files: {
     'en_US-bryce-medium.onnx': 'dc9caa6c313199ffb5ac698b6e542fa6cba388aeaf2731e25262e33b9810aef1',
@@ -65,10 +67,13 @@ export function wavMs(buffer) {
   throw new Error('a WAV file without data');
 }
 
-/** The file a line's reading by the voice `model` is kept in: named by a hash of the voice and the text. */
-export function readingFile(model, text) {
+/**
+ * The file a line's reading by the voice `model` with `settings` (Piper's options) is kept in: named by a hash of the
+ * voice, its settings and the text.
+ */
+export function readingFile(model, text, settings = VOICE.settings) {
   const hash = createHash('sha256')
-    .update(`${path.basename(model)}\n${text}`)
+    .update(`${path.basename(model)}\n${JSON.stringify(settings)}\n${text}`)
     .digest('hex');
   return `${hash.slice(0, 16)}.wav`;
 }
@@ -87,7 +92,11 @@ export function readLines(texts, { model, dir, piper = process.env.SHOWCASE_PIPE
     const target = path.join(dir, file);
     if (!fs.existsSync(target)) {
       try {
-        execFileSync(piper, ['-m', model, '-f', target], { input: text, stdio: ['pipe', 'ignore', 'pipe'] });
+        const settings = Object.entries(VOICE.settings).flat();
+        execFileSync(piper, ['-m', model, ...settings, '-f', target], {
+          input: text,
+          stdio: ['pipe', 'ignore', 'pipe'],
+        });
       } catch (error) {
         const why = error.code === 'ENOENT' ? `${piper} is not installed: pip install piper-tts` : String(error.stderr);
         throw new Error(`the voice could not read "${text}": ${why}`);
