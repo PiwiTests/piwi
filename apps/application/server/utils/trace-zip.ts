@@ -146,9 +146,8 @@ function endOfDirectory(
   return { entryCount, cdOffset, recordStart: tailStart + eocdOffset };
 }
 
-/** The records of the file entries of a central directory (`directory`, from its first record on). */
-function directoryRecords(directory: Buffer, entryCount: number): DirectoryRecord[] {
-  const records: DirectoryRecord[] = [];
+/** The records of the file entries of a central directory (`directory`, from its first record on), one by one. */
+function* directoryRecords(directory: Buffer, entryCount: number): Generator<DirectoryRecord> {
   let pos = 0;
   for (let i = 0; i < entryCount; i++) {
     if (pos + 46 > directory.length) throw new Error('Truncated central directory');
@@ -166,52 +165,47 @@ function directoryRecords(directory: Buffer, entryCount: number): DirectoryRecor
     pos += 46 + nameLen + extraLen + commentLen;
 
     if (name.endsWith('/') || compressedSize === 0xffffffff) continue;
-    records.push({ name, method, compressedSize, uncompressedSize, localOffset });
+    yield { name, method, compressedSize, uncompressedSize, localOffset };
   }
-  return records;
 }
 
 /**
- * Each entry's metadata, from its record and the first 30 bytes of its local header (`localHeaders`, in the records'
- * order, fewer for a header past the archive's `length` bytes), with the checks of {@link parseZipDirectory}.
+ * Collects each entry's metadata as its record is read, from the record and the first 30 bytes of its local header
+ * (fewer for a header past the archive's `length` bytes), with the checks of {@link parseZipDirectory}: an entry over
+ * the budget is refused as soon as it is read, before any later record.
  */
-function entryMetas(
-  records: DirectoryRecord[],
-  localHeaders: Buffer[],
-  length: number,
-  maxInflatedBytes: number,
-): ZipEntryMeta[] {
+function entryCollector(length: number, maxInflatedBytes: number) {
   const metas: ZipEntryMeta[] = [];
   // Where each entry's local header starts and its data ends.
   const spans: Array<{ start: number; end: number }> = [];
   let declaredBytes = 0;
+  return {
+    add({ name, method, compressedSize, uncompressedSize, localOffset }: DirectoryRecord, header: Buffer): void {
+      if (header.length < 30) throw new Error(`Bad local offset for "${name}"`);
+      if (header.readUInt32LE(0) !== 0x04034b50) throw new Error(`Bad local header for "${name}"`);
 
-  for (const [i, { name, method, compressedSize, uncompressedSize, localOffset }] of records.entries()) {
-    const header = localHeaders[i]!;
-    if (header.length < 30) throw new Error(`Bad local offset for "${name}"`);
-    if (header.readUInt32LE(0) !== 0x04034b50) throw new Error(`Bad local header for "${name}"`);
+      const localNameLen = header.readUInt16LE(26);
+      const localExtraLen = header.readUInt16LE(28);
+      const dataStart = localOffset + 30 + localNameLen + localExtraLen;
 
-    const localNameLen = header.readUInt16LE(26);
-    const localExtraLen = header.readUInt16LE(28);
-    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
-
-    // An entry whose data runs past the archive is never read (see readableEntry).
-    if (dataStart + compressedSize <= length) {
-      declaredBytes += method === 0 ? compressedSize : uncompressedSize;
-      if (declaredBytes > maxInflatedBytes) {
-        throw new ZipLimitError(`ZIP entries inflate past ${maxInflatedBytes} bytes`);
+      // An entry whose data runs past the archive is never read (see readableEntry).
+      if (dataStart + compressedSize <= length) {
+        declaredBytes += method === 0 ? compressedSize : uncompressedSize;
+        if (declaredBytes > maxInflatedBytes) {
+          throw new ZipLimitError(`ZIP entries inflate past ${maxInflatedBytes} bytes`);
+        }
+        spans.push({ start: localOffset, end: dataStart + compressedSize });
       }
-      spans.push({ start: localOffset, end: dataStart + compressedSize });
-    }
-    metas.push({ name, method, compressedSize, uncompressedSize, dataStart });
-  }
-
-  spans.sort((a, b) => a.start - b.start);
-  for (let i = 1; i < spans.length; i++) {
-    if (spans[i]!.start < spans[i - 1]!.end) throw new ZipLimitError('ZIP entries share or overlap their bytes');
-  }
-
-  return metas;
+      metas.push({ name, method, compressedSize, uncompressedSize, dataStart });
+    },
+    finish(): ZipEntryMeta[] {
+      spans.sort((a, b) => a.start - b.start);
+      for (let i = 1; i < spans.length; i++) {
+        if (spans[i]!.start < spans[i - 1]!.end) throw new ZipLimitError('ZIP entries share or overlap their bytes');
+      }
+      return metas;
+    },
+  };
 }
 
 /** The archive's last bytes that can hold its end-of-directory record: the record and a comment of 65535 bytes. */
@@ -232,35 +226,53 @@ export function parseZipDirectory(
 ): ZipEntryMeta[] {
   const tailStart = Math.max(0, data.length - TAIL_BYTES);
   const { entryCount, cdOffset } = endOfDirectory(data.subarray(tailStart), tailStart, data.length);
-  const records = directoryRecords(data.subarray(cdOffset), entryCount);
-  const localHeaders = records.map((record) => data.subarray(record.localOffset, record.localOffset + 30));
-  return entryMetas(records, localHeaders, data.length, maxInflatedBytes);
+  const entries = entryCollector(data.length, maxInflatedBytes);
+  for (const record of directoryRecords(data.subarray(cdOffset), entryCount)) {
+    entries.add(record, data.subarray(record.localOffset, record.localOffset + 30));
+  }
+  return entries.finish();
 }
 
 /** A ZIP archive in a file of this server's disk, read by position: only what is asked for is read. */
 export interface ZipFile {
   readonly size: number;
-  /** The `length` bytes from `start`, fewer past the file's end. */
+  /** A copy of the `length` bytes from `start`, fewer past the file's end. */
   read(start: number, length: number): Promise<Buffer>;
   close(): Promise<void>;
 }
+
+/**
+ * The bytes {@link openZipFile} reads ahead for a smaller read: the headers and small entries that follow are then
+ * read from memory, one read of the file serving thousands of them.
+ */
+const READ_AHEAD_BYTES = 1024 * 1024; // 1 MiB
 
 /** Opens a ZIP archive on this server's disk for {@link readZipDirectory} and {@link decompressFileEntry}. */
 export async function openZipFile(path: string): Promise<ZipFile> {
   const handle = await open(path, 'r');
   try {
     const { size } = await handle.stat();
+    const readAt = async (start: number, length: number) => {
+      const buffer = Buffer.alloc(length);
+      let filled = 0;
+      while (filled < length) {
+        const { bytesRead } = await handle.read(buffer, filled, length - filled, start + filled);
+        if (bytesRead === 0) break;
+        filled += bytesRead;
+      }
+      return buffer.subarray(0, filled);
+    };
+    let ahead: { start: number; bytes: Buffer } | null = null;
     return {
       size,
       async read(start, length) {
-        const buffer = Buffer.alloc(Math.max(0, Math.min(length, size - start)));
-        let filled = 0;
-        while (filled < buffer.length) {
-          const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, start + filled);
-          if (bytesRead === 0) break;
-          filled += bytesRead;
+        const end = Math.min(start + length, size);
+        if (end <= start) return Buffer.alloc(0);
+        if (end - start >= READ_AHEAD_BYTES) return readAt(start, end - start);
+        if (!ahead || start < ahead.start || end > ahead.start + ahead.bytes.length) {
+          ahead = { start, bytes: await readAt(start, Math.min(READ_AHEAD_BYTES, size - start)) };
         }
-        return buffer.subarray(0, filled);
+        return Buffer.from(ahead.bytes.subarray(start - ahead.start, end - ahead.start));
       },
       close: () => handle.close(),
     };
@@ -285,10 +297,11 @@ export async function readZipDirectory(
   const tail = await file.read(tailStart, file.size - tailStart);
   const { entryCount, cdOffset, recordStart } = endOfDirectory(tail, tailStart, file.size);
   if (recordStart - cdOffset > MAX_DIRECTORY_BYTES) throw new Error('ZIP central directory too large');
-  const records = directoryRecords(await file.read(cdOffset, recordStart - cdOffset), entryCount);
-  const localHeaders: Buffer[] = [];
-  for (const record of records) localHeaders.push(await file.read(record.localOffset, 30));
-  return entryMetas(records, localHeaders, file.size, maxInflatedBytes);
+  const entries = entryCollector(file.size, maxInflatedBytes);
+  for (const record of directoryRecords(await file.read(cdOffset, recordStart - cdOffset), entryCount)) {
+    entries.add(record, await file.read(record.localOffset, 30));
+  }
+  return entries.finish();
 }
 
 /** The output cap for inflating one entry: its declared size, within the per-entry ceiling. */
@@ -296,13 +309,26 @@ function inflateCap(meta: ZipEntryMeta, maxBytes = MAX_ENTRY_BYTES): number {
   return Math.min(meta.uncompressedSize, maxBytes, MAX_ENTRY_BYTES);
 }
 
-/** Throws unless the entry's data lies within an archive of `length` bytes, by a method this module inflates. */
+/**
+ * The most bytes deflate writes for `size` bytes of input, with room to spare: zlib's `deflateBound`, plus a margin
+ * for another deflater's block framing.
+ */
+const deflatedBound = (size: number) => size + (size >> 12) + (size >> 14) + (size >> 25) + 64;
+
+/**
+ * Throws unless the entry's data lies within an archive of `length` bytes, by a method this module inflates, and,
+ * deflated, is no larger than deflate makes the size it declares: so no read of an entry takes more bytes than it may
+ * inflate to.
+ */
 function readableEntry(meta: ZipEntryMeta, length: number): void {
   if (meta.dataStart + meta.compressedSize > length) {
     throw new Error(`Truncated data for "${meta.name}"`);
   }
   if (meta.method !== 0 && meta.method !== 8) {
     throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`);
+  }
+  if (meta.method === 8 && meta.compressedSize > deflatedBound(meta.uncompressedSize)) {
+    throw new Error(`Deflated data of "${meta.name}" is larger than its declared size allows`);
   }
 }
 

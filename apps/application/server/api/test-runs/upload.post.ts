@@ -421,9 +421,8 @@ async function handleUpload(
     }
 
     // Store all reports once the run exists, and collect their metadata. Reports
-    // are processed one at a time — each `.gz` report is inflated fully into
-    // memory before being written to disk, so decompressing them in parallel
-    // would stack every report's peak at once.
+    // are processed one at a time: a `.gz` report is inflated to a temp
+    // directory, one of its files in memory at a time, then copied to storage.
     const storedReports: { type: string; label: string; path: string; size: number }[] = [];
 
     for (const [type, report] of [...reportFiles.entries()]) {

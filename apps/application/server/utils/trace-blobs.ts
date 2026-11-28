@@ -186,12 +186,12 @@ export async function upsertTraceFileAt(
   hash?: string,
 ): Promise<{ id: number; path: string; size: number }> {
   const own = await sha256File(path);
-  if (hash !== undefined && own !== hash.toLowerCase()) throw traceHashMismatch();
-  const file = await openZipFile(path);
+  if (hash !== undefined && own.hash !== hash.toLowerCase()) throw traceHashMismatch();
+  const trace = fileTrace(path, own.size);
   try {
-    return await upsertHashedTraceBlob(projectId, own, fileTrace(path, file));
+    return await upsertHashedTraceBlob(projectId, own.hash, trace);
   } finally {
-    await file.close();
+    await trace.close();
   }
 }
 
@@ -201,11 +201,18 @@ function sha256(data: Buffer): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
-async function sha256File(path: string): Promise<string> {
+async function sha256File(path: string): Promise<{ hash: string; size: number }> {
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
+  let size = 0;
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk as Buffer);
+    size += (chunk as Buffer).length;
+  }
+  return { hash: hash.digest('hex'), size };
 }
+
+/** A failure to read the trace's file, which a corrupt entry is not: it is never skipped as one. */
+const isReadFailure = (error: unknown) => typeof (error as { syscall?: unknown } | null)?.syscall === 'string';
 
 /** A trace being stored: its size, its ZIP read entry by entry, and a way to store its bytes as they are. */
 interface TraceSource {
@@ -224,12 +231,22 @@ function bufferTrace(data: Buffer): TraceSource {
   };
 }
 
-function fileTrace(path: string, file: ZipFile): TraceSource {
+/** A trace in a file of `size` bytes, opened for reading by position only once its ZIP is asked for. */
+function fileTrace(path: string, size: number): TraceSource & { close(): Promise<void> } {
+  let opened: Promise<ZipFile> | null = null;
+  const file = () => (opened ??= openZipFile(path));
   return {
-    size: file.size,
-    directory: () => readZipDirectory(file),
-    entry: (meta) => decompressFileEntry(file, meta),
+    size,
+    directory: async () => readZipDirectory(await file()),
+    entry: async (meta) => decompressFileEntry(await file(), meta),
     storeAsIs: (storage, target) => storage.writeFileFrom(target, path),
+    close: async () => {
+      if (opened)
+        await opened.then(
+          (zip) => zip.close(),
+          () => {},
+        );
+    },
   };
 }
 
@@ -345,7 +362,8 @@ async function storeTraceBlob(
         let entryData: Buffer;
         try {
           entryData = await trace.entry(meta);
-        } catch {
+        } catch (error) {
+          if (isReadFailure(error)) throw error;
           continue; // Skip corrupt entries, as the slim ZIP does
         }
         const poolName = pooledTraceEntryName(meta.name, entryData);
@@ -363,7 +381,8 @@ async function storeTraceBlob(
       for (const meta of eventMetas) {
         try {
           eventEntries.push({ name: meta.name, data: await trace.entry(meta) });
-        } catch {
+        } catch (error) {
+          if (isReadFailure(error)) throw error;
           // Skip corrupt entries
         }
       }

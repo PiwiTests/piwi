@@ -37,7 +37,7 @@ vi.mock('../../server/storage', () => ({
     },
   }),
 }));
-vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceBlob: vi.fn(), findTraceBlob: vi.fn() }));
+vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceFileAt: vi.fn(), findTraceBlob: vi.fn() }));
 vi.mock('../../server/utils/trace-fallback-evidence', () => ({ deriveTraceEvidence: vi.fn() }));
 vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSideEffects: vi.fn(async () => {}) }));
 

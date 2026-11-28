@@ -8,7 +8,7 @@ type S3Sdk = { s3: typeof import('@aws-sdk/client-s3'); s3Client: S3Client };
 
 /**
  * The bytes of one part of a file `writeFileFrom` sends in several: a file up to this size goes in one request. Two
- * parts are read and sent at a time, so a file of any size holds about two parts in memory.
+ * parts are sent at a time while the next is read, so a file of any size holds about three parts in memory.
  */
 const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 const UPLOAD_PARTS_AT_ONCE = 2;
@@ -62,19 +62,33 @@ export class S3StorageAdapter implements StorageAdapter {
     }
   }
 
+  /**
+   * A file over one part goes as a multipart upload. One that fails is aborted, its parts deleted, and fails with its
+   * own error, also when the abort is refused (a key without `s3:AbortMultipartUpload`).
+   */
   async writeFileFrom(path: string, sourcePath: string): Promise<void> {
+    const { s3, s3Client } = await this.sdk();
+    const { Upload } = await import('@aws-sdk/lib-storage');
+    const upload = new Upload({
+      client: s3Client,
+      params: { Bucket: this.config.bucket, Key: path, Body: createReadStream(sourcePath) },
+      partSize: UPLOAD_PART_BYTES,
+      queueSize: UPLOAD_PARTS_AT_ONCE,
+      leavePartsOnError: true,
+    });
     try {
-      const { s3Client } = await this.sdk();
-      const { Upload } = await import('@aws-sdk/lib-storage');
-      const upload = new Upload({
-        client: s3Client,
-        params: { Bucket: this.config.bucket, Key: path, Body: createReadStream(sourcePath) },
-        partSize: UPLOAD_PART_BYTES,
-        queueSize: UPLOAD_PARTS_AT_ONCE,
-      });
       await upload.done();
     } catch (error) {
       console.error(`Failed to write file to S3: ${path}`, error);
+      if (upload.uploadId) {
+        await s3Client
+          .send(
+            new s3.AbortMultipartUploadCommand({ Bucket: this.config.bucket, Key: path, UploadId: upload.uploadId }),
+          )
+          .catch((abortError: unknown) =>
+            console.error(`Failed to abort the multipart upload of ${path}: its parts stay in the bucket`, abortError),
+          );
+      }
       throw error;
     }
   }
