@@ -1,14 +1,16 @@
 import { getDatabase } from '../database';
+import { readOnlyNow } from '../utils/operator-limits';
 import { checkStuckTests, STUCK_CHECK_MS } from '../utils/stuck-tests';
 
-/** Check the running tests of this server's live runs for a stuck one, every `STUCK_CHECK_MS`. */
+/** Check the running tests of this server's live runs for a stuck one, every `STUCK_CHECK_MS`, unless read-only. */
 export default defineNitroPlugin((nitroApp) => {
   let checking = false;
   const interval = setInterval(async () => {
     if (checking) return;
     checking = true;
     try {
-      await checkStuckTests(await getDatabase());
+      const db = await getDatabase();
+      if (!(await readOnlyNow(db))) await checkStuckTests(db);
     } catch (error) {
       console.error('[StuckTests] Error while checking the running tests:', error);
     } finally {

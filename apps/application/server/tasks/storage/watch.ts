@@ -2,15 +2,17 @@ import { storageWarningTitle } from '#shared/storage-quota';
 import { getDatabase } from '../../database';
 import { isEmailConfigured, renderStorageWarningEmail, sendEmail } from '../../utils/email';
 import { watchStorageQuota } from '../../utils/storage-quota';
+import { readOnlyNow } from '../../utils/operator-limits';
 
-export default defineTask({
+export default defineTask<unknown>({
   meta: {
     name: 'storage:watch',
     description:
-      'Compare the stored bytes with PIWI_STORAGE_QUOTA_BYTES, keep when the instance went over it, and email the administrators once each time the usage crosses 80% or 95% of it, the quota (files are refused) or its ceiling (new runs are refused), again on the next minutes until one message went out',
+      'Compare the stored bytes with PIWI_STORAGE_QUOTA_BYTES, keep when the instance went over it, and email the administrators once each time the usage crosses 80% or 95% of it, the quota (files are refused) or its ceiling (new runs are refused), again on the next minutes until one message went out. Skipped while the instance is read-only',
   },
   async run() {
     const db = await getDatabase();
+    if (await readOnlyNow(db)) return { result: { skipped: 'read-only' } };
     const watched = await watchStorageQuota(db, async (to, state, level) => {
       if (!isEmailConfigured()) return false;
       const { html, text } = renderStorageWarningEmail(state, level);

@@ -43,6 +43,20 @@ Compress-Archive -Path .data -DestinationPath piwi-backup.zip
 
 If artifacts are in S3, lean on the bucket's own durability and versioning rather than copying `.data/storage/`. Keep the database backup and the storage backup from the *same moment* so they agree.
 
+### Read-only while you copy
+
+An online copy can still catch a run being written. With the token of
+[`PIWI_OPERATOR_TOKEN`](/reference/configuration#authentication), whoever runs the instance can make it read-only
+for the time of the copy: people still sign in, browse and export, every change and upload is refused with 409 and
+`errorCode` `READ_ONLY` (a reporter's too), the scheduled tasks that change data wait, and every page says so in a
+banner.
+
+```bash
+node -e "fetch('http://localhost:3000/api/operator/limits',{method:'PUT',headers:{Authorization:'Bearer your_operator_token','Content-Type':'application/json'},body:JSON.stringify({readOnly:true})}).then(r=>r.text()).then(console.log)"
+```
+
+Send `{"readOnly":false}` once the copy is done.
+
 ## Restoring
 
 Restoring is also how you roll back an upgrade: [Upgrading → Downgrading is not supported](./upgrading#downgrading-is-not-supported) gives the steps.

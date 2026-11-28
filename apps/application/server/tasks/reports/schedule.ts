@@ -9,15 +9,17 @@ import {
   scheduledShareLinkMinter,
   scheduleOwnerAccess,
 } from '../../utils/reports/context';
+import { readOnlyNow } from '../../utils/operator-limits';
 
-export default defineTask({
+export default defineTask<unknown>({
   meta: {
     name: 'reports:schedule',
     description:
-      'Fire the report schedules that are due: store each quality report as a snapshot and queue its deliveries',
+      'Fire the report schedules that are due: store each quality report as a snapshot and queue its deliveries. Skipped while the instance is read-only',
   },
   async run() {
     const db = await getDatabase();
+    if (await readOnlyNow(db)) return { result: { skipped: 'read-only' } };
     const { fired, failed } = await sweepReportSchedules(db as any, {
       timeZone: await reportScheduleTimeZone(db),
       baseUrl: reportBaseUrl(),

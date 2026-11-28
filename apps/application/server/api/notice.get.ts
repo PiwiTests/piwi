@@ -4,6 +4,7 @@ import { isAdministrator } from '#shared/permissions';
 import { visibleNotice } from '#shared/operator-notice';
 import { getDatabase } from '../database';
 import { getRequestAccess, requireAuth } from '../utils/auth';
+import { isReadOnly } from '../utils/operator-limits';
 import { readOperatorNotice } from '../utils/operator-notice';
 import { storageQuotaState } from '../utils/storage-quota';
 
@@ -12,7 +13,7 @@ defineRouteMeta({
     tags: ['Operator'],
     summary: 'Get the notices for the signed-in user',
     description:
-      'What whoever runs the instance tells the caller. `notice`: the banner set with `PUT /api/operator/notice`, or `null` when none is set, when it has ended, or when it is for administrators and the caller is not one. `invitations`: for an administrator, the administrators the operator invited (`POST /api/operator/admin-invite`) whose invitation nobody took yet and has not ended, as `{ userId, email, expiresAt }`; empty for anyone else. `storage`: for an administrator, once the stored bytes reach 80% of `PIWI_STORAGE_QUOTA_BYTES`, `{ usedBytes, quotaBytes, level }` with `level` 80 or 95, 100 once the quota is reached and files are refused, or `ceiling` once new runs are refused too; else `null`.',
+      'What whoever runs the instance tells the caller. `notice`: the banner set with `PUT /api/operator/notice`, or `null` when none is set, when it has ended, or when it is for administrators and the caller is not one. `invitations`: for an administrator, the administrators the operator invited (`POST /api/operator/admin-invite`) whose invitation nobody took yet and has not ended, as `{ userId, email, expiresAt }`; empty for anyone else. `storage`: for an administrator, once the stored bytes reach 80% of `PIWI_STORAGE_QUOTA_BYTES`, `{ usedBytes, quotaBytes, level }` with `level` 80 or 95, 100 once the quota is reached and files are refused, or `ceiling` once new runs are refused too; else `null`. `readOnly`: whether the operator made the instance read-only (`PUT /api/operator/limits`), when every write is refused with 409 and `errorCode` `READ_ONLY`.',
     'x-required-permission': 'signed-in',
   },
 });
@@ -37,5 +38,6 @@ export default eventHandler(async (event) => {
     notice,
     invitations: await invitationsShownTo(db, { administrator, now }),
     storage: administrator ? await storageWarning(db) : null,
+    readOnly: isReadOnly(),
   };
 });

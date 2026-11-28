@@ -1,7 +1,12 @@
-// Refuses request bodies no route should buffer: see bodyLimitError.
+// Refuses request bodies no route should buffer: see bodyLimitError. The operator's limits it reads are held fresh
+// first.
 import { bodyLimitError } from '../utils/body-limit';
+import { loadOperatorLimits } from '../utils/operator-limits';
 
-export default defineEventHandler((event) => {
+const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+export default defineEventHandler(async (event) => {
+  if (BODY_METHODS.has(event.method.toUpperCase())) await loadOperatorLimits();
   const error = bodyLimitError({
     method: event.method,
     path: event.path,

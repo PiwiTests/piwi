@@ -379,6 +379,8 @@ export const PIWI_ENV_VARS = {
     type: 'number',
     min: 0,
     docs: 'operate/storage#data-retention',
+    notes:
+      "A value set through PUT /api/operator/limits takes the place of this variable's; one that keeps fewer days applies 14 days after it is set.",
   },
   PIWI_RETENTION_MIN_RUNS: {
     description:
@@ -454,7 +456,7 @@ export const PIWI_ENV_VARS = {
     min: 1024 * 1024,
     since: '0.79.0',
     notes:
-      'A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`.',
+      "A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`. A value set through PUT /api/operator/limits takes the place of this variable's.",
   },
   PIWI_STORAGE_PATH: {
     description: 'Directory for local file storage (when PIWI_STORAGE_TYPE is "local").',
@@ -533,7 +535,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_OPERATOR_TOKEN: {
     description:
-      "A token that opens the operator routes to whoever runs the instance without an account in it, such as a hosting provider or a deployment script: GET /api/operator/usage (the instance's usage and what it is doing now, in counts only), /api/operator/notice (the banner signed-in users see) and POST /api/operator/admin-invite (an administrator account for an address, whose one-time link goes to that address only). Sent as a Bearer token; never accepted as a session or an API key. Unset, the operator routes answer 404.",
+      "A token that opens the operator routes to whoever runs the instance without an account in it, such as a hosting provider or a deployment script: GET /api/operator/usage (the instance's usage and what it is doing now, in counts only), /api/operator/notice (the banner signed-in users see), /api/operator/limits (the storage quota, the largest upload and results document and the retention, each in place of its variable, and read-only mode) and POST /api/operator/admin-invite (an administrator account for an address, whose one-time link goes to that address only). Sent as a Bearer token; never accepted as a session or an API key. Unset, the operator routes answer 404.",
     category: 'auth',
     secret: true,
     example: 'a 64-char random hex string',
@@ -1143,6 +1145,7 @@ export const PIWI_ENV_VARS = {
     min: 1024 * 1024,
     max: 5 * 1024 * 1024 * 1024,
     since: '0.19.0',
+    notes: "A value set through PUT /api/operator/limits takes the place of this variable's.",
   },
   PIWI_SUBMIT_MAX_BYTES: {
     description:
@@ -1153,6 +1156,7 @@ export const PIWI_ENV_VARS = {
     min: 1024 * 1024,
     max: 512 * 1024 * 1024,
     since: '0.65.0',
+    notes: "A value set through PUT /api/operator/limits takes the place of this variable's.",
   },
   // ── Offline export limits ───────────────────────────────────────────────
   PIWI_EXPORT_MAX_INLINE_BYTES: {

@@ -4679,12 +4679,12 @@ const routes: RouteEntry[] = [
     handler: (_, _body, query) => apiDemoChangelog(query),
   },
 
-  // The operator's notice and invitations, and the storage quota's warning: the demo has no operator, no token to set
-  // or send one with, and no quota.
+  // The operator's notice and invitations, the storage quota's warning and read-only mode: the demo has no operator,
+  // no token to set or send one with, and no quota, and it is never read-only.
   {
     method: 'GET',
     pattern: /^\/api\/notice$/,
-    handler: () => Promise.resolve({ notice: null, invitations: [], storage: null }),
+    handler: () => Promise.resolve({ notice: null, invitations: [], storage: null, readOnly: false }),
   },
 
   // Health — demo runs entirely client-side, so "the database" is always the

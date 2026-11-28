@@ -5,7 +5,6 @@ import {
   RUNS_REFUSED_MESSAGE,
   nextStorageOver,
   nextStorageWarning,
-  parseStorageQuotaBytes,
   readStorageOver,
   readStorageWarningLevel,
   storageQuotaStateOf,
@@ -13,11 +12,13 @@ import {
   type StorageQuotaState,
   type StorageWarningLevel,
 } from '#shared/storage-quota';
+import { heldOperatorLimits, storageQuotaSetting } from '#shared/operator-limits';
 import { getDialect } from '../database';
 import { files, storageTotals, testRuns, traceBlobs, traceResources } from '../database/schema';
 import { administratorEmails } from './administrators';
 import { apiError } from './api-error';
 import { deleteAppSetting, getAppSetting, setAppSetting } from './app-settings';
+import { isReadOnly } from './operator-limits';
 
 /**
  * The stored bytes against `PIWI_STORAGE_QUOTA_BYTES`. The total is the `storage_totals` rows, which the database's
@@ -36,17 +37,17 @@ const OVER_KEY = 'storage_quota_over';
 
 let warnedUnusable = false;
 
-/** The quota in bytes, or null while it is unset or not a whole number of at least 1 MiB (said once in the log). */
+/**
+ * The quota in bytes: the operator's (`/api/operator/limits`), else `PIWI_STORAGE_QUOTA_BYTES`, else null. A variable
+ * that is not a whole number of at least 1 MiB sets none, said once in the log.
+ */
 export function storageQuotaBytes(): number | null {
-  const raw = process.env.PIWI_STORAGE_QUOTA_BYTES?.trim();
-  if (!raw) return null;
-  const value = parseStorageQuotaBytes(raw);
-  if (value !== null) return value;
-  if (!warnedUnusable) {
+  const setting = storageQuotaSetting(heldOperatorLimits(), process.env);
+  if (setting.source === 'default' && process.env.PIWI_STORAGE_QUOTA_BYTES?.trim() && !warnedUnusable) {
     warnedUnusable = true;
     console.warn('[storage] PIWI_STORAGE_QUOTA_BYTES is not a whole number of bytes, 1 MiB at least: no quota is set.');
   }
-  return null;
+  return setting.value;
 }
 
 /** The bytes Settings → Storage counts, and the runs' results, as the triggers keep them. */
@@ -126,7 +127,8 @@ export async function watchStorageQuota(
 /**
  * The quota against the stored bytes, and what it refuses, keeping `storage_quota_over` current (`nextStorageOver`):
  * written by the first check that finds the bytes at the quota, or over a quota that changed, and removed by the first
- * that finds them below, so a check that changes nothing writes nothing. Null without a quota, which reads nothing.
+ * that finds them below, so a check that changes nothing writes nothing, and one while the instance is read-only
+ * neither. Null without a quota, which reads nothing.
  */
 export async function storageQuotaState(
   db: DrizzleDB,
@@ -138,8 +140,10 @@ export async function storageQuotaState(
   const setting = await getAppSetting(db, OVER_KEY);
   const stored = readStorageOver(setting);
   const over = nextStorageOver(stored, usedBytes, quotaBytes, now);
-  if (over && over !== stored) await setAppSetting(db, OVER_KEY, over);
-  else if (!over && setting !== null) await deleteAppSetting(db, OVER_KEY);
+  if (!isReadOnly()) {
+    if (over && over !== stored) await setAppSetting(db, OVER_KEY, over);
+    else if (!over && setting !== null) await deleteAppSetting(db, OVER_KEY);
+  }
   return storageQuotaStateOf(quotaBytes, usedBytes, over);
 }
 

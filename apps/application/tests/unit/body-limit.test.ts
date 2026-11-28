@@ -10,6 +10,7 @@ import {
   readStreamWithin,
 } from '../../server/utils/body-limit';
 import { DEFAULT_MAX_SUBMIT_BYTES } from '#shared/upload-limits';
+import { holdOperatorLimits } from '#shared/operator-limits';
 
 const json = { method: 'POST', path: '/api/auth/login', contentType: 'application/json' };
 
@@ -217,6 +218,20 @@ describe("a run's results sent as JSON", () => {
       statusCode: 413,
       message: "Request body over 8 MB: PIWI_SUBMIT_MAX_BYTES sets the limit on a run's results",
     });
+  });
+
+  test("take up to the operator's limit in place of PIWI_SUBMIT_MAX_BYTES, and a 413 saying who set it", () => {
+    process.env.PIWI_SUBMIT_MAX_BYTES = String(8 * 1024 * 1024);
+    holdOperatorLimits({ submitMaxBytes: 4 * 1024 * 1024 });
+    try {
+      expect(bodyLimitError({ ...json, path: paths[0]!, contentLength: String(4 * 1024 * 1024) })).toBeNull();
+      expect(bodyLimitError({ ...json, path: paths[1]!, contentLength: String(4 * 1024 * 1024 + 1) })).toEqual({
+        statusCode: 413,
+        message: "Request body over 4 MB: the instance's operator sets the limit on a run's results",
+      });
+    } finally {
+      holdOperatorLimits({});
+    }
   });
 
   test('must declare their length', () => {

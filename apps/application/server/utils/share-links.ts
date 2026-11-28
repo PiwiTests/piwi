@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { shareLinks, type ShareLink } from '../database/schema';
 import type { DbClient } from '../database';
 import { hashToken } from './token-hash';
+import { isReadOnly } from './operator-limits';
 import type { ExportKind } from '#shared/export/types';
 
 export const SHARE_TOKEN_PREFIX = 'psl_';
@@ -122,8 +123,9 @@ export async function resolveShareToken(db: DbClient, token: string): Promise<Re
   return { state: 'live', link };
 }
 
-/** Count a successful view. */
+/** Count a successful view, unless the instance is read-only. */
 export async function recordShareLinkView(db: DbClient, id: number): Promise<void> {
+  if (isReadOnly()) return;
   await db
     .update(shareLinks)
     .set({ lastViewedAt: new Date(), viewCount: sql`${shareLinks.viewCount} + 1` })

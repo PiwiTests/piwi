@@ -11,9 +11,11 @@ import {
   pruneReportSnapshots,
   pruneTestManagementCatalogs,
   reclaimSpace,
+  retentionDays as keptDays,
   retentionMinRuns,
   sweepOrphans,
 } from '../../utils/retention';
+import { readOnlyNow } from '../../utils/operator-limits';
 import { reclaimOrphanTraceBlobs, reclaimOrphanTraceResources } from '../../utils/delete-run-files';
 import { reconcileRecentRollups } from '#shared/handlers/analytics/rollups';
 import { pruneOutcomesOlderThan } from '../../utils/outcomes';
@@ -38,15 +40,16 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_RETENTION_CREDENTIAL_LOG_DAYS, run requests that ended or expired, CI dispatches older than 90 days (and those no run answered, marked unreported), trace blobs no execution has linked for a day, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via the operator’s retention or PIWI_RETENTION_DAYS, a lowered one applying 14 days after it is set; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_RETENTION_CREDENTIAL_LOG_DAYS, run requests that ended or expired, CI dispatches older than 90 days (and those no run answered, marked unreported), trace blobs no execution has linked for a day, and expired MCP OAuth connections. Skipped while the instance is read-only',
   },
   async run() {
     const db = await getDatabase();
+    if (await readOnlyNow(db)) return { result: { skipped: 'read-only' } };
     const result: Record<string, unknown> = {};
 
     // Destructive run pruning is strictly opt-in: unset or 0 = keep everything.
     // Kept runs and each project's newest runs are never pruned.
-    const retentionDays = envInt('PIWI_RETENTION_DAYS');
+    const retentionDays = keptDays();
 
     // Recompute the retained rollup rows of the last days before pruning, so a
     // write path that missed the ingest hook is corrected while its runs exist.

@@ -10,6 +10,7 @@ import pixelmatch from 'pixelmatch';
 import { files, testRuns, testRunsCases } from '../database/schema';
 import { getStorage } from '../storage';
 import { selectCaseScreenshots, type ScreenshotFileRow } from './case-screenshots';
+import { isReadOnly } from './operator-limits';
 import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baseline-order';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { eligibleRunSql } from '#shared/run-eligibility';
@@ -41,7 +42,8 @@ export interface VisualDiffMetadata {
 }
 
 export interface VisualDiffResult {
-  status: 'ok' | 'no-screenshot' | 'no-baseline' | 'not-found' | 'error';
+  /** `read-only`: none is stored yet, and none is computed while the instance is read-only. */
+  status: 'ok' | 'no-screenshot' | 'no-baseline' | 'not-found' | 'error' | 'read-only';
   /** Overlay artifact path + metrics (status 'ok'). */
   diff?: { path: string } & VisualDiffMetadata;
 }
@@ -135,7 +137,8 @@ function toResult(row: { path: string; metadata: unknown }): VisualDiffResult {
 
 /**
  * Return the cached visual diff for an execution, computing and persisting it
- * on first request. Shared by the REST endpoint and the AI context builder.
+ * on first request, unless the instance is read-only. Shared by the REST
+ * endpoint and the AI context builder.
  */
 export async function getOrComputeVisualDiff(db: DrizzleDB, testRunsCaseId: number): Promise<VisualDiffResult> {
   // Cached artifact?
@@ -145,6 +148,7 @@ export async function getOrComputeVisualDiff(db: DrizzleDB, testRunsCaseId: numb
     .where(and(eq(files.testRunsCaseId, testRunsCaseId), eq(files.type, 'visual-diff')))
     .limit(1);
   if (cached[0]) return toResult(cached[0]);
+  if (isReadOnly()) return { status: 'read-only' };
 
   const failingRows = await db
     .select({

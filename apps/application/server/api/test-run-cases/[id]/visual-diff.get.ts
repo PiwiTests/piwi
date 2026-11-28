@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'Pixel-diff a failing screenshot against the last passing run',
     description:
-      'Compares the failing execution screenshot with the same test case last passing execution screenshot (same browser). Computed lazily on first request and cached as a stored overlay artifact with changed-pixel metrics. Screenshots with different dimensions are compared on a padded union canvas and flagged dimensionMismatch.',
+      'Compares the failing execution screenshot with the same test case last passing execution screenshot (same browser). Computed lazily on first request and cached as a stored overlay artifact with changed-pixel metrics. Screenshots with different dimensions are compared on a padded union canvas and flagged dimensionMismatch. While the instance is read-only, a diff not stored yet answers `status: read-only`.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
     ],

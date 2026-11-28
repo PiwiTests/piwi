@@ -29,6 +29,9 @@ import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/se
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
 import { narrowToolsByModule } from '../utils/mcp/filter';
 import { logMcpToolCall } from '../utils/mcp/write-log';
+import { isReadOnly } from '../utils/operator-limits';
+import { isMcpWriteTool } from '#shared/mcp-write-log';
+import { READ_ONLY_MESSAGE } from '#shared/operator-limits';
 import { callDesktopRunTool, desktopRunTools, isDesktopRunTool } from '../utils/mcp/run-tools';
 import { DESKTOP_AGENT_WORDS } from '../utils/desktop-runs';
 import { dashboardVersion } from '../utils/app-version';
@@ -269,6 +272,11 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       const tool = await serveableTool(db, p?.name);
       if (!tool) {
         return rpcErr(id, RPC.INVALID_PARAMS, `Unknown tool: ${p?.name}`);
+      }
+
+      // While the instance is read-only, a write tool answers what a write request does, and nothing is logged.
+      if (isMcpWriteTool(tool.name) && isReadOnly()) {
+        return ok(id, { content: [{ type: 'text', text: `Error: ${READ_ONLY_MESSAGE}` }], isError: true });
       }
 
       const args = p?.arguments ?? {};

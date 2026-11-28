@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { H3Event } from 'h3';
 import * as schema from '../../server/database/schema.sqlite';
+import { DEFAULT_MAX_SUBMIT_BYTES, DEFAULT_MAX_UPLOAD_BYTES } from '#shared/upload-limits';
 import { openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -12,6 +13,7 @@ delete process.env.PIWI_DATABASE_URL;
 const { requireOperator, OPERATOR_TOKEN_MIN_LENGTH } = await import('../../server/utils/operator');
 const { resetRateLimit } = await import('../../server/utils/rate-limit');
 const { getOperatorUsage } = await import('../../server/utils/operator-usage');
+const { resetOperatorLimits, writeOperatorLimits } = await import('../../server/utils/operator-limits');
 
 const TOKEN = 'o'.repeat(OPERATOR_TOKEN_MIN_LENGTH);
 
@@ -143,6 +145,13 @@ describe('getOperatorUsage', () => {
         { version: '0.76.0', runs: 2, lastRunAt: ago(1) },
         { version: '0.74.0', runs: 1, lastRunAt: ago(24 * 10) },
       ],
+      limits: {
+        storageQuotaBytes: null,
+        importMaxBytes: DEFAULT_MAX_UPLOAD_BYTES,
+        submitMaxBytes: DEFAULT_MAX_SUBMIT_BYTES,
+        retentionDays: null,
+      },
+      readOnly: false,
     });
     expect(JSON.stringify(usage)).not.toContain('secret-project-name');
     expect(JSON.stringify(usage)).not.toContain('alice');
@@ -175,6 +184,34 @@ describe('getOperatorUsage', () => {
       });
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+
+  test('answers the limits the operator set, and read-only mode', async () => {
+    const processCounts = {
+      requestsInProgress: 0,
+      diagnosesInProgress: 0,
+      assistantAnswersInProgress: 0,
+      openEventStreams: 0,
+    };
+    vi.stubEnv('PIWI_RETENTION_DAYS', '30');
+    try {
+      await writeOperatorLimits(db as never, { storageQuotaBytes: 4 * 1024 * 1024, importMaxBytes: 2 * 1024 * 1024 });
+      await db.update(schema.appSettings).set({
+        value: { storageQuotaBytes: 4 * 1024 * 1024, importMaxBytes: 2 * 1024 * 1024, readOnly: true },
+      });
+      const usage = await getOperatorUsage(db as never, processCounts, NOW);
+      expect(usage.limits).toEqual({
+        storageQuotaBytes: 4 * 1024 * 1024,
+        importMaxBytes: 2 * 1024 * 1024,
+        submitMaxBytes: DEFAULT_MAX_SUBMIT_BYTES,
+        retentionDays: 30,
+      });
+      expect(usage.readOnly).toBe(true);
+      expect(usage.storage.quotaBytes).toBe(4 * 1024 * 1024);
+    } finally {
+      vi.unstubAllEnvs();
+      resetOperatorLimits();
     }
   });
 

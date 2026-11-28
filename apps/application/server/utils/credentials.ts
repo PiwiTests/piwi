@@ -24,6 +24,7 @@ import {
 import type { DbClient } from '../database';
 import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
 import { isUniqueViolation } from './db-errors';
+import { isReadOnly } from './operator-limits';
 import {
   CREDENTIAL_READ_FEATURES,
   credentialLogDestination,
@@ -189,11 +190,13 @@ export function instanceCiServerAllowedInputs(): string[] {
 /**
  * Bring the credentials the environment sets in line with its variables: the
  * CI server's when `PIWI_CI_SERVER_URL` and `PIWI_CI_SERVER_TOKEN` are set,
- * removed when they are not. Its secret stays in the environment, so the row
+ * removed when they are not, and left as they are while the instance is
+ * read-only. Its secret stays in the environment, so the row
  * holds none; it is shared with all projects, never goes with a Custom request,
  * and sends only the inputs of `PIWI_CI_SERVER_ALLOWED_INPUTS`.
  */
 export async function ensureEnvCredentials(db: DbClient): Promise<void> {
+  if (isReadOnly()) return;
   const service: CredentialService = 'ci-server';
   const env = envCredential(service);
   const [existing] = await db
