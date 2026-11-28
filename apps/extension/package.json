@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
-    "@types/chrome": "^0.3.6",
+    "@types/chrome": "^0.3.8",
     "archiver": "^8.0.0",
     "sharp": "^0.35.5",
     "vite": "^8.0.16"

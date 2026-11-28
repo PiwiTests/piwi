@@ -29,7 +29,7 @@
     "@vue/compiler-sfc": "^3.5.44",
     "husky": "^9.0.0",
     "knip": "^6.41.0",
-    "oxfmt": "^0.74.0",
+    "oxfmt": "^0.80.0",
     "oxlint": "^1.89.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.12"
