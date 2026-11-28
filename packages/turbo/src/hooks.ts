@@ -16,8 +16,12 @@
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
-//                     source map, and with other hooks on, an evaluation's race against its context's destruction
-//                     captures no stack
+//                     source map, and with other hooks on, Playwright's server captures no stack for an evaluation's
+//                     race against its context's destruction nor for the error of a run's timeout, and one frame
+//                     for the error of a Chromium command's failure
+//   fast actions      an action's lookup returns its element and is read by a command sent behind it, in place of
+//                     three calls; the element's preview waits for a client to be given the handle; and on Chromium
+//                     a pointer action asks for its click point behind its last scroll
 //   keep static cache when Playwright resets a reused context, leaves its HTTP cache when the last test loaded
 //                     nothing the browser could reuse without asking the server but static assets
 //   screenshot matches  a screenshot assertion passes without decoding its first capture when that capture's bytes
@@ -99,6 +103,8 @@ export const state = {
     earlyPoints: 0,
   },
   elementHooked: false,
+  /** Why the element handle's hooks did not fit: the reason the actions of a test that asked for one end with. */
+  elementHookFailure: undefined as Error | undefined,
   handleHooked: false,
 };
 
@@ -261,8 +267,12 @@ function hookFailFast(proto: ServerPage): void {
     );
     throw new FailFastError();
   };
+  // A hook that does not fit ends the action with its reason: Playwright's retry polls through any other error
+  // until the timeout.
   proto.isNonRetriableError = function (this: ServerPage, error: unknown) {
-    return error instanceof FailFastError || isNonRetriableError.call(this, error);
+    return (
+      error instanceof FailFastError || error instanceof IncompatibleError || isNonRetriableError.call(this, error)
+    );
   };
 }
 
@@ -899,9 +909,9 @@ function hookContextRace(context: ServerPage): void {
 }
 
 /**
- * fastStackTraces, in Playwright's server: for every call, and for the instrumentation that runs before and after
- * it, Playwright prepares the error of a timeout, whose stack only a call that times out reports. The call runner is
- * reached from the first one a dispatcher creates.
+ * fastStackTraces, in Playwright's server: for each run that has a timeout, Playwright prepares the error of that
+ * timeout, whose stack only a run that times out reports: the instrumentation before and after every call, and the
+ * call itself when it has a timeout. The call runner is reached from the first one a dispatcher creates.
  */
 function hookCallRunners(core: ServerPage): void {
   let owner = core.server?.PageDispatcher?.prototype;
@@ -932,7 +942,8 @@ function hookCallRunner(proto: ServerPage): void {
   if (typeof run !== 'function' || prepared < 0 || started < prepared || source.indexOf('await ') !== started)
     throw new IncompatibleError("Playwright's calls no longer prepare their timeout's error before their task starts");
   proto.run = function (this: ServerPage, task: (progress: unknown) => unknown, timeout?: number) {
-    if (!state.lightTimeouts) return run.call(this, task, timeout);
+    // A run without a timeout prepares no error.
+    if (!state.lightTimeouts || !timeout) return run.call(this, task, timeout);
     state.counters.lightTimeouts++;
     const limit = Error.stackTraceLimit;
     let restored = false;
@@ -1204,7 +1215,8 @@ const deferredPreviews = new WeakSet<object>();
 
 /**
  * fastActions: Playwright asks the page for a preview of every element handle it creates, the element of each action
- * included. The handles of its utility world are its own: theirs is asked for when a client is given one.
+ * included. The handles of its utility world are its own: theirs is asked for when a client is given one, and
+ * before a file chooser is made of one.
  */
 function hookPreviews(handle: ServerPage, proto: ServerPage): void {
   const initialize = proto._initializePreview as (() => Promise<void>) | undefined;
@@ -1215,6 +1227,10 @@ function hookPreviews(handle: ServerPage, proto: ServerPage): void {
     !String(handle.constructor).includes('this._initializePreview()')
   )
     throw new IncompatibleError("Playwright's element handles no longer ask for their preview as they are created");
+  const page = handle._page ? Object.getPrototypeOf(handle._page) : undefined;
+  const fileChooserOpened = page?._onFileChooserOpened as ((opened: ServerPage) => Promise<void>) | undefined;
+  if (typeof fileChooserOpened !== 'function' || !String(fileChooserOpened).includes('new FileChooser(handle'))
+    throw new IncompatibleError("Playwright's page no longer makes a file chooser of the element handle it is given");
   proto._initializePreview = function (this: ServerPage) {
     if (!state.fastActions || this._context?.world !== 'utility') return initialize.call(this);
     state.counters.deferredPreviews++;
@@ -1225,10 +1241,18 @@ function hookPreviews(handle: ServerPage, proto: ServerPage): void {
     setCallback.call(this, callback);
     if (deferredPreviews.delete(this)) initialize.call(this).catch(() => {});
   };
+  // A file chooser's element is given to the client as the chooser opens: its preview is there before.
+  page._onFileChooserOpened = async function (this: ServerPage, opened: ServerPage) {
+    if (deferredPreviews.delete(opened)) await initialize.call(opened).catch(() => {});
+    return fileChooserOpened.call(this, opened);
+  };
 }
 
-/** The pointer actions in progress, and the click point each asked for behind its last scroll. */
-const pointerActions = new WeakMap<object, { point?: Promise<unknown> }>();
+/**
+ * The pointer actions in progress: the click point each asked for behind its last scroll, and the scrolls it makes
+ * before that one.
+ */
+const pointerActions = new WeakMap<object, { point?: Promise<unknown>; earlier: number }>();
 
 /**
  * fastActions, on Chromium: a pointer action scrolls its element into view, waits for the answer, then asks for the
@@ -1255,7 +1279,8 @@ function hookClickPoint(proto: ServerPage): void {
     throw new IncompatibleError("Playwright's pointer action no longer scrolls, then asks for its click point");
   proto._performPointerAction = async function (this: ServerPage, ...args: unknown[]) {
     if (!state.fastActions || !isChromium(this._page ?? {})) return perform.apply(this, args);
-    pointerActions.set(this, {});
+    // In a child frame, a first scroll brings the element into view before its states are checked.
+    pointerActions.set(this, { earlier: this._frame?.parentFrame?.() ? 1 : 0 });
     try {
       return await perform.apply(this, args);
     } finally {
@@ -1265,7 +1290,9 @@ function hookClickPoint(proto: ServerPage): void {
   proto._scrollRectIntoViewIfNeeded = function (this: ServerPage, progress: unknown, rect: unknown) {
     const result = scroll.call(this, progress, rect);
     const pointer = pointerActions.get(this);
-    if (pointer) {
+    if (pointer && pointer.earlier > 0) {
+      pointer.earlier--;
+    } else if (pointer) {
       // The point of a scroll before this one is that of another position.
       pointer.point = rect === undefined ? clickablePoint.call(this, progress) : undefined;
       pointer.point?.catch(() => {});
@@ -1344,10 +1371,14 @@ function hookLookup(frame: ServerPage, retryIfNotConnected: unknown): void {
     // The handle class is reached from the result of the first lookup.
     if (!state.handleHooked) {
       const resolved = await callOnSelectorHandle.call(this, target, pageFunction, arg);
-      try {
-        if (resolved?.result) hookLookupHandle(resolved.result);
-      } catch (error) {
-        state.error ??= error as Error;
+      if (resolved?.result) {
+        try {
+          hookLookupHandle(resolved.result);
+        } catch (error) {
+          resolved.result.dispose();
+          state.error ??= error as Error;
+          throw error;
+        }
       }
       return resolved;
     }
@@ -1406,9 +1437,17 @@ async function foundBy(reads: NonNullable<ReturnType<typeof lookupReads.get>>, t
   throw new IncompatibleError("Playwright's action lookup kept nothing in the page for fastActions to read");
 }
 
+/** The handle classes whose evaluateHandle sends the read of a lookup. */
+const lookupHandles = new WeakSet<object>();
+
 /** Sends the read of what a lookup found right behind the lookup, on the injected script's handle. */
 function hookLookupHandle(handle: ServerPage): void {
   const proto = Object.getPrototypeOf(handle);
+  // Lookups that overlap before the class is hooked each reach here with it.
+  if (lookupHandles.has(proto)) {
+    state.handleHooked = true;
+    return;
+  }
   const evaluateHandle = proto?.evaluateHandle as
     | ((pageFunction: unknown, arg: unknown) => Promise<unknown>)
     | undefined;
@@ -1431,6 +1470,7 @@ function hookLookupHandle(handle: ServerPage): void {
     }
     return result;
   };
+  lookupHandles.add(proto);
   state.handleHooked = true;
 }
 
@@ -1483,12 +1523,16 @@ function hookFrame(frame: ServerPage): void {
       options,
       (inner: unknown, handle: unknown, ...rest: unknown[]) => {
         if (!state.elementHooked) {
-          try {
-            hookElementHandle(handle);
-          } catch (error) {
-            state.error ??= error as Error;
-            if (state.skipStabilityWait || state.fastActions) throw error;
+          if (!state.elementHookFailure) {
+            try {
+              hookElementHandle(handle);
+            } catch (error) {
+              state.elementHookFailure = error as Error;
+              state.error ??= state.elementHookFailure;
+            }
           }
+          if (state.elementHookFailure && (state.skipStabilityWait || state.fastActions))
+            throw state.elementHookFailure;
         }
         return action(inner, handle, ...rest);
       },
@@ -1525,7 +1569,8 @@ function hookChromiumSession(page: ServerPage): void {
     if (!state.lightCommands) return original.call(this, method, params);
     state.counters.lightCommands++;
     const limit = Error.stackTraceLimit;
-    Error.stackTraceLimit = 0;
+    // One frame: Playwright sets a failed command's message into a stack that holds a frame.
+    Error.stackTraceLimit = 1;
     try {
       return original.call(this, method, params);
     } finally {

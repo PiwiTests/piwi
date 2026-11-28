@@ -2,7 +2,7 @@ import { captureFailure, test, expect } from '../../src/test';
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { screenshotMatchStore, state } from '../../src/hooks';
+import { checkVersion, screenshotMatchStore, state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
 import { createRequire } from 'node:module';
 
@@ -250,6 +250,24 @@ test.describe('without options', () => {
     expect(state.fastScreenshots).toBe(false);
     expect(state.retryIntervals).toBeUndefined();
     expect(state.lightRaces).toBe(false);
+  });
+});
+
+test.describe('with a hook on and fastStackTraces off', () => {
+  test.use({ skipStabilityWait: true });
+
+  test("the server's stacks are left to Playwright", async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    const { lightRaces, lightTimeouts, lightCommands } = state.counters;
+    expect([state.lightRaces, state.lightTimeouts, state.lightCommands]).toEqual([false, false, false]);
+    await page
+      .locator('#missing')
+      .click({ timeout: 300 })
+      .catch(() => {});
+    await page.evaluate(() => document.title);
+    expect(state.counters.lightRaces).toBe(lightRaces);
+    expect(state.counters.lightTimeouts).toBe(lightTimeouts);
+    expect(state.counters.lightCommands).toBe(lightCommands);
   });
 });
 
@@ -515,21 +533,24 @@ test.describe('fast actions', () => {
   const FORM = `<input placeholder="name"><input type="checkbox" id="c">
     <button id="b" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">go</button>`;
 
-  /** How many commands the tab's session sends to the browser while `run` runs. */
-  async function commandsDuring(page: Page, run: () => Promise<unknown>): Promise<number> {
+  /** The commands the tab's session sends to the browser while `run` runs. */
+  async function commandsDuring(page: Page, run: () => Promise<unknown>): Promise<string[]> {
     const connection = (page as unknown as { _connection: { toImpl: (object: unknown) => unknown } })._connection;
     const impl = connection.toImpl(page) as { delegate: { _mainFrameSession: { _client: { send: unknown } } } };
     const session = impl.delegate._mainFrameSession._client as { send: (...args: unknown[]) => unknown };
     const send = session.send;
-    let sent = 0;
+    const sent: string[] = [];
+    // The commands an action does not wait for, a handle's release among them: those of the actions before `run`
+    // are sent before the count starts, and its own before the count ends.
+    const settled = () => page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    await settled();
     session.send = function (...args: unknown[]) {
-      sent++;
+      sent.push(String(args[0]));
       return send.apply(this, args);
     };
     try {
       await run();
-      // The commands an action does not wait for, a handle's release among them.
-      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+      await settled();
     } finally {
       session.send = send;
     }
@@ -551,17 +572,17 @@ test.describe('fast actions', () => {
     for (const [name, action] of Object.entries(actions)) {
       if (name === 'check') await page.locator('#c').uncheck();
       state.fastActions = false;
-      const stock = await commandsDuring(page, () => action(page));
+      const stock = (await commandsDuring(page, () => action(page))).length;
       if (name === 'check') await page.locator('#c').uncheck();
       state.fastActions = true;
       const { fastLookups, earlyPoints, repeatedLookupReads } = state.counters;
-      const fast = await commandsDuring(page, () => action(page));
+      const fast = (await commandsDuring(page, () => action(page))).length;
       expect(state.counters.fastLookups, name).toBe(fastLookups + 1);
       expect(state.counters.repeatedLookupReads, name).toBe(repeatedLookupReads);
       const pointer = name !== 'fill' && browserName === 'chromium';
       expect(state.counters.earlyPoints, name).toBe(earlyPoints + (pointer ? 1 : 0));
-      // One command for the lookup and its log in place of three, and no preview of the element.
-      expect(fast, name).toBeLessThanOrEqual(stock - 2);
+      // Two commands in place of the lookup's four, its result's release included, and no preview of the element.
+      expect(fast, name).toBe(stock - 3);
     }
     await expect(page.getByPlaceholder('name')).toHaveValue('typed');
     await expect(page.locator('#c')).toBeChecked();
@@ -582,7 +603,9 @@ test.describe('fast actions', () => {
     state.fastActions = false;
     const stock = await logOf();
     state.fastActions = true;
+    const before = state.counters.fastLookups;
     const fast = await logOf();
+    expect(state.counters.fastLookups).toBeGreaterThan(before);
     expect(fast).toContain('locator resolved to <button id="b"');
     expect(fast).toContain('intercepts pointer events');
     expect(fast).toBe(stock);
@@ -628,16 +651,76 @@ test.describe('fast actions', () => {
     await page.locator('#far').click({ position: { x: 2, y: 2 } });
     await expect(page.locator('#far')).toHaveAttribute('data-n', '2');
     if (browserName === 'chromium') expect(state.counters.earlyPoints).toBe(before + 2);
+    // In a frame, a first scroll comes before the checks of the element's states: the point follows the last one.
+    state.fastActions = false;
+    const stock = await commandsDuring(page, () => inFrame.click());
+    state.fastActions = true;
+    const fast = await commandsDuring(page, () => inFrame.click());
+    const points = (commands: string[]) => commands.filter((command) => command === 'DOM.getContentQuads').length;
+    if (browserName === 'chromium') expect(state.counters.earlyPoints).toBe(before + 3);
+    expect(points(fast)).toBe(points(stock));
+    expect(fast.length).toBeLessThanOrEqual(stock.length - 3);
+    await expect(inFrame).toHaveAttribute('data-n', '3');
   });
 
-  test("leaves the preview of a handle the test holds as stock Playwright's", async ({ page }) => {
-    await page.setContent(FORM);
+  test("gives a file chooser's element the preview stock Playwright gives", async ({ page }) => {
+    await page.setContent(`${FORM}<input type="file" id="f">`);
     await page.locator('#b').click();
     const before = state.counters.deferredPreviews;
     await page.locator('#b').click();
     expect(state.counters.deferredPreviews).toBeGreaterThan(before);
+    const previews: string[] = [];
+    for (const fastActions of [true, false]) {
+      state.fastActions = fastActions;
+      try {
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('#f').click()]);
+        previews.push(String(chooser.element()));
+      } finally {
+        state.fastActions = true;
+      }
+    }
+    expect(previews[0]).toBe('JSHandle@<input id="f" type="file"/>');
+    expect(previews[1]).toBe(previews[0]);
     const handle = await page.locator('#b').elementHandle();
     await expect.poll(() => String(handle)).toContain('JSHandle@<button id="b"');
+  });
+
+  test('hooks the lookup once when the first lookups overlap', async ({ page }) => {
+    await page.setContent(FORM);
+    for (const action of Object.values(actions)) await action(page);
+    const fill = async () => (await commandsDuring(page, () => actions.fill(page))).length;
+    const hooked = await fill();
+    state.handleHooked = false;
+    await Promise.all([actions.fill(page), actions.click(page)]);
+    expect(state.handleHooked).toBe(true);
+    expect(await fill()).toBe(hooked);
+  });
+
+  test('ends an action with the reason when a hook does not fit', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.locator('#b').click();
+    let reason: Error | undefined;
+    try {
+      checkVersion('0.0.0');
+    } catch (error) {
+      reason = error as Error;
+    }
+    state.elementHooked = false;
+    state.elementHookFailure = reason;
+    try {
+      const started = Date.now();
+      const error = await page
+        .locator('#b')
+        .click({ timeout: 5000 })
+        .catch((caught: Error) => caught);
+      expect(String(error)).toContain(reason!.message);
+      expect(Date.now() - started).toBeLessThan(4000);
+    } finally {
+      state.elementHooked = true;
+      state.elementHookFailure = undefined;
+    }
+    await page.locator('#b').click();
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '2');
   });
 });
 

@@ -246,10 +246,12 @@ withOptimizations(config, {
   reach, the server's race of every evaluation in a page against its context's destruction captures no stack: it formats
   one through source-map-support in case it must clone that error, but the client gives a failed call the test's own
   frames, so the test's errors read the same, and a trace records the server's error without Playwright's internal
-  frames. Nor do the errors Playwright prepares in case a call times out, three for every call, or, on Chromium, in case
-  a command to the browser fails, one for every command: a call that makes one command took 1 to 5% less time for each.
-  Where Playwright shows its internal frames (`PWDEBUGIMPL`), all three keep their stack. For the race alone, TodoMVC
-  took 6% less time and SVGOMG 4%.
+  frames. The errors Playwright prepares in case a call times out, two for every call and a third for a call with a
+  timeout, capture no stack either, and on Chromium the one it prepares with every command, in case the command fails,
+  captures one frame: in a trace and in Playwright's debug log these errors keep their message and lose the rest of
+  Playwright's internal frames. A call that makes one command took 0.6 to 4.9% less time for each, within the 5% the
+  same call varies by from run to run. Where Playwright shows its internal frames (`PWDEBUGIMPL`), all three keep their
+  stack. For the race alone, TodoMVC took 6% less time and SVGOMG 4%.
 - **`screenshotMatches`**: Playwright decodes the capture and the baseline of every screenshot assertion to compare
   them, about 40 ms for a 1280×720 page. A capture whose bytes are the baseline's, or those of a capture that matched
   the same baseline with the same options before, passes without that; any other is compared as Playwright compares
@@ -292,19 +294,22 @@ withOptimizations(config, {
 - **`fastActions`**: an action finds its element, then asks the page twice more, for what it logs about the element and
   for the element itself, and the page a third time for a preview of the element that no test reads. The lookup returns
   the element, and its log is read by a command sent right behind it, so both answers arrive together; Playwright's own
-  element handles get a preview only when a client is given one. On Chromium, a click, hover, check or tap also asks for
-  its point right behind the scroll that brings the element into view. A fill sends 5 commands to the browser in place
-  of 8, and a click 14 in place of 17: a fill took 2.8 ms in place of 3.2, and a click, with `skipStabilityWait`, 4.4 ms
-  in place of 5.2. A suite of 1,800 fills, clicks and assertions took 14% less time, and Flashwright's TodoMVC suite 7%
-  less. What the action does, its log, its errors and its trace are the same.
+  element handles get a preview only when a client is given one, a file chooser's element before the chooser opens. On
+  Chromium, a click, hover, check or tap also asks for its point right behind the scroll that brings the element into
+  view. A fill sends 5 commands to the browser in place of 8, and a click 14 in place of 17: a fill took 2.8 ms in place
+  of 3.2, and a click, with `skipStabilityWait`, 4.4 ms in place of 5.2. A suite of 1,800 fills, clicks and assertions
+  took 14% less time, and Flashwright's TodoMVC suite 7% less. While an action waits for an element that is not there,
+  each of its lookups sends that second command too, one more than Playwright's. What the action does, its log, its
+  errors and its trace are the same.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
 `Page.prototype.expectScreenshot`, `Page.prototype.resetForReuse`, `BrowserContext.prototype.setStorageState` and
-`BrowserContext.prototype.resetForReuse`, a context's `response` events, from the first page the frame class, its
-selectors, the handle and element handle classes, Chromium's CDP session and the trace recorder, from the first
-document the execution context class, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
-were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the browser runs
-outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at your own risk. What each lever was
+`BrowserContext.prototype.resetForReuse`, a context's `response` events, the runner of the dispatchers' calls, from the
+first page the frame class, its selectors, the handle and element handle classes, the page's handling of a file
+chooser, Chromium's CDP session and the trace recorder, from the first document the execution context class, and the
+worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core`
+version they were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the
+browser runs outside the worker: a shape found at a test's first action ends that action with the error. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at your own risk. What each lever was
 measured to save is in the
 [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).
 

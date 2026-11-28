@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type { Page } from '@playwright/test';
 import { state } from '../../src/hooks';
 import { expect, test } from '../../src/test';
 
@@ -55,6 +56,52 @@ async function raceStacks(run: () => Promise<unknown>): Promise<number> {
   }
   return count;
 }
+
+/** An error as Playwright's server ends a call with it, which a trace and its debug log show. */
+interface ServerError {
+  message?: string;
+  stack?: string;
+}
+
+/** The errors Playwright's server ends the calls of `run` with. */
+async function serverErrors(page: Page, run: () => Promise<unknown>): Promise<ServerError[]> {
+  type Listener = { onAfterCall: (progress: { metadata?: { error?: { error?: ServerError } } }) => void };
+  type ServerContext = {
+    instrumentation: {
+      addListener: (listener: Listener, context: unknown) => void;
+      removeListener: (listener: Listener) => void;
+    };
+  };
+  const context = page.context();
+  const connection = (context as unknown as { _connection: { toImpl: (object: unknown) => ServerContext } })
+    ._connection;
+  const impl = connection.toImpl(context);
+  const errors: ServerError[] = [];
+  const listener: Listener = {
+    onAfterCall: (progress) => {
+      const error = progress.metadata?.error?.error;
+      if (error) errors.push(error);
+    },
+  };
+  impl.instrumentation.addListener(listener, impl);
+  try {
+    await run().catch(() => {});
+  } finally {
+    impl.instrumentation.removeListener(listener);
+  }
+  return errors;
+}
+
+const firstLine = (error: ServerError) => (error.stack ?? '').split('\n')[0];
+const framesOf = (error: ServerError) =>
+  (error.stack ?? '').split('\n').filter((line) => line.startsWith('    at ')).length;
+
+/** The error `call` fails with. */
+const failure = (call: Promise<unknown>): Promise<Error> =>
+  call.then(
+    () => new Error('the call passed'),
+    (error: Error) => error,
+  );
 
 test('alone, leaves the race of an evaluation against its context to Playwright', async ({ page }) => {
   await page.setContent('<p>race</p>');
@@ -118,68 +165,97 @@ test.describe('with another hook on', () => {
     expect(light?.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
   });
 
-  test('a call that times out fails with the same error, and one that throws keeps its stack', async ({ page }) => {
+  test('a call that times out fails with the same error, its timeout prepared with no stack', async ({ page }) => {
     await page.setContent('<p>timeout</p>');
     expect(state.lightTimeouts).toBe(true);
     const errors: Error[] = [];
-    const thrown: Error[] = [];
+    const server: ServerError[] = [];
     const prepared: number[] = [];
     for (const lightTimeouts of [true, false]) {
       state.lightTimeouts = lightTimeouts;
       const before = state.counters.lightTimeouts;
       try {
-        const failure = (call: Promise<unknown>) =>
-          call.then(
-            () => new Error('the call passed'),
-            (error: Error) => error,
-          );
-        errors.push(await failure(page.locator('#missing').click({ timeout: 300 })));
-        thrown.push(await failure(page.evaluate(() => Promise.reject(new Error('from the page')))));
+        server.push(
+          ...(await serverErrors(page, async () => {
+            errors.push(await failure(page.locator('#missing').click({ timeout: 300 })));
+          })),
+        );
       } finally {
         state.lightTimeouts = true;
       }
       prepared.push(state.counters.lightTimeouts - before);
     }
     const [light, stock] = errors;
-    // The call, and the instrumentation before and after it, each prepare one.
-    expect(prepared[0]).toBeGreaterThanOrEqual(2);
-    expect(prepared[1]).toBe(0);
+    // The call, and the instrumentation before and after it.
+    expect(prepared).toEqual([3, 0]);
     expect(light.message).toContain('Timeout 300ms exceeded');
     expect(light.message).toBe(stock.message);
     expect(light.stack).toBe(stock.stack);
     expect(light.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
-    expect(thrown[0].message).toContain('from the page');
-    expect(thrown[0].stack).toBe(thrown[1].stack);
+    expect(server).toHaveLength(2);
+    expect(server[0].stack).toBe('TimeoutError: Timeout 300ms exceeded.');
+    expect(firstLine(server[1])).toBe(server[0].stack);
+    expect(framesOf(server[1])).toBeGreaterThan(1);
   });
 
-  test('a command the browser refuses fails with the same error', async ({ page, context, browserName }) => {
+  test('a call without a timeout prepares no error of its own', async ({ page }) => {
+    await page.setContent('<title>untimed</title>');
+    const before = state.counters.lightTimeouts;
+    expect(await page.title()).toBe('untimed');
+    // The instrumentation before and after it.
+    expect(state.counters.lightTimeouts - before).toBe(2);
+  });
+
+  test("an error a call makes as it starts keeps the server's frames", async ({ page }) => {
+    await page.setContent('<p>selector</p>');
+    const before = state.counters.lightTimeouts;
+    const [error] = await serverErrors(page, () => page.locator('css=[').click({ timeout: 1000, force: true }));
+    expect(state.counters.lightTimeouts - before).toBe(3);
+    expect(error.stack).toContain('Unexpected token');
+    expect(framesOf(error)).toBeGreaterThan(1);
+    expect(Error.stackTraceLimit).toBeGreaterThan(1);
+  });
+
+  test('a command the browser refuses fails with the same error, the server keeping one frame', async ({
+    page,
+    context,
+    browserName,
+  }) => {
     test.skip(browserName !== 'chromium', "The commands of a CDP session are Chromium's.");
     await page.setContent('<p>command</p>');
     expect(state.lightCommands).toBe(true);
     const session = await context.newCDPSession(page);
-    const errors: Error[] = [];
+    const refused: Error[] = [];
+    const navigations: Error[] = [];
+    const server: ServerError[] = [];
     const sent: number[] = [];
     for (const lightCommands of [true, false]) {
       state.lightCommands = lightCommands;
       const before = state.counters.lightCommands;
       try {
-        errors.push(
-          await session.send('Page.noSuchCommand' as 'Page.enable').then(
-            () => new Error('the command passed'),
-            (error: Error) => error,
-          ),
+        refused.push(await failure(session.send('Page.noSuchCommand' as 'Page.enable')));
+        server.push(
+          ...(await serverErrors(page, async () => {
+            navigations.push(await failure(page.goto('no-such-scheme-url')));
+          })),
         );
       } finally {
         state.lightCommands = true;
       }
       sent.push(state.counters.lightCommands - before);
     }
-    const [light, stock] = errors;
     expect(sent[0]).toBeGreaterThan(0);
     expect(sent[1]).toBe(0);
-    expect(light.message).toContain('Page.noSuchCommand');
-    expect(light.message).toBe(stock.message);
-    expect(light.stack).toBe(stock.stack);
-    expect(light.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
+    for (const [light, stock] of [refused, navigations]) {
+      expect(light.message).toBe(stock.message);
+      expect(light.stack).toBe(stock.stack);
+      expect(light.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
+    }
+    expect(refused[0].message).toContain('Page.noSuchCommand');
+    expect(server).toHaveLength(2);
+    expect(firstLine(server[0])).toBe('Error: Protocol error (Page.navigate): Cannot navigate to invalid URL');
+    expect(firstLine(server[1])).toBe(firstLine(server[0]));
+    expect(framesOf(server[0])).toBe(1);
+    expect(framesOf(server[1])).toBeGreaterThan(1);
   });
 });

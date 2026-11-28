@@ -109,17 +109,19 @@ export interface Optimizations {
     /**
      * Fewer round trips with the browser per action. An action looks its element up, then asks the page twice more
      * for the lookup's log and for the element: the lookup returns the element, and its log is read by a command sent
-     * right behind it. Playwright's own element handles get no preview from the page until a client is given one. On
-     * Chromium, a pointer action asks for its click point right behind the scroll that brings the element into view.
-     * What an action does, logs and records in a trace is the same.
+     * right behind it, also by each lookup of an action that waits for its element. Playwright's own element handles
+     * get no preview from the page until a client is given one. On Chromium, a pointer action asks for its click point
+     * right behind the scroll that brings the element into view. What an action does, logs and records in a trace is
+     * the same.
      */
     fastActions?: boolean;
     /**
      * The test worker's stack traces, which Playwright captures for every API call, look up source maps only for the
      * frames outside Node and `node_modules`. They read the same. With another experimental hook on, Playwright's
-     * server also captures no stack as each evaluation in a page starts, nor for the errors it prepares in case a
-     * call times out or, on Chromium, a command to the browser fails: the test's errors read the same, and a trace
-     * records the server's errors without Playwright's internal frames.
+     * server also captures no stack as each evaluation in a page starts nor for the errors it prepares in case a
+     * call times out, and on Chromium one frame for the error it prepares in case a command to the browser fails: the
+     * test's errors read the same, and a trace and Playwright's debug log show the server's errors with their message
+     * and without the rest of Playwright's internal frames.
      */
     fastStackTraces?: boolean;
     /**

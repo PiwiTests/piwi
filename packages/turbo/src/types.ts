@@ -29,8 +29,8 @@ export interface TurboOptions {
   /**
    * Experimental worker option: the worker's stack traces map only the frames that may have a source map, leaving out
    * those of Node and of `node_modules`; with another experimental hook on, Playwright's server captures no stack as an
-   * evaluation starts, nor for the errors it prepares for each call's timeout and, on Chromium, each command's
-   * failure. The test's errors read the same.
+   * evaluation starts nor for the error it prepares for a call's timeout, and on Chromium one frame for the error it
+   * prepares for each command's failure. The test's errors read the same.
    */
   fastStackTraces: boolean;
   /**
