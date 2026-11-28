@@ -278,12 +278,14 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
     });
     t = end;
   };
-  const cards = only ? [] : log.story.filter((s) => s.card);
-  if (cards[0] && cards[0] === log.story[0]) card(cards[0]);
   const opened = new Set();
   let number = 0;
   for (const story of log.story) {
-    if (story.card) continue;
+    // A card shows where the story has it: the title card first, the end card last.
+    if (story.card) {
+      if (!only) card(story);
+      continue;
+    }
     number++;
     const beat = log.beats.find((b) => b.id === story.id);
     if (!beat?.end || (only && !only.includes(story.id))) continue;
@@ -319,8 +321,6 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
     }));
     segments.push(segment);
   }
-  const last = cards.at(-1);
-  if (last && last === log.story.at(-1)) card(last);
   const duration = t;
   const beats = segments.filter((s) => s.kind === 'beat');
   // Each part's span in the cut: from its first beat's start to its last's end, its card left out.
@@ -460,25 +460,17 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const opacity = {};
   let fast = 0;
   const states = [];
-  const titleCard = segments.find((s) => s.kind === 'card' && s === segments[0]);
-  const endCard = segments.findLast((s) => s.kind === 'card' && s === segments.at(-1));
   const partCards = segments.filter((s) => s.kind === 'part');
+  const cardSegments = segments.filter((s) => s.kind !== 'beat');
   for (let i = 0; i < count; i++) {
     const time = i / OUTPUT_FPS;
     const segment = segments.findLast((s) => s.start <= time) ?? segments[0];
-    // A card shows over the beat next to it, held at its first or last frame: a part's card over the beat before it
-    // for its first half, the beat after it for the rest.
+    // A card shows over the beat next to it, held at its first or last frame: over the beat before it for its first
+    // half, the beat after it for the rest; a card before every beat over the first, the end card over the last.
     const previous = beats.findLast((b) => b.end <= segment.start);
     const next = beats.find((b) => b.start >= segment.start);
     const firstHalf = time < (segment.start + segment.end) / 2;
-    const beat =
-      segment.kind === 'beat'
-        ? segment
-        : segment === titleCard
-          ? beats[0]
-          : segment.kind === 'part' && !(firstHalf && previous)
-            ? next
-            : (previous ?? beats[0]);
+    const beat = segment.kind === 'beat' ? segment : firstHalf && previous ? previous : (next ?? previous);
     let wall = null;
     let rate = 1;
     if (beat) {
@@ -509,26 +501,29 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
         });
       }
     }
-    // The cards shown: each fades out over what comes after it; the end card and a part's card after a beat fade in
-    // over it. A part's card after the title card lies under it, shown whole, as the title card fades out.
+    // The cards shown: each fades out over what comes after it, but the last; one after a beat fades in over it, one
+    // after a card lies under it, shown whole, as that one fades out. A card's lines each fade in as they are read.
     const cardsShown = [];
-    if (titleCard && time < titleCard.end + FADE.card) {
-      cardsShown.push({ id: titleCard.id, opacity: Math.min(1, 1 - (time - titleCard.end) / FADE.card) });
-    }
-    for (const card of partCards) {
-      if (time < card.start || time >= card.end + FADE.card) continue;
+    for (const card of cardSegments) {
+      const last = card === segments.at(-1);
+      if (time < card.start || (!last && time >= card.end + FADE.card)) continue;
       const before = segments[segments.indexOf(card) - 1];
       const fadeIn = before?.kind === 'beat' ? (time - card.start) / FADE.card : 1;
-      const opacity = Math.max(0, Math.min(1, fadeIn, 1 - (time - card.end) / FADE.card));
-      cardsShown.push({ id: 'part', part: card.part, opacity });
-    }
-    if (endCard && time >= endCard.start) {
-      cardsShown.push({ id: endCard.id, opacity: Math.min(1, (time - endCard.start) / FADE.card) });
+      const fadeOut = last ? 1 : 1 - (time - card.end) / FADE.card;
+      const opacity = Math.max(0, Math.min(1, fadeIn, fadeOut));
+      if (card.kind === 'part') cardsShown.push({ id: 'part', part: card.part, opacity });
+      else {
+        const lines = card.lines.map((line) => ({
+          text: line.text,
+          opacity: Math.max(0, Math.min(1, (time - line.start) / FADE.window)),
+        }));
+        cardsShown.push({ id: card.id, opacity, lines });
+      }
     }
     const under = 1 - Math.max(0, ...cardsShown.map((c) => c.opacity));
     const pointer = pointerAt(moves, time);
     // The rail: the part of the beat shown, or of the beat a card holds, its progress, and the beat's title.
-    const railBeat = segment === titleCard ? null : beat;
+    const railBeat = segment.kind === 'card' && !previous ? null : beat;
     const railPart = segment.kind === 'part' && beat === next ? segment.part : (railBeat?.part ?? null);
     const partSpan = spans.get(railPart);
     const rail =
@@ -567,14 +562,15 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const cues = segments.flatMap((segment) =>
     segment.lines.map((line) => ({ ...line, card: segment.kind === 'card', beat: segment.id })),
   );
-  // The chapters: the parts, each from its card, when the cut has their cards; else the beats.
+  // The chapters: the parts, each from its card, when the cut has their cards, else the beats; a card between the
+  // title card and the end card (the introduction) is a chapter of its own, which those two join.
   const chapters = segments
     .filter((segment) => (partCards.length ? segment.kind !== 'beat' : segment.kind !== 'part'))
     .map((segment) => ({
       start: segment.start,
       title: segment.title,
       id: segment.id,
-      card: segment.kind === 'card',
+      card: segment.kind === 'card' && (segment === segments[0] || segment === segments.at(-1)),
     }));
   return {
     duration,

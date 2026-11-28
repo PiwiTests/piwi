@@ -341,3 +341,71 @@ describe('the agent’s chat', () => {
     );
   });
 });
+
+describe('a card between the title card and the first part', () => {
+  const INTRO = {
+    id: 'intro',
+    title: 'Introduction',
+    card: true,
+    seconds: 5,
+    focus: ['card'],
+    lines: ['One.', 'Two.'],
+  };
+  const withIntro = () => {
+    const log = take();
+    log.story = [
+      log.story[0],
+      INTRO,
+      { ...log.story[1], part: { title: 'CI is red', what: 'A short line.' } },
+      log.story[2],
+    ];
+    return log;
+  };
+  const plan = planCut(withIntro(), { flashFrame: 24, frames: 10_000 });
+  const at = (t) => plan.frames[Math.round(t * 30)];
+  const intro = plan.segments.find((s) => s.id === 'intro');
+
+  test('shows where the story has it, under the title card as that one fades out', () => {
+    assert.deepEqual(
+      plan.segments.map((s) => s.id),
+      ['title', 'intro', 'part-1', 'red-run', 'end'],
+    );
+    const crossing = at(intro.start + 0.3).cards;
+    assert.deepEqual(
+      crossing.map((c) => [c.id, c.opacity === 1]),
+      [
+        ['title', false],
+        ['intro', true],
+      ],
+    );
+  });
+
+  test('shows each of its lines as it is read, and no rail', () => {
+    const early = at(intro.start + 0.5).cards.find((c) => c.id === 'intro');
+    assert.deepEqual(
+      early.lines.map((l) => [l.text, l.opacity > 0]),
+      [
+        ['One.', true],
+        ['Two.', false],
+      ],
+    );
+    assert.equal(at(intro.start + 0.5).rail, null);
+    assert.ok(
+      at(intro.end - 0.1)
+        .cards.find((c) => c.id === 'intro')
+        .lines.every((l) => l.opacity === 1),
+    );
+  });
+
+  test('is a chapter of its own, which the title card joins', () => {
+    assert.deepEqual(
+      plan.chapters.map((c) => [c.title, c.card]),
+      [
+        ['Piwi', true],
+        ['Introduction', false],
+        ['CI is red', false],
+        ['Get Piwi', true],
+      ],
+    );
+  });
+});

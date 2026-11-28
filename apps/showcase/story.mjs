@@ -176,7 +176,21 @@ export const STORY = [
     title: 'Piwi',
     seconds: 4,
     focus: ['card'],
-    lines: { en: ['From a red run to a fixed test, without leaving your flow.'] },
+    lines: { en: ['Your Playwright results, kept and explained.'] },
+  }),
+
+  beat({
+    id: 'intro',
+    title: 'Introduction',
+    seconds: 12,
+    focus: ['card'],
+    lines: {
+      en: [
+        'CI throws away every report it makes. Piwi keeps them,',
+        'groups the failures by root cause, and finds the locator that broke.',
+        'Here is one failure, followed from CI to the fix.',
+      ],
+    },
   }),
 
   beat({

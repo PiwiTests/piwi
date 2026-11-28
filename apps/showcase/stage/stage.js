@@ -238,6 +238,20 @@
     Object.assign(rail.style, { display: 'flex', opacity: String(opacity) });
   }
 
+  /** A card's lines, each as it is read, the one read last bright and the ones before it dimmed. */
+  function drawCardLines(list, lines) {
+    if (list.children.length !== lines.length) {
+      list.replaceChildren(
+        ...lines.map((line) => Object.assign(document.createElement('li'), { textContent: line.text })),
+      );
+    }
+    const read = lines.filter((line) => line.opacity > 0).length;
+    [...list.children].forEach((item, i) => {
+      item.style.opacity = String(lines[i].opacity);
+      item.classList.toggle('earlier', i < read - 1);
+    });
+  }
+
   function drawLabels(state) {
     drawRail(state);
     const fast = $('fast');
@@ -245,7 +259,7 @@
       fast.textContent = `▶▶ ×${state.fast.rate}`;
       Object.assign(fast.style, { display: 'block', opacity: String(state.fast.opacity) });
     } else fast.style.display = 'none';
-    for (const id of ['title', 'end', 'part']) {
+    for (const id of ['title', 'intro', 'end', 'part']) {
       const card = $(`card-${id}`);
       const shown = state.cards.find((c) => c.id === id);
       const opacity = shown?.opacity ?? 0;
@@ -255,6 +269,7 @@
         card.querySelector('.eyebrow').textContent = `Part ${shown.part} of ${items.length}`;
         markParts(items, shown.part);
       }
+      if (id === 'intro' && shown) drawCardLines(card.querySelector('.lines'), shown.lines);
     }
   }
 

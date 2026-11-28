@@ -562,7 +562,8 @@ export async function cut({
         file,
       ]);
       server.files.set(`/sheet/${i}.jpg`, fs.readFileSync(file));
-      const number = s.kind === 'card' ? (i === 0 ? 'Title' : 'End') : String(s.number);
+      const number =
+        s.kind === 'card' ? (i === 0 ? 'Title' : i === plan.segments.length - 1 ? 'End' : s.title) : String(s.number);
       sheet.push({ src: `/sheet/${i}.jpg`, number, title: s.title, time: chapterTime(at) });
     }
     const contact = await browser.newPage({ viewport: { width: 1920, height: 1080 } });

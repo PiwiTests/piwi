@@ -478,6 +478,40 @@ html.plate #stage {
   color: var(--teal);
 }
 
+#card-intro {
+  gap: 48px;
+}
+
+#card-intro img {
+  height: 96px;
+}
+
+#card-intro .lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 26px;
+  max-width: 1600px;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+#card-intro .lines .earlier {
+  color: var(--muted);
+}
+
+#card-intro .tags {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--teal);
+}
+
 #card-part .block {
   display: grid;
   gap: 40px;
