@@ -72,7 +72,7 @@ const sections = computed<WizardSection[]>(() => {
         .map(([c]) => c)
       const vars = allNames.filter((name) => {
         const varMeta = registry[name]
-        if (varMeta.runtimeOnly) return false
+        if (varMeta.runtimeOnly || varMeta.unlisted) return false
         if (varMeta.category !== category && !merged.includes(varMeta.category)) return false
         if (!envVarAppliesToVersion(name, serverVersion.value)) return false
         return conditionMet(varMeta.relevantWhen)

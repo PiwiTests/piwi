@@ -124,6 +124,11 @@ export interface PiwiEnvVarMeta {
   requiredWhen?: PiwiEnvVarCondition;
   /** Docs-site page (+ optional `#anchor`) with the full story, e.g. 'storage#s3'. */
   docs?: string;
+  /**
+   * Left out of the configuration reference and its generator: a setting for whoever runs instances for others, who
+   * documents it where they run them. The variable is registered all the same, and the app shows it where it applies.
+   */
+  unlisted?: true;
   /** Behavioral fine print appended to the description in the reference table. */
   notes?: string;
   /**
@@ -455,6 +460,7 @@ export const PIWI_ENV_VARS = {
     type: 'number',
     min: 1024 * 1024,
     since: '0.79.0',
+    unlisted: true,
     notes:
       "A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`. A value set through PUT /api/operator/limits takes the place of this variable's.",
   },
@@ -540,7 +546,7 @@ export const PIWI_ENV_VARS = {
     secret: true,
     example: 'a 64-char random hex string',
     since: '0.79.0',
-    docs: 'operate/upgrading',
+    unlisted: true,
     notes:
       "At least 32 characters, with no space: a token it cannot take leaves the routes closed, and the first request to them logs a warning. The right token always passes; a client network that sends ten wrong tokens in 15 minutes is refused until the window ends, the network being the reverse proxy's unless PIWI_TRUST_PROXY is set. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
   },
