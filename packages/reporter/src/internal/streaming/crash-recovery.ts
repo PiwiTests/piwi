@@ -71,9 +71,9 @@ interface CopyFile {
 }
 
 /**
- * The copies of a project on one dashboard in `dir`, oldest first, the single file (`singleCopyPath`) before a run's
- * copy written at the same time: those that are a regular file this user alone may write (`untrustedReason`), never
- * through a link.
+ * The copies of a project on one dashboard in `dir`, oldest first: the single file (`singleCopyPath`), which an older
+ * reporter wrote, before every run's copy, then the runs' copies by the time each was written. Only those that are a
+ * regular file this user alone may write (`untrustedReason`), never through a link.
  */
 function listCopies(serverUrl: string, projectName: string, dir: string): CopyFile[] {
   let names: string[];
@@ -97,7 +97,7 @@ function listCopies(serverUrl: string, projectName: string, dir: string): CopyFi
       // Replayed and deleted by another run meanwhile.
     }
   }
-  return copies.sort((a, b) => a.at - b.at || Number(b.single) - Number(a.single) || a.file.localeCompare(b.file));
+  return copies.sort((a, b) => Number(b.single) - Number(a.single) || a.at - b.at || a.file.localeCompare(b.file));
 }
 
 /** The copies of a project on one dashboard in `dir` (the reporter's private folder by default), oldest first. */
