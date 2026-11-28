@@ -104,6 +104,7 @@ out.
 | `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither, left no fake clock or WebAuthn credentials installed (their scripts leave the context only after its reset loaded `about:blank`, so that document still runs them), and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
 | `earlyInjection` | Same app, one tab: the first fill after a navigation took 25 ms and the next 6 ms, the difference being Playwright creating its injected script in the document's utility world. Created as soon as the document's utility context exists: 9 to 11 ms, with the navigation 2 to 8 ms longer. TodoMVC (as above) 4,148 to 3,860 ms. |
 | `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). The DOM snapshot after each call, and before most, left in flight, on top: 5,000 to 4,617 ms, and SVGOMG traced the same way 2,240 to 2,104 ms (5 runs each). |
+| `fastActions` | Per action on a static page, on Playwright 1.65.1 without the wait for a still element, as with `skipStabilityWait` (median of 100 actions, three rounds): a fill 3.19 to 2.78 ms (8 commands to 5), a click 5.17 to 4.41 ms (17 to 14); Flashwright 2.58 and 3.63 ms. A suite of 15 tests of 40 fills, 40 clicks and 40 assertions each (one worker, 5 runs, `max`): 8,778 to 7,539 ms (stock 23,062, Flashwright 6,037). TodoMVC: 3,349 to 3,109 ms (stock 6,315, Flashwright 2,265). SVGOMG, which makes few actions: 1,542 and 1,531 ms. |
 | Per-test calls on a reused context (below) | `max`: noop 1.20× vs 1.01×, TodoMVC 1.44× vs 1.38×, Shop 1.32× vs 1.29×. |
 | Context reuse in `fast` | TodoMVC 1.16× vs 0.99×, Shop 1.12× vs 1.07×, Inventory 1.02× vs 1.03×, trivial tests 0.91× vs 0.95×. |
 
@@ -173,6 +174,14 @@ The failing test is always the same, at the same step: `dashboards.spec.ts` clic
 appears. It failed in 3 of 5 runs of the shard with `max` and in none of 6 with stock or `fast`; alone, repeated 24
 times, and with the spec files before it, it passed with `max`, and the hook behind it is not known. Playwright 1.65.1
 stays out of `TESTED_VERSIONS` until it is.
+
+Where the rest of an action's time goes, measured after `fastActions` on the same machine: one raw `Runtime.evaluate`
+round trip with Chromium takes 0.19 ms and `Input.insertText` 0.4 ms, where `page.evaluate(() => 1)` takes 0.59 ms,
+`locator.isVisible()` 0.87 ms and a fill 2.8 ms. A fill's three remaining round trips are about a third of it; the rest
+is Playwright's own work in Node and in the page, which no other way of sending commands removes. A browser started with
+`--single-process`, with no process hop per command, was no faster (a fill 3.21 against 2.43 ms). A passing assertion is
+one command on stock Playwright as on Flashwright, and one that waits is polled at `retryIntervals`: nothing was left to
+take there. A mouse move is answered at the browser's next frame, 16.7 ms, which bounds a hover whatever is sent.
 
 ### Tried and dropped
 
