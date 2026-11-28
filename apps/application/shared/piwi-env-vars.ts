@@ -460,7 +460,7 @@ export const PIWI_ENV_VARS = {
     since: '0.79.0',
     unlisted: true,
     notes:
-      "A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`.",
+      'A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`.',
   },
   PIWI_STORAGE_PATH: {
     description: 'Directory for local file storage (when PIWI_STORAGE_TYPE is "local").',
