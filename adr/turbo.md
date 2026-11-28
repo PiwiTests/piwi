@@ -151,6 +151,30 @@ cached loads the page fast enough to land in that window; a new context did not.
 process, the two Chromium renderers held 3.3 GB: with a reused context, each worker keeps one page, and so one
 renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken down.
 
+Measured again on 2026-11-28, once `keepStaticCache` had left `max` and main had moved to Playwright 1.65.1: the same
+shard, by then 258 tests, 3 interleaved rounds, with `fast` beside `max` to tell the hooks from the levers:
+
+| | stock | `fast` | `max` |
+|---|---:|---:|---:|
+| Wall time | 177 s | 160 s (−10%) | 259 s (+46%) |
+| CPU time, every process | 510 s | 464 s (−10%) | 456 s (−11%) |
+| Peak memory (PSS) | 3.8 GB | 5.2 GB (+36%) | 5.2 GB (+36%) |
+| Tests failing their first attempt, over 3 runs | 0 | 0 | 3 |
+
+In each of its three rounds `max` failed one test's first attempt, which waited out the test's 120 s timeout and passed
+on retry. Two further runs of `max` passed, in 149 s and 159 s; in the second, on the benchmark's harness, the test time
+summed across the workers was 295 s against 296 s for `fast`. On this suite the hooks add nothing measurable to `fast`.
+Navigation, its largest category (118 s of 329 s), moved with neither preset (116 s and 115 s), where the earlier `max`,
+with `keepStaticCache`, had taken it from 121 s to 65 s: most of the earlier gain was the kept cache's. The hooks do
+what they measure per call (through the suite's own fixtures, a click took 34 ms with `fast` and 8.4 ms with `max`, the
+wait for a still element gone), but the suite's time is its app's. The docs name `fast` as the preset to start from on
+such a suite.
+
+The failing test is always the same, at the same step: `dashboards.spec.ts` clicks a row's menu button and no menu item
+appears. It failed in 3 of 5 runs of the shard with `max` and in none of 6 with stock or `fast`; alone, repeated 24
+times, and with the spec files before it, it passed with `max`, and the hook behind it is not known. Playwright 1.65.1
+stays out of `TESTED_VERSIONS` until it is.
+
 ### Tried and dropped
 
 - **A new tab for each test in place of the reset of the old one**, as Flashwright's recycled context does: the reset

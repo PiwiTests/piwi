@@ -75,9 +75,14 @@ the form in every test, a trace of every test, the default worker count):
 | `reducedMotion` alone                                                          | −4%         | −46%                    | −76%      |
 | `signIn`, `blockRequests`, reduced motion, traces of failures and four workers | 80 s → 16 s | 84 s → 30 s             | −100%     |
 
-On one CI shard of Piwi's own dashboard suite, 244 tests run as its CI runs them (two workers, two retries), `max` with
-`keepStaticCache` took the wall time from 178 s to 137 s and the CPU time from 518 s to 359 s, and raised peak memory
-from 3.2 GB to 5.6 GB (see [context reuse](#context-reuse)).
+On one CI shard of Piwi's own dashboard suite, 258 tests run as its CI runs them (two workers, two retries), `fast` took
+the wall time from 177 s to 160 s and the CPU time from 510 s to 464 s, and raised peak memory from 3.8 GB to 5.2 GB
+(see [context reuse](#context-reuse)). The experimental hooks added nothing measurable there: a run with `max` took 159
+s. They pay on suites dense in short calls, like those above; on a suite whose time is the app's, start from `fast`.
+
+Navigation is the largest part of that suite's test time (118 s of 329 s, summed across the workers), and neither preset
+shortens it. `keepStaticCache` does: in an earlier run of the shard with `max` and `keepStaticCache` (244 tests),
+navigation went from 121 s to 65 s, and the wall time from 178 s to 137 s.
 
 What each experimental hook measured on its own, and how every figure was measured, are in the
 [decision record](https://github.com/PiwiTests/piwi/blob/main/adr/turbo.md).

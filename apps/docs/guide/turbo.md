@@ -80,7 +80,8 @@ the page it last acted on. Name `failureScreenshots: false` to keep that one.
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option you name beside the preset wins over it. On the package's reference suite, against a typical unoptimized setup,
 `safe` took 4% off a run's wall time and 7% off its CPU time, and `fast` 6% and 53%. On a CI shard of Piwi's own
-suite, `max` with `keepStaticCache` took 29% off the wall time and 32% off the CPU time, and raised peak memory by 79%.
+suite, `fast` took 10% off the wall time and the CPU time, and raised peak memory by 36%; `max` measured the same
+there. Its hooks pay on suites dense in short calls: on a suite whose time is the app's, start from `fast`.
 
 ## Sign-in and third-party requests
 
