@@ -24,7 +24,9 @@ const require = createRequire(import.meta.url);
 const appVersion = require(join(repoRoot, 'application/package.json')).version;
 
 const varNames = Object.keys(PIWI_ENV_VARS);
-const varsOfCategory = (category) => varNames.filter((name) => PIWI_ENV_VARS[name].category === category);
+/** The variables of a category the reference lists: every one but those marked `unlisted`. */
+const varsOfCategory = (category) =>
+  varNames.filter((name) => PIWI_ENV_VARS[name].category === category && !PIWI_ENV_VARS[name].unlisted);
 
 /** Categories rendered as their own section, in display order. */
 const sections = Object.entries(PIWI_ENV_CATEGORIES)

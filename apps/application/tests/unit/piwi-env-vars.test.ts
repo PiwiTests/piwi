@@ -307,6 +307,12 @@ describe('PIWI_ENV_VARS registry', () => {
     expect(meta.max).toBe(MAX_DATABASE_POOL_MAX);
   });
 
+  test('an unlisted variable points at no docs page, which would document it', () => {
+    for (const [name, meta] of Object.entries(PIWI_ENV_VARS) as [string, PiwiEnvVarMeta][]) {
+      if (meta.unlisted) expect(meta.docs, `${name} is unlisted`).toBeUndefined();
+    }
+  });
+
   test('relevantWhen/requiredWhen only reference registered vars, never themselves', () => {
     for (const [name, meta] of allEntries) {
       for (const condition of [meta.relevantWhen, meta.requiredWhen]) {

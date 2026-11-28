@@ -10,8 +10,9 @@ Test artifacts (HTML reports, trace files, screenshots, videos, attachments) are
 two backends. Runs, test cases and settings live in the [database](./database) instead. This page also covers how
 long runs are kept: [retention](#data-retention), [runs kept forever](#keeping-runs-forever) and manual cleanup.
 
-Every variable below is an ordinary environment variable; the
-[configuration generator](/reference/configuration/generator) writes the block for you.
+Every variable below is an ordinary environment variable: pass it to the container, put it in your
+`.env`, or set it in your host's console. The
+[configuration generator](/reference/configuration/generator) will write the block for you.
 
 ## Local storage (default)
 
@@ -82,7 +83,7 @@ PIWI_S3_SECRET_ACCESS_KEY=your-secret-key
 
 Set `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` on the RustFS server to match the credentials above — don't expose the default `rustfsadmin` account to a networked deployment.
 
-Path-style URLs are on whenever `PIWI_S3_ENDPOINT` is set, as RustFS and most self-hosted services require; `PIWI_S3_FORCE_PATH_STYLE=false` turns them off.
+Path-style URLs are enabled automatically when `PIWI_S3_ENDPOINT` is set (as required by RustFS and most self-hosted S3-compatible services). Set `PIWI_S3_FORCE_PATH_STYLE=false` to override this behavior.
 
 ### DigitalOcean Spaces
 
@@ -113,10 +114,6 @@ The **Settings › Storage** page (`/settings/storage`) provides administrators 
 - **Storage analysis** — total storage and file count, the projects that take the most, a breakdown by file kind, growth over time, and the on-disk size (local only), which also surfaces untracked files left on disk.
 - **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). [Kept runs](#keeping-runs-forever) are skipped, and so are each project's newest runs when `PIWI_RETENTION_MIN_RUNS` is set. A confirmation dialog is shown before any data is deleted, and the result says how many runs were skipped.
 
-With a quota set ([`PIWI_STORAGE_QUOTA_BYTES`](/reference/configuration#storage)), the total also counts the results of
-runs. At the quota, Piwi keeps storing results but refuses every file; past a ceiling 10% of the quota above the usage
-when it went over, it refuses new runs too, while the runs in progress finish.
-
 <figure>
   <img src="/screenshots/storage-analysis.png" alt="Settings, Storage: the total storage and its growth, storage over time, the space taken by each file kind, and the projects that take the most">
   <figcaption>Settings → Storage: how much is stored, how it grows, and where it goes.</figcaption>
@@ -145,6 +142,8 @@ A nightly sweep (03:17 server time) handles recurring cleanup:
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
 - **Unlinked traces** — deletes traces no execution has used for a day.
 
+**Settings › Storage** runs the same deletion by hand, for one-off bulk deletes.
+
 ### Keeping runs forever
 
 Some runs are worth more than the rest — a release build, the run that proved a fix, the last green run before a migration. A **kept** run is exempt from retention: neither the nightly sweep nor the manual cleanup deletes it, however old it gets. Its traces, reports and attachments stay with it.
@@ -163,13 +162,13 @@ There are three ways to keep a run:
 
 A kept run shows a lock next to its number in the runs table and a **Kept** mark in its header; its **Details** say who kept it, when and why. The runs table's **Kept runs only** box lists every kept run of the project, however far back. **Settings › Storage** shows how many runs are kept and how much storage their own files hold.
 
-A Project admin can **release** a run (**Release keep** in the same menus), which puts it back under retention. Scripts can keep and release runs through the API; see the [API docs](https://piwitests.dev/demo/settings/api).
+A Project admin can **release** a run (**Release keep** in the same menus), which puts it back under retention. A kept run cannot be deleted until it is released. Scripts can keep and release runs through the API; see the [API docs](https://piwitests.dev/demo/settings/api).
 
 ### Space reclamation
 
 Deleting runs removes rows and stored files, but giving the freed pages back to the filesystem depends on the backend:
 
-- **SQLite** — databases created by recent versions have `auto_vacuum=INCREMENTAL` enabled, so the cleanup endpoint reclaims space automatically. Databases created before that (where `PRAGMA auto_vacuum` reports `0`) need a one-off full rebuild: call the cleanup API with `{ "olderThanDays": ..., "vacuum": true }` to run a blocking `VACUUM` after the delete, slow on a large database.
+- **SQLite** — databases created by recent versions have `auto_vacuum=INCREMENTAL` enabled, so the cleanup endpoint reclaims space automatically. Databases created before that (where `PRAGMA auto_vacuum` reports `0`) need a one-off full rebuild: call the cleanup API with `{ "olderThanDays": ..., "vacuum": true }` to run a blocking `VACUUM` after the delete. Expect it to take a while on large databases.
 - **PostgreSQL** — freed space is reused by PostgreSQL's autovacuum; no manual action is needed.
 
 ## Storage architecture
