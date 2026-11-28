@@ -11,7 +11,10 @@
   const $ = (id) => document.getElementById(id);
   const snap = (v) => Math.round(v * dpr) / dpr;
 
-  /** A window's frame on the stage: its bar with its name, and the canvas its content is drawn on. */
+  /**
+   * A window's frame on the stage: its bar with its name, and the canvas its content is drawn on, or for the agent's
+   * panel the page the stage writes it in.
+   */
   function windowFor(id, name) {
     if (!windows.has(id)) {
       const element = document.createElement('div');
@@ -20,11 +23,38 @@
       bar.className = 'bar';
       bar.textContent = name;
       const canvas = document.createElement('canvas');
-      element.append(bar, canvas);
+      const panel = document.createElement('div');
+      panel.className = 'agent';
+      element.append(bar, canvas, panel);
       $('windows').append(element);
-      windows.set(id, { element, bar, canvas, context: canvas.getContext('2d') });
+      windows.set(id, { element, bar, canvas, panel, context: canvas.getContext('2d') });
     }
     return windows.get(id);
+  }
+
+  /** The agent's panel: what it was asked, then each tool call it made, in words, the running one marked. */
+  function drawAgent(panel, agent, scale) {
+    const text = JSON.stringify([agent.task?.text, agent.steps.map((s) => [s.say, s.tool, s.done])]);
+    if (panel.dataset.text !== text) {
+      panel.dataset.text = text;
+      const element = (tag, className, content = '') =>
+        Object.assign(document.createElement(tag), { className, textContent: content });
+      const asked = element('div', 'asked');
+      if (agent.task) asked.append(element('span', 'label', 'Asked'), element('p', 'task', agent.task.text));
+      const steps = element('ol', 'steps');
+      for (const step of agent.steps) {
+        const item = element('li', step.done ? 'done' : 'running');
+        item.append(element('span', 'mark', step.done ? '✓' : '●'), element('span', 'say', step.say));
+        item.append(element('code', 'tool', step.tool));
+        steps.append(item);
+      }
+      panel.replaceChildren(asked, steps);
+    }
+    panel.style.fontSize = `${44 * scale}px`;
+    panel.querySelector('.asked').style.opacity = String(agent.task?.opacity ?? 0);
+    [...panel.querySelectorAll('.steps li')].forEach((item, i) => {
+      item.style.opacity = String(agent.steps[i].opacity);
+    });
   }
 
   async function load(frame) {
@@ -38,7 +68,7 @@
     const visible = new Set();
     state.windows.forEach((w, z) => {
       visible.add(w.id);
-      const { element, bar, canvas, context } = windowFor(w.id, w.name);
+      const { element, bar, canvas, panel, context } = windowFor(w.id, w.name);
       const frame = {
         x: snap(w.frame.x),
         y: snap(w.frame.y),
@@ -57,6 +87,18 @@
       });
       const barHeight = snap(w.content.y - w.frame.y);
       Object.assign(bar.style, { height: `${barHeight}px`, fontSize: `${sizes.label * state.scale}px` });
+      if (w.agent) {
+        canvas.style.display = 'none';
+        Object.assign(panel.style, {
+          display: 'block',
+          top: `${barHeight}px`,
+          height: `${frame.height - barHeight}px`,
+        });
+        drawAgent(panel, w.agent, state.scale);
+        return;
+      }
+      panel.style.display = 'none';
+      canvas.style.display = 'block';
       const width = Math.round(w.content.width * dpr);
       const height = Math.round(w.content.height * dpr);
       if (canvas.width !== width || canvas.height !== height) {

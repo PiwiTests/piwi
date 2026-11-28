@@ -94,4 +94,4 @@ npm run showcase:format                                          # :check to ver
   `stage/`: the page each frame is drawn on; `tests/`: their `node --test` suites.
 - `lib/set.mjs`: the set and its layout; `lib/workspace.mjs`, `lib/instance.mjs`, `lib/editor.mjs`,
   `lib/browser.mjs`: the shop's repository, the instance and its "CI" runs, VS Code, the developer's and the test's
-  browsers; `lib/agent.mjs`: the coda's agent.
+  browsers; `lib/agent.mjs`: the last part's agent.

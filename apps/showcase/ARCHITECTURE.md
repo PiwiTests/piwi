@@ -52,7 +52,7 @@ cut, its `focus`, a `budget`, and, unless it is a card, a `run` and a `check`. A
 (`{ title, what }`) opens a part of the story, which the beats after it join until the next; the story's first beat
 opens one (`lintLines`). The five parts are the video's contents: **CI is red** (`red-run`), **Debug in VS Code**
 (`to-the-editor` to `paused`), **Fix the test** (`right-locator` to `green`), **Watch it run** (`watch-running` to
-`resumed`) and **Hand it to an agent** (`coda`). `play` runs the beats in order: it calls
+`resumed`) and **Hand it to an agent** (`new-test`, `agent`). `play` runs the beats in order: it calls
 `hooks.started`, raises the beat's first window, runs the beat, its check, then `hooks.ended`, all within the budget;
 check mode has no hooks, and a take's hold its lines there. A failure
 writes `results/failed-<beat>/` (`keepEvidence` in `showcase.mjs`: the screen from ImageMagick's `import`, the VS Code
@@ -81,7 +81,8 @@ from F1), `state` (what a beat leaves the next ones) and `skip(bug, what)`.
 window's content origin from `screenX`/`screenY`, times the scale; a position given to the click, else the box's
 middle, within the window), the text, the key or the palette's command. Its `pace` (a wait before each move, a delay
 between keys) is zero in check mode; a take's (`FILM_PACE`, 900 ms and 55 ms) gives the cut's pointer the time to
-travel, and scrolls the element into view before its box is read. An agent's tool calls and the push are notes.
+travel, and scrolls the element into view before its box is read. An agent's tool calls and the push are notes: the
+agent's carry what it was asked, or a call's tool and its words (`agent`), which the cut's agent panel shows.
 
 ## The beats
 
@@ -99,8 +100,9 @@ travel, and scrolls the element into view before its box is read. An agent's too
 | 9   | `watch-running`    | the Testing view closed; **Run the test at the cursor** on `places an order`, headless and slowed (`SLOW_MO` in the checkout's `.env` for the beat); once VS Code marks the line the test runs, **Piwi: Watch a worker's test**: the worker's panel beside the editor, 5 s of it, the run to its end, the panel closed | the running line names the worker and its call (`Worker 1 · …`, the decoration's text, `runningLines`); the panel's image showed at each look of the 5 s, 3 images or more, never one for longer than 3 s, no stop's controls (`watchedProblems`); the breakpoint's stop showed in the panel; the test passed on the instance                                                                                                                                                |
 | 10  | `back-on-the-team` | commit and push, the fix's CI run on three workers (one a test), its run page, **Watch all**, the tile of `places an order` in full, **Pause** in its lane panel                                                                                                                                                       | Watch all showed the page of two workers or more (`tileProblems`); the lane panel says the CI test is paused (`Paused`, `live-paused-by`) and the test's row too (`data-reason` `pause`), the test not ended                                                                                                                                                                                                                                                                 |
 | 11  | `resumed`          | **Resume** in the lane panel, the run to its end, the view closed once it said how the run ended                                                                                                                                                                                                                       | the lane panel showed images through the lane's test, never 15 s apart up to the run's end, named its calls under the image (two at least), showed their filmstrip, and stayed open until it said the run passed (`laneLogProblems`, `lib/watching.mjs`, from the watch recorded in its page as it changed, `recordWatch`); the CI run green, on `main`, at the pushed commit, and so on its page                                                                            |
-| 12  | `coda`             | a new test pasted, F9 on its last line, **Debug the test at the cursor** to it; the agent: `run_list`, `page_snapshot`, `page_act`, `code_write` twice, `run_control`                                                                                                                                                  | the agent's click and check stand above the test's last line; the test passed on the instance                                                                                                                                                                                                                                                                                                                                                                                |
-| 13  | `end`              | a card                                                                                                                                                                                                                                                                                                                 | its lines' lint                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 12  | `new-test`         | a new test pasted at the end of the spec's describe, a click on its last line, F9, **Debug the test at the cursor** to it                                                                                                                                                                                              | the new test's last line where it was pasted; the Runs window shows it stopped there                                                                                                                                                                                                                                                                                                                                                                                         |
+| 13  | `agent`            | **Copy the runs' MCP server configuration**; the agent, asked to finish the test: `run_list`, `page_snapshot`, `page_act`, `page_snapshot`, `code_write` twice, `run_control`; the file saved once the run ended                                                                                                       | the agent's click and check stand above the test's last line; the test passed on the instance                                                                                                                                                                                                                                                                                                                                                                                |
+| 14  | `end`              | a card                                                                                                                                                                                                                                                                                                                 | its lines' lint                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Known bugs
 
@@ -172,8 +174,8 @@ that fails stops the others, and the work folder goes once their encoders have e
   from its start to its end, each part's card before the first of its beats, and the end card, each card as long as
   its `seconds` or its lines, a part's as its line's reading (the first, which lists them all, longer: `PART_CARD`).
   A quiet stretch of a beat (no line read, no gesture, no window coming or going) longer than 3 s plays at 4×, but for
-  0.6 s at each end, with a `▶▶ ×4` badge (`FAST`, `pieces`). Output frame `i` (30 a second) shows the master's frame
-  nearest its time (`masterFrame`).
+  0.6 s at each end, with a `▶▶ ×4` badge (`FAST`, `pieces`). Output frame `i` (30 a second) shows the master's
+  frame nearest its time (`masterFrame`).
 - **The world.** Each window is drawn at its place on the screen, in a frame of the stage's own (a bar naming it, its
   corners rounded, a shadow): the right column moved off VS Code and the Runs window off the test's browser by a gap
   (`world`). VS Code keeps its own title bar: its command center drops Quick Open and the command palette over it. A beat shows the windows of its focus and
@@ -198,6 +200,10 @@ that fails stops the others, and the work folder goes once their encoders have e
   before it (the first lies under the title card) and out over its first beat, which it holds until then; the end card
   (the install lines and `piwitests.dev`); and the parts' rail across the top through the beats, each part done
   ticked, the one shown with its progress through its beats and the beat's title.
+- **The agent's panel** (`agentPanel`): a window the stage draws itself in the Runs window's place, named as scripted
+  for the video, up from the agent's first note: what it was asked, then each tool call it made in words, its tool's
+  name beside it, the last one running until the next starts or the agent is done. The agent's calls are not on the key
+  strip.
 
 The stage (`stage/`) is a page of 1920 × 1080 CSS pixels (at device scale 2 for 4K) that draws a state and nothing
 else: each window's content drawn on a canvas from the master's frame, cropped and scaled (`imageSmoothingQuality:

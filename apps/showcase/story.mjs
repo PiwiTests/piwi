@@ -31,8 +31,8 @@ const TERMS = "getByRole('checkbox', { name: 'I accept the terms' })";
 /** `text` as a regular expression's literal. */
 const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** The test the developer starts for the coda, its last line the place it stops at, which the agent finishes. */
-const NEW_TEST_TITLE = 'lists the order with the others';
+/** The test the developer starts in the last part, its last line the place it stops at, which the agent finishes. */
+const NEW_TEST_TITLE = 'opens the orders after checkout';
 const NEW_TEST_LAST = "await expect(page.getByRole('link', { name: 'Cart' })).toHaveText('Cart (0)');";
 const NEW_TEST = [
   `  test('${NEW_TEST_TITLE}', feature('Orders'), async ({ page, signedIn, productsPage, checkoutPage, shopper }) => {`,
@@ -698,20 +698,16 @@ export const STORY = [
   }),
 
   beat({
-    id: 'coda',
-    title: 'The coding agent',
+    id: 'new-test',
+    title: 'A new test',
     part: { title: 'Hand it to an agent', what: 'A coding agent finishes a test with Piwi’s run tools.' },
-    seconds: 18,
-    focus: ['vscode', 'test-browser', 'runs', 'vscode'],
-    budget: 240_000,
+    seconds: 10,
+    focus: ['vscode', 'test-browser', 'runs'],
+    budget: 180_000,
     lines: {
-      en: [
-        'A new test, its last check still to write:',
-        "the coding agent finishes it through Piwi's run tools,",
-        'and the editor writes its steps.',
-      ],
+      en: ['A new test, its last check still to write.', 'Debug it to the line where that check goes.'],
     },
-    async run({ editor, vscode, runs, gesture, palette, repo }) {
+    async run({ editor, vscode, runs, gesture, palette, repo, state }) {
       await editor.copy(NEW_TEST);
       // The new test goes at the end of the spec's describe, before its closing line, the file's last.
       await openFile(vscode, gesture, SPEC);
@@ -720,20 +716,50 @@ export const STORY = [
       await gesture.press('vscode', 'Home');
       await gesture.press('vscode', 'Control+V');
       await palette('File: Save All');
-      const last =
+      state.newTestLine =
         read(repo.shop, SPEC)
           .split('\n')
           .findIndex((line) => line.includes(NEW_TEST_LAST)) + 1;
-      await goToLine(vscode, gesture, last);
+      await goToLine(vscode, gesture, state.newTestLine);
       await gesture.press('vscode', 'F9');
       await palette(DEBUG_AT_CURSOR);
-      await runCard(runs).getByText(`${SPEC}:${last}`).waitFor({ timeout: 120_000 });
+      await runCard(runs).getByText(`${SPEC}:${state.newTestLine}`).waitFor({ timeout: 120_000 });
       // The editor reveals the stopped line, taking the focus, before anything else is typed there.
       await vscode
         .locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint · Expect' })
         .first()
         .waitFor({ timeout: 30_000 });
+    },
+    async check({ repo, runs, state }) {
+      const lines = read(repo.shop, SPEC).split('\n');
+      expect(
+        lines[state.newTestLine - 1]?.trim() === NEW_TEST_LAST,
+        `the new test's last line stands at ${state.newTestLine}: ${lines[state.newTestLine - 1]}`,
+      );
+      const card = runCard(runs);
+      expect(
+        (await card.getByText('Stopped at a breakpoint').count()) > 0 &&
+          (await card.getByText(`${SPEC}:${state.newTestLine}`).count()) > 0,
+        `the Runs window shows the new test stopped at ${SPEC}:${state.newTestLine}`,
+      );
+    },
+  }),
 
+  beat({
+    id: 'agent',
+    title: 'The agent finishes it',
+    seconds: 16,
+    focus: ['vscode', 'agent', 'test-browser'],
+    budget: 180_000,
+    lines: {
+      en: [
+        'Copy the run tools’ setup into your coding agent,',
+        'and ask it to finish the test.',
+        'It reads the stopped page, clicks Orders and writes both lines,',
+        'then resumes: the new test passes.',
+      ],
+    },
+    async run({ editor, vscode, runs, gesture, palette, state }) {
       // The command asks which agent's format: the first, VS Code's, as Claude Code reads it too. A few of its words
       // find it in the palette.
       await gesture.press('vscode', 'F1');
@@ -750,25 +776,36 @@ export const STORY = [
         const now = await editor.clipboard();
         return now !== copied && now.includes('piwi-runs') ? now : null;
       }, "the runs' MCP configuration on the clipboard");
-      const agent = new Agent(runsServer(configuration), (call) => gesture.note('an agent calls a run tool', { call }));
+
+      // What the agent is asked and each tool call it makes, in words, for the cut's agent panel.
+      const stoppedAt = `${SPEC.split('/').pop()}:${state.newTestLine}`;
+      const tell = (agent) => gesture.note('the agent', { agent });
+      tell({ task: `Finish the test stopped at ${stoppedAt}: open the orders, and check their page shows.` });
+      const agent = new Agent(runsServer(configuration), ({ name, say }) => tell({ tool: name, say }));
       await agent.connect();
-      const { piwi: list } = await agent.tool('run_list');
+      const { piwi: list } = await agent.tool('run_list', {}, `Finds the run stopped at ${stoppedAt}`);
       const stopped = list.runs
         .flatMap((r) => r.workers.map((w) => ({ run: r.run, worker: w })))
         .find((w) => w.worker.stop);
       const run = stopped.run;
       const stop = stopped.worker.stop.stop ?? stopped.worker.stop;
-      const { page: before } = await agent.tool('page_snapshot', { run });
+      const { page: before } = await agent.tool('page_snapshot', { run }, 'Reads the page the test stopped on');
       const orders = refOf(before, 'link', 'Orders');
-      await agent.tool('page_act', { run, stop, target: orders, action: 'click' });
-      const { page: after } = await agent.tool('page_snapshot', { run });
+      await agent.tool('page_act', { run, stop, target: orders, action: 'click' }, 'Clicks Orders on that page');
+      const { page: after } = await agent.tool('page_snapshot', { run }, 'Reads the page again: “Your orders”');
       const heading = refOf(after, 'heading', 'Your orders');
-      await agent.tool('code_write', { run, stop, kind: 'steps' });
-      await agent.tool('code_write', { run, stop, kind: 'assertion', target: heading, assertion: 'visible' });
+      await agent.tool('code_write', { run, stop, kind: 'steps' }, 'Writes the click into the test');
+      await agent.tool(
+        'code_write',
+        { run, stop, kind: 'assertion', target: heading, assertion: 'visible' },
+        'Writes the check: “Your orders” shows',
+      );
       await vscode.locator('.view-line', { hasText: 'Your orders' }).waitFor({ timeout: 30_000 });
-      await palette('File: Save All');
-      await agent.tool('run_control', { run, stop, action: 'resume' });
+      await agent.tool('run_control', { run, stop, action: 'resume' }, 'Resumes the run');
       await runEnded(runs);
+      tell({ done: true });
+      // The person keeps what the agent wrote once it is done.
+      await palette('File: Save All');
     },
     async check({ repo, instance }) {
       const lines = read(repo.shop, SPEC).split('\n');

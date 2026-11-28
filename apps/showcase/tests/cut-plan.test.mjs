@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { FAST, RAIL_BAND, TITLE_BAR, partCardSeconds, partsOf, pieces, planCut, world } from '../lib/cut-plan.mjs';
+import {
+  FAST,
+  RAIL_BAND,
+  TITLE_BAR,
+  agentPanel,
+  partCardSeconds,
+  partsOf,
+  pieces,
+  planCut,
+  world,
+} from '../lib/cut-plan.mjs';
 
 const WINDOWS = {
   vscode: { x: 0, y: 0, width: 2160, height: 1440 },
@@ -247,5 +257,64 @@ describe('the parts', () => {
       { number: 1, ...CI_IS_RED },
       { number: 2, ...FIX_IT },
     ]);
+  });
+});
+
+describe('the agent’s panel', () => {
+  const notes = [
+    { t: 1000, beat: 'agent', kind: 'note', agent: { task: 'Finish the test.' } },
+    { t: 2000, beat: 'agent', kind: 'note', agent: { tool: 'run_list', say: 'Finds the run' } },
+    { t: 3000, beat: 'agent', kind: 'note', agent: { tool: 'page_act', say: 'Clicks Orders' } },
+    { t: 5000, beat: 'agent', kind: 'note', agent: { done: true } },
+  ];
+  const at = (n) => n.t / 1000;
+
+  test('shows what the agent was asked and the calls it made by then, the last one running', () => {
+    assert.deepEqual(agentPanel(notes, 3500, 10, at), {
+      task: { text: 'Finish the test.', opacity: 1 },
+      steps: [
+        { tool: 'run_list', say: 'Finds the run', done: true, opacity: 1 },
+        { tool: 'page_act', say: 'Clicks Orders', done: false, opacity: 1 },
+      ],
+    });
+    assert.deepEqual(agentPanel(notes, 500, 0.5, at), { task: null, steps: [] });
+  });
+
+  test('marks every call done once the agent is, and fades each in from its time', () => {
+    assert.ok(agentPanel(notes, 6000, 10, at).steps.every((step) => step.done));
+    const fading = agentPanel(notes, 3000, 3.1, at).steps[1].opacity;
+    assert.ok(fading > 0 && fading < 1, `the new call fades in (${fading})`);
+  });
+
+  test('is a window at the Runs window’s place, up from the agent’s first note, its calls off the key strip', () => {
+    assert.deepEqual(world(WINDOWS).agent.frame, world(WINDOWS).runs.frame);
+    assert.equal(world(WINDOWS).agent.crop, null);
+    const log = take();
+    log.story[1] = { ...log.story[1], focus: ['vscode', 'agent'] };
+    log.raises = [{ t: 1500, up: 'tiles', window: 'vscode' }];
+    log.gestures = notes.map((n) => ({ ...n, beat: 'red-run', t: n.t + 4000, what: 'the agent' }));
+    const plan = planCut(log, { flashFrame: 24, frames: 10_000 });
+    const red = plan.segments.find((s) => s.id === 'red-run');
+    const late = plan.frames[Math.round((red.end - 0.1) * 30)];
+    const agent = late.windows.find((w) => w.id === 'agent');
+    assert.ok(agent, 'the panel is up at the beat’s end');
+    assert.equal(agent.name, 'Coding agent · scripted for this video');
+    assert.deepEqual(
+      agent.agent.steps.map((step) => [step.say, step.done]),
+      [
+        ['Finds the run', true],
+        ['Clicks Orders', true],
+      ],
+    );
+    const early = plan.frames[Math.round((red.start + 0.2) * 30)];
+    assert.equal(
+      early.windows.some((w) => w.id === 'agent'),
+      false,
+      'not before its first note',
+    );
+    assert.ok(
+      plan.frames.every((f) => !f.keys),
+      'no key strip for the agent’s calls',
+    );
   });
 });

@@ -16,6 +16,7 @@ export const WINDOW_NAMES = {
   vscode: 'VS Code',
   'test-browser': 'The test’s browser',
   runs: 'Piwi Picker · Runs',
+  agent: 'Coding agent · scripted for this video',
 };
 
 /** Fades, in seconds: a window coming or going, a card, a beat's title in the rail, the fast-forward badge. */
@@ -46,7 +47,7 @@ export const FAST = { rate: 4, afterMs: 3000, keepMs: 600 };
 const CUE_GAP_S = 0.1;
 
 /** The tiles, which show together; the dashboard's window covers them. */
-const TILES = ['vscode', 'test-browser', 'runs'];
+const TILES = ['vscode', 'test-browser', 'runs', 'agent'];
 
 /** The last of `events` (`{ t }`, in order) at or before `t`, or null. */
 function lastAt(events, t) {
@@ -59,7 +60,8 @@ function lastAt(events, t) {
  * The stage's world: each window's content as the master holds it (`crop`; VS Code's with its own title bar, as its
  * command center drops Quick Open and the command palette over it), and where the stage draws its frame and content
  * (`frame`, `content`, in master pixels): the right column moved off VS Code, and the Runs window off the test's
- * browser, by `GAP` and the frame's bar. A test's browser the take never reached takes its tile.
+ * browser, by `GAP` and the frame's bar. A test's browser the take never reached takes its tile. The agent's panel,
+ * which the stage draws itself (no `crop`), takes the Runs window's place.
  */
 export function world(windows) {
   const crop = { ...windows };
@@ -80,6 +82,7 @@ export function world(windows) {
     const frame = { x: content.x, y: content.y - TITLE_BAR, width: r.width, height: r.height + TITLE_BAR };
     placed[id] = { crop: r, content, frame, offset: offsets[id] };
   }
+  placed.agent = { ...placed.runs, crop: null };
   return placed;
 }
 
@@ -160,8 +163,31 @@ function beatWindows(story, gestures) {
   return [...new Set(ids)];
 }
 
-/** What the key strip shows for a gesture or a note, or null. */
+/**
+ * The agent's panel at the wall-clock `w`, in the cut's second `time`: what it was asked and each tool call it made by
+ * then (`notes`, the take's notes with an `agent`), each fading in from its note's time (`at`, the cut's seconds), the
+ * last one running until the next starts or the agent is done.
+ */
+export function agentPanel(notes, w, time, at) {
+  const shown = notes.filter((n) => n.t <= w);
+  const fade = (n) => Math.max(0, Math.min(1, (time - at(n)) / FADE.window));
+  const task = shown.find((n) => n.agent.task);
+  const steps = shown.filter((n) => n.agent.tool);
+  const done = shown.some((n) => n.agent.done);
+  return {
+    task: task ? { text: task.agent.task, opacity: fade(task) } : null,
+    steps: steps.map((n, i) => ({
+      tool: n.agent.tool,
+      say: n.agent.say ?? n.agent.tool,
+      done: done || i < steps.length - 1,
+      opacity: fade(n),
+    })),
+  };
+}
+
+/** What the key strip shows for a gesture or a note, or null: the agent's notes show in its panel. */
 function strip(g) {
+  if (g.agent) return null;
   if (g.kind === 'key') return { caps: keyCaps(g.key), label: null };
   if (g.kind === 'command') return { caps: ['F1'], label: g.title };
   if (g.kind === 'note' && g.call) {
@@ -184,7 +210,12 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const limits = { minWidth: width * dpr };
   const span = viewRect(fit(union(Object.values(placed).map((p) => p.frame)))).width;
   const raises = log.raises ?? [];
-  const presence = log.presence ?? [];
+  // The agent's panel comes up with its first note, as a window does.
+  const agentNotes = log.gestures.filter((g) => g.kind === 'note' && g.agent);
+  const presence = [
+    ...(log.presence ?? []),
+    ...agentNotes.slice(0, 1).map((n) => ({ t: n.t - 300, window: 'agent', open: true })),
+  ].sort((a, b) => a.t - b.t);
   const layerAt = (w) => lastAt(raises, w)?.up ?? 'dashboard';
   const openAt = (id, w) =>
     lastAt(
@@ -194,7 +225,7 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const showable = (id, w) =>
     id === 'dashboard'
       ? layerAt(w) === 'dashboard'
-      : layerAt(w) === 'tiles' && (id !== 'test-browser' || openAt(id, w));
+      : layerAt(w) === 'tiles' && (!['test-browser', 'agent'].includes(id) || openAt(id, w));
   const parts = partsOf(log.story);
   const partOf = new Map(parts.flatMap((part) => part.beats.map((id) => [id, part])));
   // The rail's band, which the camera leaves free above the windows it frames whole.
@@ -400,6 +431,12 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
       return same ? [] : [{ t: shot.t, beat: shot.beat, from: width / from.width, to: width / to.width }];
     });
 
+  // A note's time in the cut, in its beat.
+  const noteTime = (n) => {
+    const segment = beats.find((b) => b.id === n.beat);
+    return segment ? cutAt(segment, n.t) : 0;
+  };
+
   // Every output frame, in order: what the stage draws.
   const count = frameCount(duration);
   const opacity = {};
@@ -450,6 +487,7 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
           frame: out(p.frame),
           content: out(p.content),
           crop: p.crop,
+          ...(id === 'agent' && { agent: agentPanel(agentNotes, wall, time, noteTime) }),
         });
       }
     }

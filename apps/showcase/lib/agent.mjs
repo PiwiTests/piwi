@@ -1,6 +1,7 @@
-// The coding agent of the coda: a client of the runs' MCP server the editor serves (`piwi.runs`), configured as a
-// person configures their agent, from **Piwi: Copy the runs' MCP server configuration for agents**. Its moves are
-// written here, not chosen by a model: it plays the tool calls an agent makes to finish a test at its stop.
+// The coding agent of the story's last part: a client of the runs' MCP server the editor serves (`piwi.runs`),
+// configured as a person configures their agent, from **Piwi: Copy the runs' MCP server configuration for agents**.
+// Its moves are written in `story.mjs`, not chosen by a model: it plays the tool calls an agent makes to finish a test
+// at its stop, each with the words the cut's agent panel shows.
 
 /** The runs' MCP server's address and token, from the configuration the editor copies (`servers` or `mcpServers`). */
 export function runsServer(configuration) {
@@ -12,7 +13,7 @@ export function runsServer(configuration) {
 }
 
 export class Agent {
-  /** `told(call)`, when given, hears each tool call as it starts (`{ name, args }`). */
+  /** `told(call)`, when given, hears each tool call as it starts (`{ name, args, say }`). */
   constructor({ url, token }, told = null) {
     this.url = url;
     this.token = token;
@@ -53,11 +54,11 @@ export class Agent {
   }
 
   /**
-   * Calls a tool; resolves with Piwi's answer (the JSON block) and the page's text (the page-content blocks), as an
-   * agent reads them apart.
+   * Calls a tool, `say` telling what the call is for; resolves with Piwi's answer (the JSON block) and the page's text
+   * (the page-content blocks), as an agent reads them apart.
    */
-  async tool(name, args = {}) {
-    this.told?.({ name, args });
+  async tool(name, args = {}, say = null) {
+    this.told?.({ name, args, say });
     const answer = await this.post({
       jsonrpc: '2.0',
       id: ++this.id,
