@@ -21,8 +21,7 @@ A Member's rights inside a project come from the **project roles** granted to th
 
 ## Enabling authentication
 
-1. Set these variables wherever you configure the server (the container's environment, `.env`, or your host's
-   dashboard):
+1. Set these variables wherever you configure the server:
 
    ```bash
    PIWI_AUTH_ENABLED=true
@@ -30,7 +29,7 @@ A Member's rights inside a project come from the **project roles** granted to th
    PIWI_SECRET_KEY=your-secret-key-here    # encrypts stored secrets (AI keys, credentials)
    ```
 
-   Generate a strong random value for each secret (run it twice):
+   Generate a random value for each (run it twice):
 
    <<< @/snippets/secret.sh{bash}
 
@@ -41,7 +40,7 @@ A Member's rights inside a project come from the **project roles** granted to th
 
 While authentication is on and no administrator exists (even after members signed in through OAuth), the login page
 shows a **Create the first admin account** form instead of the sign-in form, which signs you in as the administrator.
-A script can make the same call:
+It also asks for an email address, for password resets once email is set up. A script can make the same call:
 
 ::: code-group
 
@@ -59,7 +58,8 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 
 The endpoint is rate-limited per client address. On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to
 a random value: the form asks for it, and the API call carries it as `"setupToken"`, so a stranger cannot become the
-administrator first. The Railway, Render and Coolify [one-click deploy templates](./one-click-deploy) generate it.
+administrator first. The Railway, Render and Coolify [one-click deploy templates](./one-click-deploy) generate it. A
+link to `/login#setup=<token>`, the token percent-encoded, fills it in, and the page removes it from the address.
 
 ## Logging in
 
@@ -74,7 +74,7 @@ Users can also sign in with Google or GitHub; there is no other provider, nor ge
 
 ### Configuring OAuth
 
-1. **Register an OAuth application** with each provider you want to use:
+1. **Register an OAuth application** with each provider:
 
    - **Google**: in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID with the Google callback URL below as an authorized redirect URI.
    - **GitHub**: under **Settings → Developer settings → OAuth Apps** on GitHub, create an OAuth app with the GitHub callback URL below.
@@ -95,7 +95,7 @@ Users can also sign in with Google or GitHub; there is no other provider, nor ge
 
 3. **Restart the server.** The login page shows a **Sign in with …** button for each provider whose `CLIENT_ID` and `CLIENT_SECRET` are both set.
 
-> **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL (e.g. `https://piwi.example.com`): the OAuth `redirect_uri` is built from it, else from the request's host, which a proxy may rewrite.
+> **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL: the OAuth `redirect_uri` is built from it, else from the request's host, which a proxy may rewrite.
 
 ### Restricting who can sign in (allowlists)
 
@@ -108,7 +108,7 @@ A rejected sign-in returns to the login page, saying why.
 
 ### Account linking
 
-A first provider sign-in links an existing account or creates one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
+A first provider sign-in links an existing account or creates one. Email addresses are compared ignoring case, and an address belongs to at most one account.
 
 - If a user with the same **verified** email exists (and isn't linked to a *different* provider), that account is linked. Linking needs proof on both sides: the provider asserts the email is verified, **and** the local account verified it too (a verification link, an accepted invite, or an earlier provider sign-in), so an address someone typed into their own profile cannot capture another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused, saying why. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
@@ -119,7 +119,7 @@ The new account stores the provider's email, unverified unless the provider veri
 
 Each later sign-in updates the name, avatar and email from the provider, keeping the email when the provider sends none or one another account uses.
 
-Piwi keeps no provider token: the access token serves the sign-in, then is discarded. The demo has no OAuth.
+Piwi keeps no provider token. The demo has no OAuth.
 
 ### Connecting / disconnecting a provider
 

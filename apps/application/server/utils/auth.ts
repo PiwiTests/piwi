@@ -409,6 +409,7 @@ export async function createUser(
   password: string,
   role: InstanceRole,
   name?: string,
+  email?: string,
 ): Promise<User> {
   const db = await getDatabase();
   const hashedPassword = await hashPassword(event, password);
@@ -420,6 +421,7 @@ export async function createUser(
       password: hashedPassword,
       role,
       name: name || null,
+      email: email || null,
     })
     .returning();
 
