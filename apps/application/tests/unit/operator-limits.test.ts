@@ -36,10 +36,13 @@ import { migrateToLatest, openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 
-const state = vi.hoisted(() => ({ db: null as unknown }));
+const state = vi.hoisted(() => ({ db: null as unknown, opened: null as Promise<void> | null }));
 vi.mock('../../server/database', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../server/database')>()),
-  getDatabase: async () => state.db,
+  getDatabase: async () => {
+    await state.opened;
+    return state.db;
+  },
 }));
 
 interface RouteEvent {
@@ -56,7 +59,7 @@ vi.stubGlobal('apiError', apiError);
 type Route = (event: unknown) => Promise<Record<string, any>>;
 const getLimits = (await import('../../server/api/operator/limits.get')).default as unknown as Route;
 const putLimits = (await import('../../server/api/operator/limits.put')).default as unknown as Route;
-const { OPERATOR_LIMITS_TTL_MS, loadOperatorLimits, resetOperatorLimits, writeOperatorLimits } =
+const { OPERATOR_LIMITS_TTL_MS, loadOperatorLimits, readOnlyNow, resetOperatorLimits, writeOperatorLimits } =
   await import('../../server/utils/operator-limits');
 const { OPERATOR_TOKEN_MIN_LENGTH } = await import('../../server/utils/operator');
 const { resetRateLimit } = await import('../../server/utils/rate-limit');
@@ -409,6 +412,24 @@ describe('GET and PUT /api/operator/limits', () => {
     const first = await putLimits(request(bearer, { retentionDays: 7 }));
     const again = await putLimits(request(bearer, { retentionDays: 7 }));
     expect(again.limits.retentionDays.pending.appliesAt).toBe(first.limits.retentionDays.pending.appliesAt);
+  });
+
+  test('read with the database they are given while a read waits for the database to open', async () => {
+    await db.insert(schema.appSettings).values({ key: 'operator_limits', value: { readOnly: true } });
+    let open = () => {};
+    state.opened = new Promise((resolve) => {
+      open = resolve;
+    });
+    try {
+      // A request's read waits for `getDatabase`, which waits for the startup that asks with its own database.
+      const waiting = loadOperatorLimits({ fresh: true });
+      await expect(readOnlyNow(db as never)).resolves.toBe(true);
+      open();
+      await expect(waiting).resolves.toEqual({ readOnly: true });
+    } finally {
+      open();
+      state.opened = null;
+    }
   });
 
   test('read the limits a second process wrote once the held ones are older than the TTL', async () => {

@@ -37,31 +37,37 @@ let warnedUnreadable = false;
 
 /**
  * The operator's limits: the held ones while they are fresh, else read from the database and held. `fresh` reads
- * them whatever their age. A read that fails keeps the held ones, said once in the log, and is tried again once the
- * TTL passes.
+ * them whatever their age. A caller that passes its database reads with it alone, never joining a read in flight,
+ * which may be waiting for `getDatabase` while that caller opens it. A read that fails keeps the held ones, said once
+ * in the log, and is tried again once the TTL passes.
  */
 export async function loadOperatorLimits(
   options: { db?: DrizzleDB; fresh?: boolean } = {},
 ): Promise<StoredOperatorLimits> {
   if (!options.fresh && readAt > 0 && Date.now() - readAt < OPERATOR_LIMITS_TTL_MS) return heldOperatorLimits();
-  reading ??= (async () => {
-    const writesBefore = writes;
-    try {
-      const db = options.db ?? (await getDatabase());
-      const stored = readStoredOperatorLimits(await getAppSetting<unknown>(db, LIMITS_KEY));
-      if (writes === writesBefore) holdOperatorLimits(stored);
-    } catch (error) {
-      if (!warnedUnreadable) {
-        warnedUnreadable = true;
-        console.error('[operator] The operator limits could not be read: the held ones apply.', error);
-      }
-    } finally {
-      readAt = Date.now();
-      reading = null;
-    }
-    return heldOperatorLimits();
-  })();
+  if (options.db) return readAndHold(options.db);
+  reading ??= readAndHold().finally(() => {
+    reading = null;
+  });
   return reading;
+}
+
+/** Reads the stored limits from `db`, else from `getDatabase`, and holds them unless this process wrote meanwhile. */
+async function readAndHold(db?: DrizzleDB): Promise<StoredOperatorLimits> {
+  const writesBefore = writes;
+  try {
+    const source = db ?? (await getDatabase());
+    const stored = readStoredOperatorLimits(await getAppSetting<unknown>(source, LIMITS_KEY));
+    if (writes === writesBefore) holdOperatorLimits(stored);
+  } catch (error) {
+    if (!warnedUnreadable) {
+      warnedUnreadable = true;
+      console.error('[operator] The operator limits could not be read: the held ones apply.', error);
+    }
+  } finally {
+    readAt = Date.now();
+  }
+  return heldOperatorLimits();
 }
 
 /** Holds limits this process just stored, ahead of any read that started before. */
