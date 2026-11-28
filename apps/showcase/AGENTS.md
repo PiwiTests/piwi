@@ -79,7 +79,8 @@ npm run showcase:format                                          # :check to ver
 ```
 
 - `--voice` needs a Python 3.10 to 3.13 with Kokoro: `pip install kokoro-onnx` in a virtual environment outside the
-  repository, its `python` in `SHOWCASE_PYTHON`; the model downloads once into `~/.cache/piwi-showcase/voices` (`SHOWCASE_VOICE_CACHE`).
+  repository, its `python` in `SHOWCASE_PYTHON`; the model downloads once into `~/.cache/piwi-showcase/voices`
+  (`SHOWCASE_VOICE_CACHE`).
 - VS Code comes from `apps/vscode/.vscode-test/` (the extension's suites download it there), else
   `SHOWCASE_VSCODE_CACHE`. A take needs ports 3077 (the instance), 4173 (the shop) and 9334 (the test's browser) free.
 - A virtual take and the cut need ffmpeg (x11grab, libx264, libvpx-vp9) and the stage's fonts, Inter and JetBrains

@@ -479,11 +479,11 @@ html.plate #stage {
 }
 
 #card-intro {
-  gap: 48px;
+  gap: 40px;
 }
 
 #card-intro img {
-  height: 96px;
+  height: 84px;
 }
 
 #card-intro .lines {
@@ -491,9 +491,9 @@ html.plate #stage {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 26px;
-  max-width: 1600px;
-  font-size: 44px;
+  gap: 20px;
+  max-width: 1400px;
+  font-size: 36px;
   font-weight: 600;
   line-height: 1.25;
   text-align: center;
@@ -506,7 +506,7 @@ html.plate #stage {
 
 #card-intro .tags {
   margin: 0;
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--teal);
