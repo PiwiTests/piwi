@@ -112,13 +112,15 @@ function parseArgs(argv) {
     only: null,
     target: 'role',
     sites: 'distinct',
+    steps: 'distinct',
     remote: null,
   };
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i]?.replace(/^--/, '');
     const value = argv[i + 1];
     if (flag === undefined || value === undefined) continue;
-    if (flag === 'json' || flag === 'only' || flag === 'target' || flag === 'sites') options[flag] = value;
+    if (flag === 'json' || flag === 'only' || flag === 'target' || flag === 'sites' || flag === 'steps')
+      options[flag] = value;
     else if (flag === 'remote') {
       options.remote = Number(value);
       if (!Number.isInteger(options.remote / 2) || options.remote < 0) {
@@ -193,6 +195,7 @@ async function runVariant(variant, options, outputFile, remote) {
     PIWI_BENCH_ASSERTIONS: String(options.assertions),
     PIWI_BENCH_TARGET: options.target,
     PIWI_BENCH_SITES: options.sites,
+    PIWI_BENCH_STEPS: options.steps,
     PLAYWRIGHT_JSON_OUTPUT_NAME: outputFile,
     // The reporter package itself is never loaded here — only the capture
     // fixtures are — but keep any ambient dashboard config from making the
@@ -263,7 +266,7 @@ async function main() {
     `\nPiwi capture benchmark — ${options.tests} tests × ` +
       `(${options.actions} actions + ${options.assertions} assertions) on a ${options.rows}-row page, ` +
       `targeting ${options.target === 'roleless' ? 'role-less spans' : 'buttons'}, ` +
-      `${options.sites} call sites`,
+      `${options.sites} call sites, ${options.steps === 'repeated' ? 'the same' : 'different'} targets in each test`,
   );
   if (options.remote !== null) {
     console.log(`Remote browser: a browser server behind a proxy adding ${options.remote} ms to each round trip`);

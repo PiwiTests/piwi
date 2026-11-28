@@ -1,7 +1,7 @@
 name: Publish npm packages
 
-# @piwitests/reporter, @piwitests/server and @piwitests/instrumentation-nitro, one job each, so one failing holds back
-# none of the others. release.yml calls it. On a release tag it publishes with provenance; anywhere else it builds the
+# @piwitests/reporter, @piwitests/server, @piwitests/turbo and @piwitests/instrumentation-nitro, one job each, so one
+# failing holds back none of the others. release.yml calls it. On a release tag it publishes with provenance; anywhere else it builds the
 # packages and runs `npm pack --dry-run`, without the token: npm publish checks the version against the registry once
 # it is logged in, and the version on a branch is the one already published.
 on:
@@ -155,4 +155,38 @@ jobs:
       - name: Pack
         if: env.TAG_BUILD != 'true'
         working-directory: integrations/nitro
+        run: npm pack --dry-run
+
+  turbo:
+    name: '@piwitests/turbo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
+    permissions:
+      contents: read
+      # npm publish --provenance
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          registry-url: https://registry.npmjs.org
+
+      - name: Build turbo
+        working-directory: packages/turbo
+        run: npm run turbo:build
+
+      - name: Publish to npm
+        if: env.TAG_BUILD == 'true'
+        working-directory: packages/turbo
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
+
+      - name: Pack
+        if: env.TAG_BUILD != 'true'
+        working-directory: packages/turbo
         run: npm pack --dry-run

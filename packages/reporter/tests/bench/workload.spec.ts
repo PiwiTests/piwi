@@ -57,6 +57,14 @@ const targetFor = (page: Page, row: number): Locator =>
 const SITES = process.env.PIWI_BENCH_SITES === 'shared' ? 'shared' : 'distinct';
 const site = (i: number, count: number): number => (SITES === 'shared' ? 0 : i % count);
 
+/**
+ * Whether the tests repeat one another's steps: `distinct` targets other rows in each test; `repeated` targets the same
+ * rows in every test, as tests that sign in or go through a page object the same way do.
+ */
+const STEPS = process.env.PIWI_BENCH_STEPS === 'repeated' ? 'repeated' : 'distinct';
+const row = (index: number, count: number, i: number): number =>
+  ((STEPS === 'repeated' ? 0 : index * count) + i) % ROWS;
+
 /** Action call sites, one per line — see `SITES`. */
 const clickTarget: Array<(target: Locator) => Promise<void>> = [
   async (target) => await target.click(),
@@ -111,11 +119,11 @@ for (let index = 0; index < TESTS; index++) {
     await page.getByLabel('Search').fill(`order ${index}`);
 
     for (let i = 0; i < ACTIONS; i++) {
-      await clickTarget[site(i, clickTarget.length)]!(targetFor(page, (index * ACTIONS + i) % ROWS));
+      await clickTarget[site(i, clickTarget.length)]!(targetFor(page, row(index, ACTIONS, i)));
     }
 
     for (let i = 0; i < ASSERTIONS; i++) {
-      await assertVisible[site(i, assertVisible.length)]!(targetFor(page, (index * ASSERTIONS + i) % ROWS));
+      await assertVisible[site(i, assertVisible.length)]!(targetFor(page, row(index, ASSERTIONS, i)));
     }
 
     await expect(page.getByRole('status')).toContainText('opened');

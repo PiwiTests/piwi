@@ -97,7 +97,7 @@ Semantics worth knowing:
   the page opened last, a `beforeAll`'s too (reporter 0.73.0 or later,
   [`captureResources`](/reference/reporter-options#what-gets-captured) on). A page of a browser the test launches
   itself never shows.
-- **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per test; a failed probe is retried on the line's next run.
+- **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per test; a failed probe is retried on the line's next run. Later tests of the same worker reuse that probe for the same line, locator and page (address without its query), so an element that changes from test to test there keeps the first one's until the next run.
 - **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
 
 ## Composing with your own fixtures

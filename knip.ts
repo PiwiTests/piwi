@@ -102,6 +102,25 @@ const config: KnipConfig = {
       entry: ['app/**/*.{ts,vue}'],
     },
     'packages/run-model': {},
+    'packages/turbo': {
+      // The reference workload's browser scripts, its benchmark config and its sign-in setup project, and the project
+      // the `piwi-turbo` tests run through the command.
+      entry: [
+        'bench/workload/app/public/*.js',
+        'bench/workload/bench.config.mjs',
+        'bench/workload/tests/*.setup.ts',
+        'tests/e2e/cli-project/*.check.{ts,mts}',
+      ],
+      playwright: {
+        config: [
+          'tests/e2e/playwright.config.ts',
+          'bench/workload/playwright.config.ts',
+          'tests/e2e/cli-project/playwright.config.ts',
+          'tests/e2e/cli-project/esm.config.mts',
+          'tests/e2e/cli-project/browser.config.ts',
+        ],
+      },
+    },
     'apps/runner': {
       // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
       entry: ['server/main.ts', 'app/**/*.{ts,vue}'],

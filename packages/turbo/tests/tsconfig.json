@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Tests import ../src, so the root spans the whole package.
+    "rootDir": "..",
+    // The e2e specs run code in the page.
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["**/*.ts"]
+}

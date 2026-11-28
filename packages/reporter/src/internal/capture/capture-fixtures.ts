@@ -1561,6 +1561,44 @@ async function readElementSnapshot(
 }
 
 /**
+ * Snapshots of the call sites this worker's earlier tests read, by call site, locator and page (origin and path): a
+ * test that runs the same step on the same page, a sign-in in `beforeEach` or a page object's method, takes the
+ * element an earlier test read there instead of reading it again. A call site whose element differs from test to
+ * test on one page keeps the first test's until the next run. Bounded, the oldest entry going first.
+ */
+const WORKER_SNAPSHOTS = new Map<string, LocatorSnapshot>();
+const WORKER_SNAPSHOTS_LIMIT = 2000;
+
+/** The key of a call site in `WORKER_SNAPSHOTS`, or null when the call site or the page's address is unknown. */
+export function workerSnapshotKey(
+  callerLocation: string | null,
+  used: LocatorSnapshot['used'],
+  page: Page,
+): string | null {
+  if (!callerLocation || typeof page.url !== 'function') return null;
+  try {
+    const { origin, pathname } = new URL(page.url());
+    return `${callerLocation}\0${used.raw}\0${origin}${pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+function keepWorkerSnapshot(key: string, snapshot: LocatorSnapshot): void {
+  WORKER_SNAPSHOTS.delete(key);
+  WORKER_SNAPSHOTS.set(key, snapshot);
+  if (WORKER_SNAPSHOTS.size > WORKER_SNAPSHOTS_LIMIT) {
+    const oldest = WORKER_SNAPSHOTS.keys().next().value;
+    if (oldest !== undefined) WORKER_SNAPSHOTS.delete(oldest);
+  }
+}
+
+/** Forgets the snapshots this worker kept. */
+export function forgetWorkerSnapshots(): void {
+  WORKER_SNAPSHOTS.clear();
+}
+
+/**
  * Fire-and-forget element capture for a locator that just proved it resolves —
  * a successful action or a passing presence assertion: replaces the
  * placeholder at `seq` with the element's snapshot. `early` is the read an
@@ -1578,11 +1616,15 @@ function startElementCapture(
   used: LocatorSnapshot['used'],
   early: Promise<LocatorSnapshot | null> | null = null,
   earlyFirst = false,
+  workerKey: string | null = null,
 ): void {
   const capture = (async () => {
     const readNow = () => readElementSnapshot(sink, page, target, callerLocation, used);
     const snapshot = earlyFirst ? ((await early) ?? (await readNow())) : ((await readNow()) ?? (await early));
-    if (snapshot) sink.capturedLocators[seq] = snapshot;
+    if (snapshot) {
+      sink.capturedLocators[seq] = snapshot;
+      if (workerKey) keepWorkerSnapshot(workerKey, snapshot);
+    }
     // Element detached or timeout — keep the placeholder, and release the
     // call site so a later action or assertion on the same line can retry.
     else if (callerLocation) sink.probedLocations.delete(callerLocation);
@@ -2976,6 +3018,8 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             // pushed on the first visit already marks the location as exercised
             // this run.
             const alreadyProbed = callerLocation !== null && sink.probedLocations.has(callerLocation);
+            const workerKey = alreadyProbed ? null : workerSnapshotKey(callerLocation, used, page);
+            const known = workerKey ? WORKER_SNAPSHOTS.get(workerKey) : undefined;
             let seq = -1;
             if (!alreadyProbed) {
               seq = sink.capturedLocators.length;
@@ -2993,7 +3037,8 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             const matches = (result as { matches?: boolean } | null | undefined)?.matches;
             if (matches === true && !alreadyProbed && !call?.picked) {
               if (callerLocation) sink.probedLocations.add(callerLocation);
-              startElementCapture(sink, page, target, seq, callerLocation, used);
+              if (known) sink.capturedLocators[seq] = { ...known, location: callerLocation, used };
+              else startElementCapture(sink, page, target, seq, callerLocation, used, null, false, workerKey);
             } else if (matches === false) {
               // A presence assertion that missed is a failed-locator signal —
               // feeds the failure-time picker and the fresh-locator suggestion,
@@ -3045,6 +3090,9 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // One probe per call site (see `probedLocations`). Push a placeholder
         // immediately on the first visit — DOM capture runs async below.
         const alreadyProbed = callerLocation !== null && sink.probedLocations.has(callerLocation);
+        // An element an earlier test of this worker read at this step and page stands for this one's.
+        const workerKey = alreadyProbed ? null : workerSnapshotKey(callerLocation, used, page);
+        const known = workerKey ? WORKER_SNAPSHOTS.get(workerKey) : undefined;
         let seq = -1;
         if (!alreadyProbed) {
           seq = sink.capturedLocators.length;
@@ -3058,7 +3106,7 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // An action that can take its element away also reads it as it starts,
         // beside the action, for when it is gone once the action succeeded.
         const early =
-          !alreadyProbed && EARLY_READ_ACTIONS.has(prop as string)
+          !alreadyProbed && !known && EARLY_READ_ACTIONS.has(prop as string)
             ? readElementSnapshot(sink, page, target, callerLocation, used)
             : null;
 
@@ -3088,7 +3136,8 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           // meanwhile, or when the action was quick.
           const earlyFirst =
             (PAGE_NAVIGATIONS.get(page) ?? 0) !== navigations || Date.now() - startedAt < EARLY_READ_TRUSTED_MS;
-          startElementCapture(sink, page, target, seq, callerLocation, used, early, earlyFirst);
+          if (known) sink.capturedLocators[seq] = { ...known, location: callerLocation, used };
+          else startElementCapture(sink, page, target, seq, callerLocation, used, early, earlyFirst, workerKey);
         }
 
         return result;

@@ -1,0 +1,948 @@
+import { captureFailure, test, expect } from '../../src/test';
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { checkVersion, screenshotMatchStore, state } from '../../src/hooks';
+import type { Page } from '@playwright/test';
+import { createRequire } from 'node:module';
+
+/** Playwright's own zip reader, which reads the trace files. */
+const { ZipFile } = createRequire(__filename)('playwright-core/lib/coreBundle').utils as {
+  ZipFile: new (path: string) => { read(entry: string): Promise<Buffer>; close(): void };
+};
+type TraceEvent = { type: string; callId: string; class: string; method: string; snapshot: TraceSnapshot };
+type TraceSnapshot = { callId: string; phase: string; html: unknown };
+
+const STATIC_PAGE = `
+  <style>body{margin:0;font:16px sans-serif}.grad{height:200px;background:linear-gradient(90deg,#123,#f80)}
+  .alpha{background:rgba(0,128,255,.35);padding:20px}</style>
+  <div class="grad"></div><p>Static content for screenshot comparison: 0123456789</p>
+  <div class="alpha">Translucent panel</div><canvas id="c" width="300" height="120"></canvas>
+  <script>const c=document.getElementById('c').getContext('2d');for(let i=0;i<300;i+=3){c.fillStyle='hsl('+i+',80%,50%)';c.fillRect(i,(i*7)%100,3,20)}</script>`;
+
+async function decodedPixelsEqual(page: Page, a: Buffer, b: Buffer) {
+  return page.evaluate(
+    async ([left, right]) => {
+      const load = async (base64: string) => {
+        const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+        const canvas = new OffscreenCanvas(image.width, image.height);
+        const context = canvas.getContext('2d')!;
+        context.drawImage(image, 0, 0);
+        return context.getImageData(0, 0, image.width, image.height).data;
+      };
+      const [x, y] = await Promise.all([load(left), load(right)]);
+      return x.length === y.length && x.every((value, index) => value === y[index]);
+    },
+    [a.toString('base64'), b.toString('base64')],
+  );
+}
+
+test.describe('fast screenshots', () => {
+  test.use({ fastScreenshots: true });
+
+  test('encode the same pixels for viewport, full-page, clipped and transparent captures', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    const captures = {
+      viewport: {},
+      fullPage: { fullPage: true },
+      clip: { clip: { x: 10, y: 50, width: 240, height: 180 } },
+      transparent: { omitBackground: true },
+    };
+    for (const [name, options] of Object.entries(captures)) {
+      state.fastScreenshots = false;
+      const before = state.counters.optimizedScreenshots;
+      const stock = await page.screenshot(options);
+      expect(state.counters.optimizedScreenshots, name).toBe(before);
+      state.fastScreenshots = true;
+      const fast = await page.screenshot(options);
+      expect(state.counters.optimizedScreenshots, name).toBe(before + 1);
+      expect(await decodedPixelsEqual(page, stock, fast), `${name}: decoded pixels`).toBe(true);
+    }
+  });
+
+  test('apply to visual assertions and to pages the test opens itself', async ({ page, context }, testInfo) => {
+    await page.setContent(STATIC_PAGE);
+    // The baseline comes from a stock capture; the assertion compares the fast one with it, pixel for pixel.
+    state.fastScreenshots = false;
+    await page.locator('.grad').screenshot({ path: testInfo.snapshotPath('gradient.png', { kind: 'screenshot' }) });
+    state.fastScreenshots = true;
+    const before = state.counters.optimizedScreenshots;
+    await expect(page.locator('.grad')).toHaveScreenshot('gradient.png', { maxDiffPixels: 0 });
+    expect(state.counters.optimizedScreenshots).toBeGreaterThan(before);
+    const other = await context.newPage();
+    await other.setContent('<p>second page</p>');
+    const count = state.counters.optimizedScreenshots;
+    await other.screenshot();
+    expect(state.counters.optimizedScreenshots).toBe(count + 1);
+  });
+
+  test('keep the stock encoding where an assertion writes its baseline', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    type ExpectScreenshot = (options: object) => Promise<{ actual?: Buffer }>;
+    const expectScreenshot = (page as unknown as { _expectScreenshot: ExpectScreenshot })._expectScreenshot.bind(page);
+    const options = { timeout: 5000, type: 'png', isNot: false, scale: 'css' };
+    // No baseline: what the assertion takes becomes the baseline.
+    const before = state.counters.optimizedScreenshots;
+    const { actual } = await expectScreenshot(options);
+    expect(state.counters.optimizedScreenshots).toBe(before);
+    // A baseline to compare with: the captures are encoded for speed.
+    await expectScreenshot({ ...options, expected: actual });
+    expect(state.counters.optimizedScreenshots).toBeGreaterThan(before);
+  });
+
+  test('leave JPEG screenshots alone', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    const before = state.counters.optimizedScreenshots;
+    await page.screenshot({ type: 'jpeg', quality: 80 });
+    expect(state.counters.optimizedScreenshots).toBe(before);
+  });
+});
+
+test.describe('screenshot matches', () => {
+  test.use({ screenshotMatches: true });
+
+  test.beforeEach(({}, testInfo) => {
+    screenshotMatchStore.reset(testInfo.outputPath('cache'));
+  });
+
+  /** Writes the page's or the element's stock capture as the baseline `name`. */
+  async function baseline(target: Page | ReturnType<Page['locator']>, name: string) {
+    const fast = state.fastScreenshots;
+    state.fastScreenshots = false;
+    await target.screenshot({ path: test.info().snapshotPath(name, { kind: 'screenshot' }) });
+    state.fastScreenshots = fast;
+  }
+
+  test("pass a capture with the baseline's bytes without comparing it, and fail a changed page", async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    await baseline(page, 'static.png');
+    const before = state.counters.screenshotMatches;
+    await expect(page).toHaveScreenshot('static.png');
+    expect(state.counters.screenshotMatches).toBe(before + 1);
+    await page.evaluate(() => document.body.insertAdjacentHTML('afterbegin', '<h1>A change</h1>'));
+    const error = await expect(page)
+      .toHaveScreenshot('static.png', { timeout: 1000 })
+      .catch((caught: Error) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(state.counters.screenshotMatches).toBe(before + 1);
+  });
+
+  test('do the same for an element', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    await baseline(page.locator('.alpha'), 'panel.png');
+    const before = state.counters.screenshotMatches;
+    await expect(page.locator('.alpha')).toHaveScreenshot('panel.png');
+    expect(state.counters.screenshotMatches).toBe(before + 1);
+  });
+
+  test.describe('with fast screenshots', () => {
+    test.use({ fastScreenshots: true });
+
+    test('remember a capture that matched, and pass it later, in this run and the next', async ({ page }) => {
+      await page.setContent(STATIC_PAGE);
+      await baseline(page, 'static.png');
+      const { screenshotMatches, rememberedScreenshots } = state.counters;
+      await expect(page).toHaveScreenshot('static.png');
+      expect(state.counters.rememberedScreenshots).toBe(rememberedScreenshots + 1);
+      expect(state.counters.screenshotMatches).toBe(screenshotMatches);
+      await expect(page).toHaveScreenshot('static.png');
+      expect(state.counters.screenshotMatches).toBe(screenshotMatches + 1);
+      // The next run reads what this one remembered.
+      screenshotMatchStore.reset(screenshotMatchStore.root);
+      await expect(page).toHaveScreenshot('static.png');
+      expect(state.counters.screenshotMatches).toBe(screenshotMatches + 2);
+    });
+
+    test('keep a remembered capture to the options it matched with', async ({ page }) => {
+      await page.setContent(STATIC_PAGE);
+      await baseline(page, 'static.png');
+      await expect(page).toHaveScreenshot('static.png');
+      const before = state.counters.screenshotMatches;
+      await expect(page).toHaveScreenshot('static.png', { threshold: 0 });
+      expect(state.counters.screenshotMatches).toBe(before);
+    });
+
+    test('remember nothing on disk in a folder other users can write to', async ({ page }, testInfo) => {
+      test.skip(process.platform === 'win32', 'folder modes are POSIX');
+      const shared = testInfo.outputPath('shared');
+      mkdirSync(shared, { recursive: true });
+      chmodSync(shared, 0o777);
+      screenshotMatchStore.reset(shared);
+      await page.setContent(STATIC_PAGE);
+      await baseline(page, 'static.png');
+      await expect(page).toHaveScreenshot('static.png');
+      expect(screenshotMatchStore.directory()).toBeNull();
+    });
+  });
+
+  test('leave negated assertions to Playwright', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    await baseline(page, 'static.png');
+    await page.evaluate(() => document.body.insertAdjacentHTML('afterbegin', '<h1>A change</h1>'));
+    const before = state.counters.screenshotMatches;
+    await expect(page).not.toHaveScreenshot('static.png');
+    expect(state.counters.screenshotMatches).toBe(before);
+  });
+});
+
+test.describe('retry intervals', () => {
+  test.use({ retryIntervals: [10, 20, 40, 50] });
+
+  async function timeToSee(page: Page, delay: number) {
+    await page.setContent(
+      `<script>setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p id="late">ready</p>'), ${delay})</script>`,
+    );
+    const started = Date.now();
+    await expect(page.locator('#late')).toBeVisible();
+    return Date.now() - started;
+  }
+
+  test('see a late element sooner than stock polling does', async ({ page }) => {
+    const intervals = state.retryIntervals;
+    state.retryIntervals = undefined;
+    const stock = await timeToSee(page, 600);
+    state.retryIntervals = intervals;
+    const before = state.counters.shortenedRetries;
+    const tuned = await timeToSee(page, 600);
+    expect(state.counters.shortenedRetries).toBeGreaterThan(before);
+    // Stock waits 500 ms between checks by then; 50 ms intervals see the element within about one interval.
+    expect(tuned).toBeLessThan(stock - 50);
+  });
+
+  test('keep timeouts, failures and navigation working', async ({ page }) => {
+    await page.setContent('<p>never changes</p>');
+    const error = await expect(page.locator('#missing'))
+      .toBeVisible({ timeout: 300 })
+      .catch((e: Error) => e);
+    expect(String(error)).toContain('toBeVisible');
+    await expect(page.locator('p')).toHaveText('never changes');
+    await page.route('https://hooks.test/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: route.request().url().endsWith('/next') ? '<h1>next</h1>' : '<a href="/next">go</a>',
+      }),
+    );
+    await page.goto('https://hooks.test/');
+    await page.getByRole('link').click();
+    await expect(page.getByRole('heading', { name: 'next' })).toBeVisible();
+  });
+
+  test('wait inside frames', async ({ page }) => {
+    await page.setContent(
+      `<iframe srcdoc="<script>setTimeout(()=>document.body.innerHTML='<b>inner</b>',300)</script>"></iframe>`,
+    );
+    await expect(page.frameLocator('iframe').locator('b')).toHaveText('inner');
+  });
+});
+
+test.describe('without options', () => {
+  test('nothing changes', async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    const screenshots = state.counters.optimizedScreenshots;
+    const retries = state.counters.shortenedRetries;
+    const races = state.counters.lightRaces;
+    await page.screenshot();
+    await page.evaluate(() => setTimeout(() => (document.body.innerHTML = '<i>later</i>'), 100));
+    await expect(page.locator('i')).toBeVisible();
+    expect(state.counters.optimizedScreenshots).toBe(screenshots);
+    expect(state.counters.shortenedRetries).toBe(retries);
+    expect(state.counters.lightRaces).toBe(races);
+    expect(state.fastScreenshots).toBe(false);
+    expect(state.retryIntervals).toBeUndefined();
+    expect(state.lightRaces).toBe(false);
+  });
+});
+
+test.describe('with a hook on and fastStackTraces off', () => {
+  test.use({ skipStabilityWait: true });
+
+  test("the server's stacks are left to Playwright", async ({ page }) => {
+    await page.setContent(STATIC_PAGE);
+    const { lightRaces, lightTimeouts, lightCommands } = state.counters;
+    expect([state.lightRaces, state.lightTimeouts, state.lightCommands]).toEqual([false, false, false]);
+    await page
+      .locator('#missing')
+      .click({ timeout: 300 })
+      .catch(() => {});
+    await page.evaluate(() => document.title);
+    expect(state.counters.lightRaces).toBe(lightRaces);
+    expect(state.counters.lightTimeouts).toBe(lightTimeouts);
+    expect(state.counters.lightCommands).toBe(lightCommands);
+  });
+});
+
+test.describe('blockRequests', () => {
+  test.use({ blockRequests: ['**/blocked/**', /tracker\.js$/] });
+
+  test('aborts the matching requests only', async ({ page }) => {
+    await page.route('**/allowed/**', (route) => route.fulfill({ body: 'ok' }));
+    await page.goto('data:text/html,<p>blocking</p>');
+    const results = await page.evaluate(async () => {
+      const attempt = (url: string) =>
+        fetch(url).then(
+          () => 'loaded',
+          () => 'blocked',
+        );
+      return Promise.all([
+        attempt('https://example.test/blocked/a'),
+        attempt('https://example.test/tracker.js'),
+        attempt('https://example.test/allowed/b'),
+      ]);
+    });
+    expect(results).toEqual(['blocked', 'blocked', 'loaded']);
+  });
+});
+
+test.describe('instantAnimations', () => {
+  test.use({ instantAnimations: true });
+
+  test('runs a long transition at once, on pages the test opens too', async ({ page, context }) => {
+    const animated = `<style>#box{width:10px;transition:width 20s linear}#box.wide{width:300px}</style><div id="box"></div>
+      <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('wide')))</script>`;
+    await page.setContent(animated);
+    await expect(page.locator('#box')).toHaveCSS('width', '300px', { timeout: 2000 });
+    const other = await context.newPage();
+    await other.waitForTimeout(100);
+    await other.setContent(animated);
+    await expect(other.locator('#box')).toHaveCSS('width', '300px', { timeout: 2000 });
+  });
+
+  test('keeps working after a navigation', async ({ page }) => {
+    await page.route('https://anim.test/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<style>#box{opacity:0;transition:opacity 20s linear}#box.on{opacity:1}</style><div id="box">x</div>
+          <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('on')))</script>`,
+      }),
+    );
+    await page.goto('https://anim.test/one');
+    await page.goto('https://anim.test/two');
+    await expect(page.locator('#box')).toHaveCSS('opacity', '1', { timeout: 2000 });
+  });
+});
+
+test.describe('failureScreenshots', () => {
+  function outcome(status: 'passed' | 'failed') {
+    const attached: string[] = [];
+    return {
+      attached,
+      info: {
+        status,
+        expectedStatus: 'passed' as const,
+        attach: async (name: string) => void attached.push(name),
+      },
+    };
+  }
+
+  test('captures nothing for a passing test', async ({ page, context }) => {
+    await page.setContent('<p>passes</p>');
+    const { attached, info } = outcome('passed');
+    expect(await captureFailure(context, info)).toBe(0);
+    expect(attached).toEqual([]);
+  });
+
+  test('captures every open page of a failed test', async ({ page, context }) => {
+    await page.setContent('<p>first</p>');
+    const second = await context.newPage();
+    await second.setContent('<p>second</p>');
+    const closed = await context.newPage();
+    await closed.close();
+    const { attached, info } = outcome('failed');
+    expect(await captureFailure(context, info)).toBe(2);
+    expect(attached).toEqual(['screenshot', 'screenshot']);
+  });
+
+  test('captures a context the test opened, with the configured options', async ({ page, context, browser }) => {
+    await page.setContent('<div style="height: 3000px">tall</div>');
+    const other = await browser.newContext();
+    await (await other.newPage()).setContent('<p>another context</p>');
+    const shots: Buffer[] = [];
+    const info = {
+      status: 'failed' as const,
+      expectedStatus: 'passed' as const,
+      attach: async (_name: string, { body }: { body?: string | Buffer }) => void shots.push(body as Buffer),
+    };
+    expect(await captureFailure(context, info, { fullPage: true })).toBe(2);
+    await other.close();
+    // A PNG's height sits at bytes 20 to 23: the full page is taller than the viewport.
+    expect(shots[0].readUInt32BE(20)).toBeGreaterThan(page.viewportSize()!.height);
+  });
+});
+
+test.describe('fail fast', () => {
+  test.use({ failFast: true });
+
+  async function failureTime(run: () => Promise<unknown>) {
+    const started = Date.now();
+    const error = await run().then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    return { error, elapsed: Date.now() - started };
+  }
+
+  test('ends an assertion the idle page can no longer satisfy', async ({ page }) => {
+    await page.setContent('<p>static</p>');
+    const before = state.counters.failedFast;
+    const { error, elapsed } = await failureTime(() => expect(page.locator('#missing')).toBeVisible({ timeout: 5000 }));
+    expect(error, 'the assertion fails').toBeTruthy();
+    expect(elapsed).toBeLessThan(2000);
+    expect(state.counters.failedFast).toBe(before + 1);
+  });
+
+  async function serve(page: Page, html: string) {
+    await page.route('https://idle.test/**', (route) => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.goto('https://idle.test/');
+  }
+
+  test('waits for WebCrypto', async ({ page }) => {
+    await serve(
+      page,
+      `<p id="out"></p><script>(async () => {
+        const algorithm = { name: 'RSA-PSS', modulusLength: 4096, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' };
+        for (let i = 0; i < 3; i++) await crypto.subtle.generateKey(algorithm, true, ['sign', 'verify']);
+        out.textContent = 'done';
+      })()</script>`,
+    );
+    await expect(page.locator('#out')).toHaveText('done', { timeout: 30000 });
+  });
+
+  test('waits for IndexedDB', async ({ page }) => {
+    await serve(
+      page,
+      `<p id="out"></p><script>
+        const open = indexedDB.open('idle', 1);
+        open.onupgradeneeded = () => open.result.createObjectStore('rows');
+        open.onsuccess = () => {
+          const transaction = open.result.transaction('rows', 'readwrite');
+          for (let i = 0; i < 20000; i++) transaction.objectStore('rows').put({ i, text: 'x'.repeat(200) }, i);
+          transaction.oncomplete = () => (out.textContent = 'stored');
+        };
+      </script>`,
+    );
+    await expect(page.locator('#out')).toHaveText('stored', { timeout: 30000 });
+  });
+
+  test('waits for a message a popup is about to post', async ({ page, context }) => {
+    await context.route('https://idle.test/popup', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<script>setTimeout(() => opener.postMessage('hello', '*'), 1500)</script>`,
+      }),
+    );
+    await serve(
+      page,
+      `<p id="out"></p><script>addEventListener('message', (event) => (out.textContent = event.data))</script>`,
+    );
+    await page.evaluate(() => void window.open('/popup'));
+    await expect(page.locator('#out')).toHaveText('hello', { timeout: 5000 });
+  });
+
+  test('waits for a timer that is due before the timeout', async ({ page }) => {
+    await page.setContent(
+      `<script>setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p id="late">late</p>'), 1200)</script>`,
+    );
+    await expect(page.locator('#late')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('waits for a request in flight', async ({ page }) => {
+    await page.route('https://idle.test/data', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await route.fulfill({ body: 'loaded' });
+    });
+    await page.route('https://idle.test/', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<p id="out"></p><script>fetch('/data').then((r) => r.text()).then((t) => (out.textContent = t))</script>`,
+      }),
+    );
+    await page.goto('https://idle.test/');
+    await expect(page.locator('#out')).toHaveText('loaded', { timeout: 5000 });
+  });
+
+  test('waits for a running animation to end', async ({ page }) => {
+    await page.setContent(`<style>#box{opacity:0;transition:opacity 1s linear}#box.on{opacity:1}</style><div id="box">x</div>
+      <script>requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('on')))</script>`);
+    await expect(page.locator('#box')).toHaveCSS('opacity', '1', { timeout: 5000 });
+  });
+
+  test('keeps waiting the whole timeout while an interval runs', async ({ page }) => {
+    await page.setContent('<script>setInterval(() => {}, 300)</script><p>ticking</p>');
+    const { error, elapsed } = await failureTime(() => expect(page.locator('#missing')).toBeVisible({ timeout: 1500 }));
+    expect(error).toBeTruthy();
+    expect(elapsed).toBeGreaterThanOrEqual(1400);
+  });
+
+  test('passes an assertion that already holds, and a negated one', async ({ page }) => {
+    await page.setContent('<p>here</p>');
+    await expect(page.locator('p')).toHaveText('here');
+    await expect(page.locator('#missing')).not.toBeVisible();
+  });
+});
+
+test.describe('skip stability wait', () => {
+  test.use({ skipStabilityWait: true });
+
+  const BUTTON = `<button id="b" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">go</button>`;
+
+  test('clicks without waiting for the element to keep still, sooner than stock', async ({ page }) => {
+    await page.setContent(BUTTON);
+    const time = async (clicks: number) => {
+      const started = Date.now();
+      for (let i = 0; i < clicks; i++) await page.locator('#b').click();
+      return Date.now() - started;
+    };
+    state.skipStabilityWait = false;
+    const stock = await time(20);
+    state.skipStabilityWait = true;
+    const before = state.counters.skippedStabilityWaits;
+    const skipped = await time(20);
+    expect(state.counters.skippedStabilityWaits).toBe(before + 20);
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '40');
+    expect(skipped).toBeLessThan(stock);
+  });
+
+  test('keeps the hit-target check: an overlay still blocks the click', async ({ page }) => {
+    await page.setContent(`${BUTTON}<div style="position:fixed;inset:0;background:transparent"></div>`);
+    const error = await page
+      .locator('#b')
+      .click({ timeout: 800 })
+      .catch((e: Error) => e);
+    expect(String(error)).toContain('intercepts pointer events');
+  });
+
+  test('keeps the enabled check: a disabled button is waited for', async ({ page }) => {
+    await page.setContent(
+      `<button id="b" disabled>go</button><script>setTimeout(() => (b.disabled = false), 300)</script>`,
+    );
+    await page.locator('#b').click();
+  });
+
+  test('lands a click on an element that has stopped moving', async ({ page }) => {
+    await page.setContent(`<style>#b{position:relative;left:0;transition:left .3s}#b.moved{left:200px}</style>${BUTTON}
+      <script>requestAnimationFrame(() => b.classList.add('moved'))</script>`);
+    await page.waitForTimeout(400);
+    await page.locator('#b').click();
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '1');
+  });
+});
+
+test.describe('fast actions', () => {
+  test.use({ fastActions: true });
+
+  const FORM = `<input placeholder="name"><input type="checkbox" id="c">
+    <button id="b" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">go</button>`;
+
+  /** The commands the tab's session sends to the browser while `run` runs. */
+  async function commandsDuring(page: Page, run: () => Promise<unknown>): Promise<string[]> {
+    const connection = (page as unknown as { _connection: { toImpl: (object: unknown) => unknown } })._connection;
+    const impl = connection.toImpl(page) as { delegate: { _mainFrameSession: { _client: { send: unknown } } } };
+    const session = impl.delegate._mainFrameSession._client as { send: (...args: unknown[]) => unknown };
+    const send = session.send;
+    const sent: string[] = [];
+    // The commands an action does not wait for, a handle's release among them: those of the actions before `run`
+    // are sent before the count starts, and its own before the count ends.
+    const settled = () => page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    await settled();
+    session.send = function (...args: unknown[]) {
+      sent.push(String(args[0]));
+      return send.apply(this, args);
+    };
+    try {
+      await run();
+      await settled();
+    } finally {
+      session.send = send;
+    }
+    return sent;
+  }
+
+  const actions = {
+    fill: (page: Page) => page.getByPlaceholder('name').fill('typed'),
+    click: (page: Page) => page.locator('#b').click(),
+    check: (page: Page) => page.locator('#c').check(),
+    hover: (page: Page) => page.locator('#b').hover(),
+  };
+
+  test('sends fewer commands for the same fill, click, check and hover', async ({ page, browserName }) => {
+    await page.setContent(FORM);
+    // The handle classes are reached from the first lookup and the first element.
+    for (const action of Object.values(actions)) await action(page);
+    await page.locator('#c').uncheck();
+    for (const [name, action] of Object.entries(actions)) {
+      if (name === 'check') await page.locator('#c').uncheck();
+      state.fastActions = false;
+      const stock = (await commandsDuring(page, () => action(page))).length;
+      if (name === 'check') await page.locator('#c').uncheck();
+      state.fastActions = true;
+      const { fastLookups, earlyPoints, repeatedLookupReads } = state.counters;
+      const fast = (await commandsDuring(page, () => action(page))).length;
+      expect(state.counters.fastLookups, name).toBe(fastLookups + 1);
+      expect(state.counters.repeatedLookupReads, name).toBe(repeatedLookupReads);
+      const pointer = name !== 'fill' && browserName === 'chromium';
+      expect(state.counters.earlyPoints, name).toBe(earlyPoints + (pointer ? 1 : 0));
+      // Two commands in place of the lookup's four, its result's release included, and no preview of the element.
+      expect(fast, name).toBe(stock - 3);
+    }
+    await expect(page.getByPlaceholder('name')).toHaveValue('typed');
+    await expect(page.locator('#c')).toBeChecked();
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '3');
+  });
+
+  test('fails a click that cannot land with the log stock Playwright gives', async ({ page }) => {
+    await page.setContent(`${FORM}<div id="over" style="position:fixed;inset:0"></div>`);
+    await page.getByPlaceholder('name').fill('warm', { force: true });
+    const logOf = async () => {
+      const error = await page
+        .locator('#b')
+        .click({ timeout: 600 })
+        .catch((caught: Error) => caught);
+      // Up to the first retry: how many follow depends on the time each took.
+      return String(error).split('- retrying click action')[0];
+    };
+    state.fastActions = false;
+    const stock = await logOf();
+    state.fastActions = true;
+    const before = state.counters.fastLookups;
+    const fast = await logOf();
+    expect(state.counters.fastLookups).toBeGreaterThan(before);
+    expect(fast).toContain('locator resolved to <button id="b"');
+    expect(fast).toContain('intercepts pointer events');
+    expect(fast).toBe(stock);
+  });
+
+  test('refuses a locator that matches two elements as stock Playwright does', async ({ page }) => {
+    await page.setContent('<button>one</button><button>two</button><input placeholder="name">');
+    await page.getByPlaceholder('name').fill('warm');
+    const violation = () =>
+      page
+        .locator('button')
+        .click({ timeout: 600 })
+        .catch((caught: Error) => String(caught));
+    state.fastActions = false;
+    const stock = await violation();
+    state.fastActions = true;
+    expect(await violation()).toBe(stock);
+    expect(stock).toContain('strict mode violation');
+  });
+
+  test('waits for an element that is not there yet', async ({ page }) => {
+    await page.setContent(`<input placeholder="name"><script>
+      setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<button id="late" onclick="this.dataset.n = 1">late</button>'), 300);
+    </script>`);
+    await page.getByPlaceholder('name').fill('warm');
+    await page.locator('#late').click();
+    await expect(page.locator('#late')).toHaveAttribute('data-n', '1');
+  });
+
+  test('clicks an element it had to scroll to, in the page and in a frame', async ({ page, browserName }) => {
+    const tall = `<div style="height:3000px"></div>
+      <button id="far" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">far</button>
+      <div style="height:3000px"></div>`;
+    await page.setContent(`<input placeholder="name">${tall}<iframe style="width:300px;height:200px"></iframe>`);
+    await page.locator('iframe').evaluate((frame: HTMLIFrameElement, html) => (frame.srcdoc = html), tall);
+    await page.getByPlaceholder('name').fill('warm');
+    const before = state.counters.earlyPoints;
+    await page.locator('#far').click();
+    await expect(page.locator('#far')).toHaveAttribute('data-n', '1');
+    const inFrame = page.frameLocator('iframe').locator('#far');
+    await inFrame.click();
+    await expect(inFrame).toHaveAttribute('data-n', '1');
+    await page.locator('#far').click({ position: { x: 2, y: 2 } });
+    await expect(page.locator('#far')).toHaveAttribute('data-n', '2');
+    if (browserName === 'chromium') expect(state.counters.earlyPoints).toBe(before + 2);
+    // In a frame, a first scroll comes before the checks of the element's states: the point follows the last one.
+    state.fastActions = false;
+    const stock = await commandsDuring(page, () => inFrame.click());
+    state.fastActions = true;
+    const fast = await commandsDuring(page, () => inFrame.click());
+    const points = (commands: string[]) => commands.filter((command) => command === 'DOM.getContentQuads').length;
+    if (browserName === 'chromium') expect(state.counters.earlyPoints).toBe(before + 3);
+    expect(points(fast)).toBe(points(stock));
+    expect(fast.length).toBeLessThanOrEqual(stock.length - 3);
+    await expect(inFrame).toHaveAttribute('data-n', '3');
+  });
+
+  test("gives a file chooser's element the preview stock Playwright gives", async ({ page }) => {
+    await page.setContent(`${FORM}<input type="file" id="f">`);
+    await page.locator('#b').click();
+    const before = state.counters.deferredPreviews;
+    await page.locator('#b').click();
+    expect(state.counters.deferredPreviews).toBeGreaterThan(before);
+    const previews: string[] = [];
+    for (const fastActions of [true, false]) {
+      state.fastActions = fastActions;
+      try {
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('#f').click()]);
+        previews.push(String(chooser.element()));
+      } finally {
+        state.fastActions = true;
+      }
+    }
+    expect(previews[0]).toBe('JSHandle@<input id="f" type="file"/>');
+    expect(previews[1]).toBe(previews[0]);
+    const handle = await page.locator('#b').elementHandle();
+    await expect.poll(() => String(handle)).toContain('JSHandle@<button id="b"');
+  });
+
+  test('hooks the lookup once when the first lookups overlap', async ({ page }) => {
+    await page.setContent(FORM);
+    for (const action of Object.values(actions)) await action(page);
+    const fill = async () => (await commandsDuring(page, () => actions.fill(page))).length;
+    const hooked = await fill();
+    state.handleHooked = false;
+    await Promise.all([actions.fill(page), actions.click(page)]);
+    expect(state.handleHooked).toBe(true);
+    expect(await fill()).toBe(hooked);
+  });
+
+  test('ends an action with the reason when a hook does not fit', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.locator('#b').click();
+    let reason: Error | undefined;
+    try {
+      checkVersion('0.0.0');
+    } catch (error) {
+      reason = error as Error;
+    }
+    state.elementHooked = false;
+    state.elementHookFailure = reason;
+    try {
+      const started = Date.now();
+      const error = await page
+        .locator('#b')
+        .click({ timeout: 5000 })
+        .catch((caught: Error) => caught);
+      expect(String(error)).toContain(reason!.message);
+      expect(Date.now() - started).toBeLessThan(4000);
+    } finally {
+      state.elementHooked = true;
+      state.elementHookFailure = undefined;
+    }
+    await page.locator('#b').click();
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '2');
+  });
+});
+
+type ServerPage = {
+  mainFrame(): { _contextData: Map<string, { context: { _injectedScriptPromise?: Promise<unknown> } }> };
+};
+
+/** The utility world's execution context of the tab's current document, in Playwright's server. */
+function utilityContext(page: Page) {
+  const connection = (page as unknown as { _connection: { toImpl: (object: unknown) => ServerPage } })._connection;
+  return connection.toImpl(page).mainFrame()._contextData.get('utility')!.context;
+}
+
+test.describe('early injection', () => {
+  test.use({ earlyInjection: true });
+
+  test("creates a new document's injected script before its first call", async ({ page }) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('data:text/html,<input placeholder="name"><iframe src="data:text/html,<p>inner</p>"></iframe>');
+    // The tab's document, not the frame inside it.
+    expect(state.counters.earlyInjections).toBe(before + 1);
+    expect(utilityContext(page)._injectedScriptPromise).toBeDefined();
+    await page.getByPlaceholder('name').fill('typed');
+    await expect(page.getByPlaceholder('name')).toHaveValue('typed');
+  });
+
+  test('sees a selector engine registered after the navigation', async ({ page, playwright }, testInfo) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('data:text/html,<div>hello</div>');
+    expect(state.counters.earlyInjections).toBe(before + 1);
+    const name = `turbo_early_${testInfo.repeatEachIndex}_${testInfo.retry}`;
+    await playwright.selectors.register(
+      name,
+      () => ({
+        query: (root: Element, selector: string) => root.querySelector(selector),
+        queryAll: (root: Element, selector: string) => [...root.querySelectorAll(selector)],
+      }),
+      { contentScript: true },
+    );
+    await expect(page.locator(`${name}=div`)).toHaveText('hello');
+  });
+
+  test('leaves about:blank alone', async ({ page }) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('about:blank');
+    expect(state.counters.earlyInjections).toBe(before);
+  });
+});
+
+test.describe('without early injection', () => {
+  test('creates the injected script at the first call', async ({ page }) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('data:text/html,<input placeholder="name">');
+    expect(utilityContext(page)._injectedScriptPromise).toBeUndefined();
+    expect(state.counters.earlyInjections).toBe(before);
+  });
+});
+
+test.describe('fast traces', () => {
+  test.use({ fastTraces: true });
+
+  let server: Server;
+  let url: string;
+  test.beforeAll(async () => {
+    server = createServer((request, response) => {
+      if (request.url === '/app.js') {
+        response.writeHead(200, { 'content-type': 'text/javascript' });
+        response.end('window.loaded = true;');
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<script src="/app.js"></script><p>traced</p>');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+  });
+  test.afterAll(() => server.close());
+
+  test('a trace requests no script body, and response.body() still reads it', async ({ context, page }, testInfo) => {
+    await context.tracing.start({ snapshots: true });
+    const before = state.counters.skippedScriptBodies;
+    const [script] = await Promise.all([page.waitForResponse('**/app.js'), page.goto(url)]);
+    expect(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded)).toBe(true);
+    expect(await script.text()).toBe('window.loaded = true;');
+    await context.tracing.stop({ path: testInfo.outputPath('trace.zip') });
+    expect(state.counters.skippedScriptBodies).toBe(before + 1);
+  });
+
+  test('a HAR recording keeps the bodies of scripts', async ({ browser, context }, testInfo) => {
+    // The test's own context is what turns the hooks on for the test.
+    void context;
+    const har = testInfo.outputPath('scripts.har');
+    const recorded = await browser.newContext({ recordHar: { path: har, content: 'embed' } });
+    const before = state.counters.skippedScriptBodies;
+    await (await recorded.newPage()).goto(url);
+    await recorded.close();
+    const entries = (JSON.parse(readFileSync(har, 'utf8')) as HarFile).log.entries;
+    const script = entries.find((entry) => entry.request.url.endsWith('/app.js'));
+    expect(script?.response.content.text).toBe('window.loaded = true;');
+    expect(state.counters.skippedScriptBodies).toBe(before);
+  });
+
+  test('takes the DOM snapshots of a trace in flight, and records the ones stock does', async ({
+    browser,
+    context,
+  }, testInfo) => {
+    // The test's own context is what turns the hooks on for the test.
+    void context;
+    const record = async (deferred: boolean) => {
+      state.fastTraces = deferred;
+      const traced = await browser.newContext();
+      const page = await traced.newPage();
+      const path = testInfo.outputPath(`${deferred ? 'deferred' : 'stock'}.zip`);
+      await traced.tracing.start({ snapshots: true });
+      await page.goto(url);
+      await page.setContent(
+        '<input><p id="n">0</p><button onclick="n.textContent = +n.textContent + 1; window.slowSnapshot = n.textContent === \'6\'">add</button>',
+      );
+      await page.evaluate(slowSnapshots);
+      await page.locator('input').fill('typed');
+      await page.locator('button').click();
+      await page.waitForLoadState();
+      await expect(page.locator('#n')).toHaveText('1');
+      await page.evaluate(() => (document.querySelector('#n')!.textContent = '5'));
+      await page.keyboard.press('Tab');
+      // The snapshot after this click is slow, and a navigation follows it.
+      await page.locator('button').click();
+      await page.goto(url);
+      await expect(page.locator('p')).toHaveText('traced');
+      // So is the one after this call, which the trace stops right after.
+      await page.evaluate(slowSnapshots);
+      await page.evaluate(() => ((window as unknown as SlowWindow).slowSnapshot = true));
+      await traced.tracing.stop({ path });
+      await traced.close();
+      return traceSnapshots(path);
+    };
+    const before = state.counters.deferredSnapshots;
+    const stock = await record(false);
+    expect(state.counters.deferredSnapshots).toBe(before);
+    const deferred = await record(true);
+    expect(state.counters.deferredSnapshots).toBeGreaterThan(before);
+    state.fastTraces = true;
+    const names = stock.snapshots.map(([name]) => name);
+    expect(names).toContain('Frame.click #9 after');
+    expect(names).toContain('Frame.evaluateExpression #13 after');
+    expect(stock.calls.filter((call) => call.startsWith('after')).length).toBe(14);
+    expect(deferred.calls).toEqual(stock.calls);
+    expect(deferred.snapshots).toEqual(stock.snapshots);
+  });
+
+  test('a page busy past the wait for a snapshot holds the calls after it once', async ({ browser, context }) => {
+    void context;
+    const traced = await browser.newContext();
+    const busy = await traced.newPage();
+    await busy.goto(url);
+    await traced.tracing.start({ snapshots: true });
+    // The page is busy for 5 s from its next task, which comes before the snapshot after this call.
+    await busy.evaluate(() => {
+      setTimeout(() => {
+        for (const end = Date.now() + 5_000; Date.now() < end;);
+      }, 0);
+    });
+    const started = Date.now();
+    const other = await traced.newPage();
+    await other.goto(url.replace('127.0.0.1', 'localhost'));
+    for (let i = 0; i < 3; i++) await other.keyboard.press('Tab');
+    await other.screenshot();
+    expect(Date.now() - started).toBeLessThan(4_500);
+    await traced.tracing.stop();
+    await traced.close();
+  });
+});
+
+type SlowWindow = Window & { slowSnapshot?: boolean } & Record<
+    string,
+    { captureSnapshot(...args: unknown[]): unknown }
+  >;
+
+/** Makes the DOM snapshot Playwright's trace takes next in this page take 300 ms, once `slowSnapshot` is set. */
+function slowSnapshots() {
+  const page = window as unknown as SlowWindow;
+  const name = Object.getOwnPropertyNames(window).find((key) => key.startsWith('__playwright_snapshot_streamer_'))!;
+  const streamer = page[name];
+  const capture = streamer.captureSnapshot.bind(streamer);
+  streamer.captureSnapshot = (...args: unknown[]) => {
+    if (page.slowSnapshot) {
+      page.slowSnapshot = false;
+      for (const end = Date.now() + 300; Date.now() < end;);
+    }
+    return capture(...args);
+  };
+}
+
+/**
+ * A trace's calls as they start and end, and its DOM snapshots in the order they were written, named by call (numbered
+ * in order) and phase, with call ids numbered the same way.
+ */
+async function traceSnapshots(path: string): Promise<{ calls: string[]; snapshots: Array<[string, string]> }> {
+  const zip = new ZipFile(path);
+  const events = (await zip.read('trace.trace'))
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as TraceEvent);
+  zip.close();
+  const calls = new Map<string, string>();
+  for (const event of events)
+    if (event.type === 'before') calls.set(event.callId, `${event.class}.${event.method} #${calls.size}`);
+  const numbered = (text: string) => text.replace(/[\w-]+@\d+/g, (callId) => calls.get(callId) ?? callId);
+  return {
+    calls: events
+      .filter((event) => event.type === 'before' || event.type === 'after')
+      .map((event) => `${event.type} ${numbered(event.callId)}`),
+    snapshots: events
+      .filter((event) => event.type === 'frame-snapshot')
+      .map(({ snapshot }): [string, string] => [
+        `${numbered(snapshot.callId)} ${snapshot.phase}`,
+        numbered(JSON.stringify(snapshot.html)),
+      ]),
+  };
+}
+
+type HarFile = {
+  log: { entries: Array<{ request: { url: string }; response: { content: { text?: string } } }> };
+};

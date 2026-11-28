@@ -48,13 +48,15 @@ node tests/bench/run.mjs --only baseline,resources --remote 10   # a remote brow
 | `--actions` / `--assertions` | 10 / 10 | captured operations per test |
 | `--target` | `role` | `role` (buttons) or `roleless` (plain spans) |
 | `--sites` | `distinct` | `distinct` (one line per operation) or `shared` (one line, run repeatedly) |
+| `--steps` | `distinct` | `distinct` (each test targets other rows) or `repeated` (every test targets the same rows, as tests that share a sign-in or a page object do) |
 | `--only` | all | comma-separated variant keys |
 | `--remote` | — | run against a browser server through a proxy adding this many ms (even) to each round trip; `0` is the proxy alone |
 | `--json` | — | write the aggregated rows to a file |
 
 ### Three things worth knowing before reading the output
 
-**Call-site shape sets the range.** The fixtures probe a target once per source location per test, so a suite that
+**Call-site shape sets the range.** The fixtures probe a target once per source location per test, and a later test
+of the worker that runs the same line with the same locator on the same page reuses that read, so a suite that
 spells every step out on its own line pays for every operation, while a loop or a repeatedly-called page-object method
 pays once. `--sites distinct` and `--sites shared` bound that range; neither alone is a fair summary of "the" overhead.
 
@@ -107,6 +109,11 @@ End-to-end, 12 tests × (10 actions + 10 assertions) on a 200-row page, median p
 |---|---|---|---|---|
 | `distinct` | 798 ms | — | — | **+29.4%** (11.7 ms/op) |
 | `shared` | 803 ms | −0.7% | +0.6% | **+14.0%** (5.6 ms/op) |
+
+With `--steps repeated`, every test running the same steps on the same rows, locator healing added 177 ms per test
+when each test probed its own call sites and 4 ms once a later test reused the first one's reads (two rounds each,
+alternating the two builds, Playwright 1.64.1); with the default `--steps distinct`, where only the two form fills and
+the closing assertion repeat across tests, 202 ms and 140 ms.
 
 Everything except locator healing sits within run-to-run noise. Locator healing dominates, and its cost scales with
 page weight: on the same workload the locator layer runs roughly 2× cheaper at 50 rows and 2–3× dearer at 800.

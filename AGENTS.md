@@ -40,6 +40,8 @@ A linked directory has a guide: read it before editing there.
 - [`packages/run-model/`](packages/run-model/AGENTS.md): `@piwitests/run-model`, the run model Piwi Picker's Runs
   window and the desktop app's tray share
 - `packages/server/`: `@piwitests/server`, the published npm run option (`npx @piwitests/server`)
+- [`packages/turbo/`](packages/turbo/AGENTS.md): `@piwitests/turbo`, faster Playwright suites without a fork, and the
+  benchmark that measures it
 - `integrations/`: instrumentation adapters: `nitro/` (npm), `aspnetcore/` and `serilog/` (NuGet, .NET tests, `.slnx`)
 - `examples/sample-app/`: one web app and its Playwright suite, served by each supported backend
 - `shared/`: base lint/format configs and the catalog checks
@@ -96,10 +98,10 @@ they take long, and CI runs them.
 
 ### Licensing (MUST follow)
 
-`packages/reporter`, `packages/core`, `packages/picker-dom`, `integrations/` and `examples/` are MIT; everything else
-is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other way: app, server,
-desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new package or
-integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
+`packages/reporter`, `packages/core`, `packages/picker-dom`, `packages/turbo`, `integrations/` and `examples/` are MIT;
+everything else is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other
+way: app, server, desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new
+package or integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
 
 ### Comments
 
