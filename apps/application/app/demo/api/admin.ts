@@ -7,6 +7,7 @@
 import { getDemoDb } from '../db.client';
 import { getAdminStats } from '#shared/handlers/admin';
 import { getStorageAnalysis } from '#shared/handlers/admin-storage';
+import { instanceLimitsOf } from '#shared/operator-limits';
 import { getRunsInProgress, type InstanceActivity } from '#shared/handlers/admin-activity';
 
 /** GET /api/admin/stats */
@@ -29,6 +30,8 @@ export async function apiGetStorageAnalysis() {
     databaseLocation: 'In-browser database (demo)',
     storageLocation: 'In-browser storage (demo)',
     quota: null,
+    // The demo has no operator and no environment: every limit is its default.
+    limits: instanceLimitsOf({}, {}, new Date()),
   };
 }
 

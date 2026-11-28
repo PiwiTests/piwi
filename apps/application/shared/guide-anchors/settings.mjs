@@ -563,6 +563,17 @@ export const SETTINGS_ANCHORS = [
     sample: { route: '/settings/storage' },
   },
   {
+    id: 'storage-limits',
+    kind: 'field',
+    pages: ['/settings/storage'],
+    describes:
+      'The Limits card: the storage quota, the largest upload and results document and the days of runs kept, each by its variable or the operator.',
+    requires: { permission: 'storage:manage' },
+    help: 'settings.limits',
+    doc: 'operate/production-checklist#optional-and-worth-a-thought',
+    sample: { route: '/settings/storage' },
+  },
+  {
     id: 'storage-usage',
     kind: 'field',
     pages: ['/settings/storage'],

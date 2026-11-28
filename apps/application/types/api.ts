@@ -6,6 +6,7 @@ import type { Serialize, Simplify } from 'nitropack/types';
 
 import type { IngestHealth } from '#shared/ingest-health';
 import type { StorageQuotaState } from '#shared/storage-quota';
+import type { InstanceLimits } from '#shared/operator-limits';
 import type {
   FilterDetails,
   KeepSource,
@@ -1654,6 +1655,8 @@ export interface StorageAnalysis extends StorageAnalysisData {
    * and what it refuses; null without one.
    */
   quota: StorageQuotaState | null;
+  /** The limits that apply, each with where it comes from: its variable, the operator or the default. */
+  limits: InstanceLimits;
 }
 
 // ============================================================================

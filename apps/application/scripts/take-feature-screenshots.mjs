@@ -4807,6 +4807,47 @@ const SCENES = [
     },
   },
   {
+    name: 'operator-limits',
+    description:
+      'Settings → Storage once the operator set limits and made the instance read-only: the banner, then the Limits card with a lowered retention waiting its 14 days',
+    route: '/settings/storage',
+    viewport: { width: 1280, height: 900 },
+    // Set through the operator route and cleared in the same `try` that sets them: every other scene's server would be
+    // read-only.
+    async run({ page, base, shoot, settle }) {
+      try {
+        const set = await page.request.put(`${base}/api/operator/limits`, {
+          headers: OPERATOR_HEADERS,
+          data: {
+            storageQuotaBytes: 20 * 1024 ** 3,
+            importMaxBytes: 200 * 1024 ** 2,
+            retentionDays: 30,
+            readOnly: true,
+          },
+        });
+        if (!set.ok())
+          throw new Error(`setting the limits answered ${set.status()}: is PIWI_OPERATOR_TOKEN the scene's?`);
+        await page.reload();
+        await page.locator('[data-shot="read-only"]').waitFor({ timeout: 15000 });
+        await page.locator('[data-shot="retention-pending"]').waitFor({ timeout: 15000 });
+        await settle();
+        await shoot('banner');
+        await shoot('card', { of: '[data-shot="instance-limits"]', pad: 8 });
+      } finally {
+        await page.request.put(`${base}/api/operator/limits`, {
+          headers: OPERATOR_HEADERS,
+          data: {
+            storageQuotaBytes: null,
+            importMaxBytes: null,
+            submitMaxBytes: null,
+            retentionDays: null,
+            readOnly: null,
+          },
+        });
+      }
+    },
+  },
+  {
     name: 'localization-settings',
     description:
       'Settings → Localization: the per-viewer format override and the admin instance default, with a live preview',

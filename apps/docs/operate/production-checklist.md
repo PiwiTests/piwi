@@ -53,7 +53,7 @@ address at all.
 ## Optional, and worth a thought
 
 - **Public share links** are off by default (`PIWI_SHARE_LINKS_ENABLED`). If you turn them on, know that anyone with the link sees the execution, cluster, report snapshot or dashboard it opens without signing in — see [Share links](/features/share-links).
-- **Retention.** Automatic pruning is opt-in; set `PIWI_RETENTION_DAYS` to cap how much run history you keep. See [Storage → Data retention](./storage#data-retention).
+- **Retention.** Automatic pruning is opt-in; set `PIWI_RETENTION_DAYS` to cap how much run history you keep. See [Storage → Data retention](./storage#data-retention). A deployment script holding the operator token can set it through the operator API instead, with the storage quota and the largest upload and results document; a retention it lowers applies 14 days later, and **Settings → Storage → Limits** shows each value and who set it.
 - **Observability.** Both are off by default. `PIWI_METRICS_ENABLED=true` serves the metric catalog to a Prometheus you run, and naming an OpenTelemetry collector sends it a trace of each request with the SQL statements it ran, their parameters as placeholders. See [Metrics and rollup export](./metrics) and [Tracing with OpenTelemetry](./tracing).
 
 ## Related

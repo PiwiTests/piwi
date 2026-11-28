@@ -112,6 +112,14 @@ async function handleCleanup() {
       </div>
     </SectionCard>
 
+    <!-- Limits: the quota, the upload sizes and the retention, by their variables or the operator -->
+    <InstanceLimitsCard
+      v-if="storage?.limits"
+      :limits="storage.limits"
+      data-shot="instance-limits"
+      data-tour="storage-limits"
+    />
+
     <!-- Storage analysis: usage, growth over time, by file kind, by project -->
     <StorageAnalysisDashboard :analysis="storage ?? null" :pending="loading" :error="error" @refresh="refresh()" />
 

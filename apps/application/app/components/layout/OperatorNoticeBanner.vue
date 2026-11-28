@@ -5,10 +5,11 @@ import { storageRefusalSentence } from '#shared/storage-quota';
 import type { ApiResponse } from '~~/types/api';
 
 /**
- * What whoever runs the instance tells its users, above every page of the default layout: the notice they set
- * (`PUT /api/operator/notice`) and, to administrators, the administrators they invited that nobody took yet (in one
- * alert of three addresses at most) and the storage once it reaches 80% or 95% of its quota, the quota itself (files
- * are refused) or its ceiling (new runs are refused). Read in the server render, so it costs the browser no request.
+ * What whoever runs the instance tells its users, above every page of the default layout: that it is read-only
+ * (`PUT /api/operator/limits`), which cannot be dismissed, the notice they set (`PUT /api/operator/notice`) and, to
+ * administrators, the administrators they invited that nobody took yet (in one alert of three addresses at most) and
+ * the storage once it reaches 80% or 95% of its quota, the quota itself (files are refused) or its ceiling (new runs
+ * are refused). Read in the server render, so it costs the browser no request.
  * Dismissing the notice hides it in this browser until another replaces it, and the 80% storage warning for a week; a
  * critical notice, an invitation and every other storage warning stay.
  * Their height is `--operator-notice-height` on the page, which the page panel's minimum height leaves out, so no page
@@ -57,7 +58,10 @@ const storagePercent = computed(() =>
 );
 /** What the quota refuses at the level reached: files at the quota, new runs past its ceiling. */
 const storageRefusal = computed(() => (storage.value ? storageRefusalSentence(storage.value.level) : null));
-const shown = computed(() => notice.value !== null || invitations.value.length > 0 || storage.value !== null);
+const readOnly = computed(() => data.value?.readOnly === true);
+const shown = computed(
+  () => readOnly.value || notice.value !== null || invitations.value.length > 0 || storage.value !== null,
+);
 
 /** The host a link leads to, shown beside its label so a label cannot pass for another site. */
 const linkHost = computed(() => {
@@ -99,6 +103,24 @@ function dismiss() {
 
 <template>
   <div v-if="shown" ref="banner" class="shrink-0" data-shot="operator-banners">
+    <UAlert
+      v-if="readOnly"
+      data-shot="read-only"
+      role="status"
+      aria-label="This instance is read-only"
+      color="warning"
+      icon="i-lucide-lock"
+      variant="subtle"
+      :ui="{ description: 'opacity-100' }"
+      class="rounded-none"
+    >
+      <template #description>
+        <span class="text-sm text-highlighted leading-relaxed">
+          This instance is read-only for now: you can browse and export, and changes and uploads are refused until it is
+          writable again.
+        </span>
+      </template>
+    </UAlert>
     <UAlert
       v-if="notice"
       data-shot="operator-notice"
