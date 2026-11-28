@@ -445,36 +445,20 @@ export async function cut({
         ffmpeg([...mix, '-map', '[voice]', ...flags('-c:a aac -b:a 160k'), voice]),
       );
     }
-    // The full cut: the voice track the input after the frames (and the plates), else no sound.
-    const sound = (index, codec) => (voice ? ['-map', `${index}:a`, ...flags(codec)] : ['-an']);
-    const voiceInput = voice ? ['-i', voice] : [];
-    const aac = '-c:a aac -b:a 160k';
-    const opus = '-c:a libopus -b:a 96k';
+    // The full cut: voiced, its captions in the subtitle files, when the take was voiced; with the subtitles burned in,
+    // silent.
+    const sound = (codec) => (voice ? ['-i', voice, '-map', '0:v', '-map', '1:a', ...flags(codec)] : ['-an']);
     await timed(`${NAME}.mp4`, () =>
-      ffmpeg([...input, ...voiceInput, '-map', '0:v', ...sound(1, aac), ...h264, path.join(out, `${NAME}.mp4`)]),
+      ffmpeg([...input, ...sound('-c:a aac -b:a 160k'), ...h264, path.join(out, `${NAME}.mp4`)]),
     );
     await timed(`${NAME}-subtitled.mp4`, () =>
-      ffmpeg([
-        ...withPlates,
-        ...voiceInput,
-        ...subtitled,
-        ...sound(2, aac),
-        ...h264,
-        path.join(out, `${NAME}-subtitled.mp4`),
-      ]),
+      ffmpeg([...withPlates, ...subtitled, '-an', ...h264, path.join(out, `${NAME}-subtitled.mp4`)]),
     );
     await timed(`${NAME}.webm`, () =>
-      ffmpeg([...input, ...voiceInput, '-map', '0:v', ...sound(1, opus), ...vp9, path.join(out, `${NAME}.webm`)]),
+      ffmpeg([...input, ...sound('-c:a libopus -b:a 96k'), ...vp9, path.join(out, `${NAME}.webm`)]),
     );
     await timed(`${NAME}-subtitled.webm`, () =>
-      ffmpeg([
-        ...withPlates,
-        ...voiceInput,
-        ...subtitled,
-        ...sound(2, opus),
-        ...vp9,
-        path.join(out, `${NAME}-subtitled.webm`),
-      ]),
+      ffmpeg([...withPlates, ...subtitled, '-an', ...vp9, path.join(out, `${NAME}-subtitled.webm`)]),
     );
 
     // The teaser: its beats' parts, crossfaded, subtitled, muted, within its size.

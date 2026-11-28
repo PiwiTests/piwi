@@ -5,7 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { captureProblem, startCapture, syncFlash } from './capture.mjs';
-import { contentOnScreen, screenMetrics, waitFor } from './script.mjs';
+import { contentOnScreen, lineGroups, lineText, screenMetrics, waitFor } from './script.mjs';
 import { TEST_BROWSER_CDP, listening } from './set.mjs';
 import { MASTER_FPS, scheduleLines } from './timeline.mjs';
 
@@ -14,6 +14,9 @@ export const FILM_PACE = { before: 900, key: 55 };
 
 /** How long a beat's end stays on screen after its last action, before the next beat starts (ms). */
 export const SETTLE_MS = 1200;
+
+/** How long a take holds the action after the lines said at a moment, for the viewer to look, in ms. */
+export const LOOK_MS = 800;
 
 /** The master's file in a take's results. */
 export const MASTER_FILE = 'master.mkv';
@@ -137,8 +140,21 @@ export async function startFilming({ set, out, story, scale, width, height, take
   let current = null;
   const hooks = {
     started(b) {
-      current = { id: b.id, start: Date.now(), lines: scheduleLines(b.lines.en, Date.now(), voice?.readings) };
+      const { start } = lineGroups(b.lines.en);
+      current = { id: b.id, start: Date.now(), lines: scheduleLines(start, Date.now(), voice?.readings) };
       log.beats.push(current);
+    },
+    /**
+     * The lines the run says at the moment `at`: read after any line still being read, the action held until they
+     * have been, and `LOOK_MS` more for the viewer to look.
+     */
+    async say(b, at) {
+      const last = current.lines.at(-1);
+      const from = Math.max(Date.now(), last ? last.start + last.ms : 0);
+      const lines = scheduleLines(lineGroups(b.lines.en).at.get(at), from, voice?.readings);
+      current.lines.push(...lines);
+      const end = lines.at(-1);
+      await sleep(end.start + end.ms + LOOK_MS - Date.now());
     },
     /** The hold: the beat stays until its lines are read, and its last action's result `SETTLE_MS` more. */
     async ended() {
@@ -177,7 +193,7 @@ export async function startFilming({ set, out, story, scale, width, height, take
         part: b.part ?? null,
         seconds: b.seconds,
         focus: b.focus,
-        lines: b.lines.en,
+        lines: b.lines.en.map(lineText),
       }));
       log.outcomes = outcomes;
       log.gestures = gestures;

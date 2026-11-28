@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { beat, expect, waitFor } from './lib/script.mjs';
 import { TILES } from './lib/set.mjs';
-import { Agent, refOf, runsServer } from './lib/agent.mjs';
+import { Agent, codeOf, pageSummary, refOf, runsServer } from './lib/agent.mjs';
 import { dataUrlBytes, decodeImage, likeness } from './lib/likeness.mjs';
 import {
   RUN_VERDICT,
@@ -188,10 +188,10 @@ export const STORY = [
     lines: {
       en: [
         'The checkout was redesigned, and CI went red on main.',
-        'Piwi kept the failure: the page, the timeline, the locator that broke.',
+        { text: 'Piwi kept the failure: the page, the timeline, the locator that broke.', at: 'failure' },
       ],
     },
-    async run({ dashboard, gesture, instance, state }) {
+    async run({ dashboard, gesture, instance, state, say }) {
       const [red] = await instance.runs();
       state.redRun = await instance.run(red.id);
       state.failing = state.redRun.testCases.find((c) => c.title === 'places an order');
@@ -206,6 +206,7 @@ export const STORY = [
         .or(dashboard.getByText('was not found on the page'))
         .first()
         .waitFor();
+      await say('failure');
     },
     async check({ dashboard, state, instance }) {
       const run = state.redRun;
@@ -255,15 +256,20 @@ export const STORY = [
     seconds: 14,
     focus: ['dashboard', 'vscode'],
     lines: {
-      en: ['Debug in my editor: VS Code opens the failing line,', 'and runs the test there, headed, stopping at it.'],
+      en: [
+        { text: 'Debug in my editor: VS Code opens the failing line,', at: 'debug' },
+        { text: 'and runs the test there, headed, stopping at it.', at: 'running' },
+      ],
     },
-    async run({ dashboard, vscode, gesture, set, state }) {
+    async run({ dashboard, vscode, gesture, set, state, say }) {
       await gesture.click('dashboard', dashboard.getByRole('tab', { name: /Source/ }));
+      await say('debug');
       const links = set.editorLinks.length;
       await gesture.click('dashboard', dashboard.getByRole('button', { name: 'Debug in my editor' }).first());
       state.debugLink = await waitFor(() => set.editorLinks[links], 'the link the dashboard handed to VS Code');
       const prompt = vscode.locator('.notification-toast', { hasText: 'Debug this test here?' });
       await gesture.click('vscode', prompt.getByRole('button', { name: 'Debug' }));
+      await say('running');
     },
     async check({ vscode, state }) {
       const link = new URL(state.debugLink);
@@ -285,10 +291,17 @@ export const STORY = [
     title: 'The run, followed',
     seconds: 10,
     focus: ['test-browser', 'runs'],
-    lines: { en: ["The test's browser opens beside the editor,", 'and Piwi Picker follows the run.'] },
-    async run({ runs, testPage }) {
+    lines: {
+      en: [
+        { text: "The test's browser opens beside the editor,", at: 'browser' },
+        { text: 'and Piwi Picker follows the run.', at: 'followed' },
+      ],
+    },
+    async run({ runs, testPage, say }) {
       await testPage();
+      await say('browser');
       await runCard(runs).getByText('shop › places an order').waitFor({ timeout: 60_000 });
+      await say('followed');
     },
     async check({ runs, testPage }) {
       const card = runCard(runs);
@@ -327,10 +340,14 @@ export const STORY = [
     seconds: 14,
     focus: ['vscode', 'test-browser', 'runs'],
     lines: {
-      en: ['The test stops at the failing line.', 'The editor, the page and Piwi Picker show the same place.'],
+      en: [
+        { text: 'The test stops at the failing line.', at: 'stopped' },
+        'The editor, the page and Piwi Picker show the same place.',
+      ],
     },
-    async run({ runs }) {
+    async run({ runs, say }) {
       await runCard(runs).getByText('Stopped at a breakpoint').waitFor({ timeout: 90_000 });
+      await say('stopped');
     },
     async check({ vscode, runs, testPage, set }) {
       const row = vscode
@@ -393,15 +410,19 @@ export const STORY = [
     seconds: 18,
     focus: ['runs', 'test-browser', 'vscode'],
     lines: {
-      en: ['Pick the button on the page.', 'The locator is written at the line where the test stopped.'],
+      en: [
+        'Pick the button on the page.',
+        { text: 'The locator is written at the line where the test stopped.', at: 'written' },
+      ],
     },
-    async run({ runs, testPage, vscode, gesture, palette }) {
+    async run({ runs, testPage, vscode, gesture, palette, say }) {
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'Pick', exact: true }));
       const page = await testPage();
       await gesture.click('test-browser', page.getByRole('button', { name: 'Pay now' }));
       await gesture.click('test-browser', page.getByRole('button', { name: 'Skip (Esc)' }));
       await gesture.click('test-browser', page.getByRole('button', { name: new RegExp(escaped(FIXED)) }));
       await vscode.locator('.view-line', { hasText: "name: 'Pay now'" }).waitFor({ timeout: 30_000 });
+      await say('written');
       await palette('File: Save All');
     },
     async check({ repo }) {
@@ -420,15 +441,19 @@ export const STORY = [
     seconds: 18,
     focus: ['vscode', 'test-browser', 'vscode'],
     lines: {
-      en: ['The redesign also added a box to tick.', 'Record at the stop: the click becomes a step above the line.'],
+      en: [
+        'The redesign also added a box to tick.',
+        { text: 'Record at the stop: the click becomes a step above the line.', at: 'recorded' },
+      ],
     },
-    async run({ vscode, testPage, gesture, palette }) {
+    async run({ vscode, testPage, gesture, palette, say }) {
       await palette('Piwi: Record at the stop');
       const page = await testPage();
       // The recorder records once it has its first step, the page it starts on, which the editor counts.
       await vscode.locator('.statusbar-item', { hasText: 'Piwi: recording · 1 step' }).waitFor({ timeout: 30_000 });
       await gesture.click('test-browser', page.getByLabel('I accept the terms'));
       await vscode.locator('.view-line', { hasText: 'I accept the terms' }).waitFor({ timeout: 30_000 });
+      await say('recorded');
       // Stop above the block in the editor: the page's own bar is in a closed shadow root, out of a script's reach.
       await gesture.click('vscode', vscode.locator('.codelens-decoration a', { hasText: /^Stop$/ }).first());
       await vscode.locator('.statusbar-item', { hasText: 'Piwi: recording' }).waitFor({ state: 'hidden' });
@@ -455,14 +480,15 @@ export const STORY = [
     lines: {
       en: [
         'The stopped test still runs its old code: end it,',
-        'and debug the fixed test to the summary check.',
-        'Assert a region writes what the order page shows.',
+        { text: 'and debug the fixed test to the summary check.', at: 'debug' },
+        { text: 'Assert a region writes what the order page shows.', at: 'assert' },
       ],
     },
     budget: 240_000,
-    async run({ runs, vscode, testPage, gesture, palette }) {
+    async run({ runs, vscode, testPage, gesture, palette, say }) {
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'End the test' }));
       await runEnded(runs);
+      await say('debug');
       await openFile(vscode, gesture, SPEC);
       await goToLine(vscode, gesture, SUMMARY_LINE);
       await gesture.press('vscode', 'F9');
@@ -473,6 +499,7 @@ export const STORY = [
         .locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint · Expect' })
         .first()
         .waitFor({ timeout: 30_000 });
+      await say('assert');
       // Assert a region is folded under More, beside the stop's other code tools.
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'More', exact: true }));
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'Assert a region' }));
@@ -607,10 +634,10 @@ export const STORY = [
       en: [
         'The fix is pushed, and CI runs the suite on three workers.',
         'Watch all shows each worker’s page, live.',
-        'Pause one from the run page: the CI test waits for a look.',
+        { text: 'Pause one from the run page: the CI test waits for a look.', at: 'paused' },
       ],
     },
-    async run({ set, repo, dashboard, instance, gesture, state }) {
+    async run({ set, repo, dashboard, instance, gesture, state, say }) {
       gesture.note('the fix is committed and pushed');
       state.fixCommit = push(repo.shop, 'Fix the checkout test for the redesign');
       const before = (await instance.runs()).map((r) => r.id);
@@ -647,6 +674,7 @@ export const STORY = [
       await row.waitFor({ timeout: 30_000 });
       state.pausedRow = { reason: await row.getAttribute('data-reason'), text: (await row.innerText()).trim() };
       state.pausedTest = (await instance.run(live.id)).testCases?.find((c) => c.title === 'places an order')?.status;
+      await say('paused');
     },
     async check({ dashboard, state }) {
       const problems = tileProblems(await readWatchLog(dashboard));
@@ -705,9 +733,12 @@ export const STORY = [
     focus: ['vscode', 'test-browser', 'runs'],
     budget: 180_000,
     lines: {
-      en: ['A new test, its last check still to write.', 'Debug it to the line where that check goes.'],
+      en: [
+        'A new test, its last check still to write.',
+        { text: 'Debug it to the line where that check goes.', at: 'debug' },
+      ],
     },
-    async run({ editor, vscode, runs, gesture, palette, repo, state }) {
+    async run({ editor, vscode, runs, gesture, palette, repo, state, say }) {
       await editor.copy(NEW_TEST);
       // The new test goes at the end of the spec's describe, before its closing line, the file's last.
       await openFile(vscode, gesture, SPEC);
@@ -720,6 +751,7 @@ export const STORY = [
         read(repo.shop, SPEC)
           .split('\n')
           .findIndex((line) => line.includes(NEW_TEST_LAST)) + 1;
+      await say('debug');
       await goToLine(vscode, gesture, state.newTestLine);
       await gesture.press('vscode', 'F9');
       await palette(DEBUG_AT_CURSOR);
@@ -749,17 +781,17 @@ export const STORY = [
     id: 'agent',
     title: 'The agent finishes it',
     seconds: 16,
-    focus: ['vscode', 'agent', 'test-browser'],
+    focus: ['vscode', 'agent'],
     budget: 180_000,
     lines: {
       en: [
         'Copy the run tools’ setup into your coding agent,',
-        'and ask it to finish the test.',
-        'It reads the stopped page, clicks Orders and writes both lines,',
-        'then resumes: the new test passes.',
+        { text: 'and ask it to finish the test.', at: 'ask' },
+        { text: 'It reads the stopped page, clicks Orders and writes both lines,', at: 'works' },
+        { text: 'then resumes: the new test passes.', at: 'done' },
       ],
     },
-    async run({ editor, vscode, runs, gesture, palette, state }) {
+    async run({ editor, vscode, runs, gesture, palette, state, say }) {
       // The command asks which agent's format: the first, VS Code's, as Claude Code reads it too. A few of its words
       // find it in the palette.
       await gesture.press('vscode', 'F1');
@@ -777,33 +809,59 @@ export const STORY = [
         return now !== copied && now.includes('piwi-runs') ? now : null;
       }, "the runs' MCP configuration on the clipboard");
 
-      // What the agent is asked and each tool call it makes, in words, for the cut's agent panel.
+      // The conversation the cut's agent panel shows: the person's prompt, the agent's replies, and each tool call
+      // it makes with what came back.
       const stoppedAt = `${SPEC.split('/').pop()}:${state.newTestLine}`;
-      const tell = (agent) => gesture.note('the agent', { agent });
-      tell({ task: `Finish the test stopped at ${stoppedAt}: open the orders, and check their page shows.` });
-      const agent = new Agent(runsServer(configuration), ({ name, say }) => tell({ tool: name, say }));
+      const tell = (agent) => gesture.tell('the agent', { agent });
+      const agent = new Agent(runsServer(configuration));
+      let calls = 0;
+      const call = async (name, args, detail, outcome) => {
+        const id = ++calls;
+        await tell({ tool: name, detail, id });
+        const answer = await agent.tool(name, args);
+        await tell({ done: id, ...outcome(answer) });
+        return answer;
+      };
+      const summary = ({ page }) => {
+        const { heading, elements } = pageSummary(page);
+        return { result: heading ? `“${heading}”, ${elements} elements` : `${elements} elements` };
+      };
+      const written = ({ page }) => ({ result: 'written in the test', code: codeOf(page) });
+
+      await say('ask');
+      await tell({
+        user: `Finish the test stopped at ${stoppedAt}: after the order, open the orders and check that their page shows.`,
+      });
       await agent.connect();
-      const { piwi: list } = await agent.tool('run_list', {}, `Finds the run stopped at ${stoppedAt}`);
+      await tell({ reply: 'I’ll find the run that stopped there first.' });
+      const { piwi: list } = await call('run_list', {}, 'the runs', () => ({ result: `one stopped at ${stoppedAt}` }));
       const stopped = list.runs
         .flatMap((r) => r.workers.map((w) => ({ run: r.run, worker: w })))
         .find((w) => w.worker.stop);
       const run = stopped.run;
       const stop = stopped.worker.stop.stop ?? stopped.worker.stop;
-      const { page: before } = await agent.tool('page_snapshot', { run }, 'Reads the page the test stopped on');
+      await say('works');
+      await tell({ reply: 'I’ll read the page it stopped on, and open the orders from there.' });
+      const { page: before } = await call('page_snapshot', { run }, 'the stopped page', summary);
       const orders = refOf(before, 'link', 'Orders');
-      await agent.tool('page_act', { run, stop, target: orders, action: 'click' }, 'Clicks Orders on that page');
-      const { page: after } = await agent.tool('page_snapshot', { run }, 'Reads the page again: “Your orders”');
+      await call('page_act', { run, stop, target: orders, action: 'click' }, 'click “Orders”', () => ({
+        result: 'clicked',
+      }));
+      const { page: after } = await call('page_snapshot', { run }, 'the page now', summary);
       const heading = refOf(after, 'heading', 'Your orders');
-      await agent.tool('code_write', { run, stop, kind: 'steps' }, 'Writes the click into the test');
-      await agent.tool(
+      await tell({ reply: 'That’s the orders page. I’ll write the click and a check into the test.' });
+      await call('code_write', { run, stop, kind: 'steps' }, 'the steps taken', written);
+      await call(
         'code_write',
         { run, stop, kind: 'assertion', target: heading, assertion: 'visible' },
-        'Writes the check: “Your orders” shows',
+        'a check on “Your orders”',
+        written,
       );
       await vscode.locator('.view-line', { hasText: 'Your orders' }).waitFor({ timeout: 30_000 });
-      await agent.tool('run_control', { run, stop, action: 'resume' }, 'Resumes the run');
+      await call('run_control', { run, stop, action: 'resume' }, 'resume the run', () => ({ result: 'resumed' }));
       await runEnded(runs);
-      tell({ done: true });
+      await tell({ reply: 'Done: the test opens the orders and checks that their page shows. Its run passed.' });
+      await say('done');
       // The person keeps what the agent wrote once it is done.
       await palette('File: Save All');
     },

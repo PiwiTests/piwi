@@ -71,15 +71,18 @@ shrunk the Runs window, which the same browser holds.
 
 **V3's voice, as built.** `--voice` (`lib/voice.mjs`) is the `local` provider: Kokoro (Kokoro-82M, Apache-2.0), run in a
 Python environment of its own, reads every line before the take with `am_michael`, a young US man's voice, its model
-files checked by SHA-256, and each beat holds for its readings plus 0.4 s. The cut mixes the readings at their cues, the
-cards' too, into `piwi-showcase-voice.m4a` at −16 LUFS and voices the full cut (AAC in MP4, Opus in WebM); the teaser
-and the clips stay muted. The `person` provider is the cue sheet the cut always writes (`piwi-showcase.cues.csv`) and
-`--voice-track <recording>`, which voices the cut with a person's recording in its place. Measured here: the 31 lines
-read in about 40 s on four cores, 108 s spoken against 110 s estimated. The build differs from the text in these ways.
-Piper, the first engine tried, read too robotically for the video. The `hosted` provider and the music bed are not
-built. The nightly job's `voice` input films with the voice by default, kokoro-onnx installed in a virtual environment
-outside the checkout. The story's last part is two beats, a new test debugged to the line where its check goes, then the
-agent finishing it, and the cut draws the agent's panel (its task, each tool call in words) where the Runs window sits.
+files checked by SHA-256, and each beat holds for its readings plus 0.4 s. A line naming a moment of the beat's run is
+said there, the action held while it is spoken and 0.8 s more for the viewer to look; the others are said from the
+beat's start. The cut mixes the readings at their cues, the cards' too, into `piwi-showcase-voice.m4a` at −16 LUFS and
+voices the full cut (AAC in MP4, Opus in WebM); the voiced cut burns no subtitles in, its captions in the subtitle
+files, and the subtitled cut, the teaser and the clips stay muted. The `person` provider is the cue sheet the cut always
+writes (`piwi-showcase.cues.csv`) and `--voice-track <recording>`, which voices the cut with a person's recording in its
+place. Measured here: the 31 lines read in about 40 s on four cores, 108 s spoken against 110 s estimated. The build
+differs from the text in these ways. Piper, the first engine tried, read too robotically for the video. The `hosted`
+provider and the music bed are not built. The nightly job's `voice` input films with the voice by default, kokoro-onnx
+installed in a virtual environment outside the checkout. The story's last part is two beats, a new test debugged to the
+line where its check goes, then the agent finishing it, and the cut draws the agent as a chat docked beside the editor:
+the person's prompt, its replies, each tool call with what came back and the code it wrote.
 
 **Summary.**
 

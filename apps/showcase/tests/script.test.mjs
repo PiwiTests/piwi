@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { Gestures, contentOnScreen, lintLines } from '../lib/script.mjs';
+import { Gestures, contentOnScreen, lineGroups, lintLines } from '../lib/script.mjs';
 
 describe('a page’s content on the screen', () => {
   // As Chromium told them on a 3840 × 2160 screen at scale 2, its toolbar 87 CSS pixels high.
@@ -78,5 +78,41 @@ describe('the parts’ lint', () => {
     assert.match(problems[0], /^a: no part/);
     assert.match(problems[1], /^b: its part's title/);
     assert.match(problems[2], /^c: its part's line/);
+  });
+});
+
+describe('a beat’s lines', () => {
+  test('are said from its start up to its first moment, then each moment with the lines after it', () => {
+    const groups = lineGroups(['A.', 'B.', { text: 'C.', at: 'stopped' }, 'D.', { text: 'E.', at: 'done' }]);
+    assert.deepEqual(groups.start, ['A.', 'B.']);
+    assert.deepEqual(
+      [...groups.at],
+      [
+        ['stopped', ['C.', 'D.']],
+        ['done', ['E.']],
+      ],
+    );
+  });
+
+  test('may all wait for a moment', () => {
+    const groups = lineGroups([{ text: 'A.', at: 'now' }]);
+    assert.deepEqual(groups.start, []);
+    assert.deepEqual([...groups.at], [['now', ['A.']]]);
+  });
+
+  test('name a moment once', () => {
+    const played = { id: 'b', title: 'B', seconds: 10, run: () => {}, part: { title: 'P', what: 'Short.' } };
+    const problems = lintLines([
+      {
+        ...played,
+        lines: {
+          en: [
+            { text: 'A.', at: 'x' },
+            { text: 'B.', at: 'x' },
+          ],
+        },
+      },
+    ]);
+    assert.deepEqual(problems, ['b: two lines are said at the moment "x"']);
   });
 });

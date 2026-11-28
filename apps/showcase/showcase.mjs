@@ -24,7 +24,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkTools } from './lib/capture.mjs';
 import { prepareOut } from './lib/results.mjs';
-import { Gestures, captureScreen, lintLines, play } from './lib/script.mjs';
+import { Gestures, captureScreen, lineText, lintLines, play } from './lib/script.mjs';
 import { SCALE, TILES, buildSet, createSet } from './lib/set.mjs';
 import { FILM_PACE, startFilming } from './lib/take.mjs';
 import { STORY } from './story.mjs';
@@ -147,7 +147,7 @@ if (mode === 'film' && args.includes('--voice')) {
   const { VOICE, ensureVoice, readLines } = await import('./lib/voice.mjs');
   say('Reading the lines with the voice');
   const files = ensureVoice(undefined, (step) => say(`  ${step}`));
-  const texts = STORY.flatMap((b) => b.lines.en);
+  const texts = STORY.flatMap((b) => b.lines.en.map(lineText));
   const readings = readLines(texts, { files, dir: path.join(out, 'voice'), say: (step) => say(`  ${step}`) });
   voice = { name: `kokoro ${VOICE.name}`, dir: 'voice', readings };
 }

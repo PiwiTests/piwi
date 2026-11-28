@@ -1,7 +1,7 @@
 // The coding agent of the story's last part: a client of the runs' MCP server the editor serves (`piwi.runs`),
 // configured as a person configures their agent, from **Piwi: Copy the runs' MCP server configuration for agents**.
 // Its moves are written in `story.mjs`, not chosen by a model: it plays the tool calls an agent makes to finish a test
-// at its stop, each with the words the cut's agent panel shows.
+// at its stop, and what it says of them, which the cut's agent panel shows.
 
 /** The runs' MCP server's address and token, from the configuration the editor copies (`servers` or `mcpServers`). */
 export function runsServer(configuration) {
@@ -13,11 +13,9 @@ export function runsServer(configuration) {
 }
 
 export class Agent {
-  /** `told(call)`, when given, hears each tool call as it starts (`{ name, args, say }`). */
-  constructor({ url, token }, told = null) {
+  constructor({ url, token }) {
     this.url = url;
     this.token = token;
-    this.told = told;
     this.id = 0;
     this.calls = [];
   }
@@ -54,11 +52,10 @@ export class Agent {
   }
 
   /**
-   * Calls a tool, `say` telling what the call is for; resolves with Piwi's answer (the JSON block) and the page's text
-   * (the page-content blocks), as an agent reads them apart.
+   * Calls a tool; resolves with Piwi's answer (the JSON block) and the page's text (the page-content blocks), as an
+   * agent reads them apart.
    */
-  async tool(name, args = {}, say = null) {
-    this.told?.({ name, args, say });
+  async tool(name, args = {}) {
     const answer = await this.post({
       jsonrpc: '2.0',
       id: ++this.id,
@@ -90,4 +87,28 @@ export function refOf(snapshot, role, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = new RegExp(`- ${role} "${escaped}"[^\\n]*\\[ref=((?:f\\d+)?e\\d+)\\]`).exec(snapshot);
   return match?.[1] ?? null;
+}
+
+/**
+ * The code `code_write` wrote, from the page-content text of its answer: the lines after its "the code, to go above"
+ * line, up to the next part of the answer.
+ */
+export function codeOf(page) {
+  const lines = page.split('\n');
+  const start = lines.findIndex((line) => line.startsWith('the code, to go above '));
+  if (start < 0) return [];
+  const code = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^(the import lines|to check in it:|<<<end-page-content)/.test(line)) break;
+    code.push(line);
+  }
+  return code.filter((line) => line.trim());
+}
+
+/** What an AI snapshot of a page shows first: its first heading's name, and how many elements have a ref. */
+export function pageSummary(snapshot) {
+  return {
+    heading: /- heading "([^"]+)"/.exec(snapshot)?.[1] ?? null,
+    elements: (snapshot.match(/\[ref=/g) ?? []).length,
+  };
 }

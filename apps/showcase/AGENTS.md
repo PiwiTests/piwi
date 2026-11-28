@@ -31,8 +31,12 @@ script, the beats, the take and the cut work is in [`ARCHITECTURE.md`](ARCHITECT
   `lintLines`): the cut's chapters, the part cards and the rail across the top come from them, so a new beat joins
   the part it belongs to, or opens one.
 - **A take's holds are the take's, named, never a beat's**: a beat is held until its lines are read (`lineMs`: 15
-  characters a second, then 0.4 s) and its end has shown for `SETTLE_MS` (`hooks.ended` in `lib/take.mjs`). Check mode
-  has none, and a beat still waits on state, whatever the mode.
+  characters a second, then 0.4 s, or the voice's reading) and its end has shown for `SETTLE_MS` (`hooks.ended` in
+  `lib/take.mjs`), and a run's `say(at)` until that moment's lines are read and `LOOK_MS` more. Check mode has none,
+  and a beat still waits on state, whatever the mode.
+- **A run says a line at its moment only where holding the action is safe**: the test paused, a run ended, or before
+  a step starts; never while a test whose run the beat watches or pauses is still going (`watch-running`'s and
+  `back-on-the-team`'s first lines are said from the beat's start for this reason).
 - **The stage draws a frame from its state alone** (`stage/stage.js`): every motion, fade and timing is computed in
   `lib/cut-plan.mjs` from the take log, so two renderers draw the same frame alike. No CSS transition, animation or
   timer in the stage. The plan's pure parts are tested (`npm run showcase:test`, run by `ci.yml`).

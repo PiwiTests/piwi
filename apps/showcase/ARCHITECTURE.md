@@ -52,7 +52,10 @@ cut, its `focus`, a `budget`, and, unless it is a card, a `run` and a `check`. A
 (`{ title, what }`) opens a part of the story, which the beats after it join until the next; the story's first beat
 opens one (`lintLines`). The five parts are the video's contents: **CI is red** (`red-run`), **Debug in VS Code**
 (`to-the-editor` to `paused`), **Fix the test** (`right-locator` to `green`), **Watch it run** (`watch-running` to
-`resumed`) and **Hand it to an agent** (`new-test`, `agent`). `play` runs the beats in order: it calls
+`resumed`) and **Hand it to an agent** (`new-test`, `agent`). A line is said at a moment of the beat's run when it
+names one (`{ text, at }`): the run calls `say(at)` there, and that line and the plain lines after it, up to the next
+with a moment, are said together (`lineGroups`); the lines before the first moment are said from the beat's start. A
+run that never reaches a moment of its lines fails, in check mode too. `play` runs the beats in order: it calls
 `hooks.started`, raises the beat's first window, runs the beat, its check, then `hooks.ended`, all within the budget;
 check mode has no hooks, and a take's hold its lines there. A failure
 writes `results/failed-<beat>/` (`keepEvidence` in `showcase.mjs`: the screen from ImageMagick's `import`, the VS Code
@@ -81,8 +84,10 @@ from F1), `state` (what a beat leaves the next ones) and `skip(bug, what)`.
 window's content origin from `screenX`/`screenY`, times the scale; a position given to the click, else the box's
 middle, within the window), the text, the key or the palette's command. Its `pace` (a wait before each move, a delay
 between keys) is zero in check mode; a take's (`FILM_PACE`, 900 ms and 55 ms) gives the cut's pointer the time to
-travel, and scrolls the element into view before its box is read. An agent's tool calls and the push are notes: the
-agent's carry what it was asked, or a call's tool and its words (`agent`), which the cut's agent panel shows.
+travel, and scrolls the element into view before its box is read. An agent's tool calls and the push are notes. The
+agent's (`agent`) are the person's prompt, a reply, a call's start (its tool and what it is for) or its end (what came
+back, and the code it wrote); `gesture.tell` logs one after the take's pace, as a gesture acts, which leaves the time
+to read the one before.
 
 ## The beats
 
@@ -101,7 +106,7 @@ agent's carry what it was asked, or a call's tool and its words (`agent`), which
 | 10  | `back-on-the-team` | commit and push, the fix's CI run on three workers (one a test), its run page, **Watch all**, the tile of `places an order` in full, **Pause** in its lane panel                                                                                                                                                       | Watch all showed the page of two workers or more (`tileProblems`); the lane panel says the CI test is paused (`Paused`, `live-paused-by`) and the test's row too (`data-reason` `pause`), the test not ended                                                                                                                                                                                                                                                                 |
 | 11  | `resumed`          | **Resume** in the lane panel, the run to its end, the view closed once it said how the run ended                                                                                                                                                                                                                       | the lane panel showed images through the lane's test, never 15 s apart up to the run's end, named its calls under the image (two at least), showed their filmstrip, and stayed open until it said the run passed (`laneLogProblems`, `lib/watching.mjs`, from the watch recorded in its page as it changed, `recordWatch`); the CI run green, on `main`, at the pushed commit, and so on its page                                                                            |
 | 12  | `new-test`         | a new test pasted at the end of the spec's describe, a click on its last line, F9, **Debug the test at the cursor** to it                                                                                                                                                                                              | the new test's last line where it was pasted; the Runs window shows it stopped there                                                                                                                                                                                                                                                                                                                                                                                         |
-| 13  | `agent`            | **Copy the runs' MCP server configuration**; the agent, asked to finish the test: `run_list`, `page_snapshot`, `page_act`, `page_snapshot`, `code_write` twice, `run_control`; the file saved once the run ended                                                                                                       | the agent's click and check stand above the test's last line; the test passed on the instance                                                                                                                                                                                                                                                                                                                                                                                |
+| 13  | `agent`            | **Copy the runs' MCP server configuration**; the agent's chat: the person's prompt, then the agent's replies and its calls (`run_list`, `page_snapshot`, `page_act`, `page_snapshot`, `code_write` twice, `run_control`); the file saved once the run ended                                                            | the agent's click and check stand above the test's last line; the test passed on the instance                                                                                                                                                                                                                                                                                                                                                                                |
 | 14  | `end`              | a card                                                                                                                                                                                                                                                                                                                 | its lines' lint                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Known bugs
@@ -131,9 +136,11 @@ The assertions a check skips, each only once it saw the bug's state. None does: 
   or every tile over it (`raise`). Raising needs no window manager. Each raise is logged: the cut shows a window only
   while the master shows it.
 
-Each beat is held (`hooks.ended`) until its lines have been read, one after another from its start, each for its length
-at 15 characters a second plus 0.4 s (`lineMs`), or with `--voice` its reading's length plus 0.4 s (`spokenMs`), and
-its last action has shown for `SETTLE_MS` (1.2 s). These holds are
+Each beat's lines are read one after another, each for its length at 15 characters a second plus 0.4 s (`lineMs`), or
+with `--voice` its reading's length plus 0.4 s (`spokenMs`): those before its first moment from its start, while it
+acts; those of a moment when its run says it (`hooks.say`), after any line still being read, the action held until
+they have been read and `LOOK_MS` (0.8 s) more, for the viewer to look. Each beat is held (`hooks.ended`) until its
+lines have been read and its last action has shown for `SETTLE_MS` (1.2 s). These holds are
 the take's, never a beat's: a beat still waits on state. `finish` stops the capture (ffmpeg's `q`, once its encoder has
 written up to the stop's time: `q` drops the grabbed frames still waiting) and writes the take log; a beat that fails
 ends the take as in check mode, the master and the log kept beside the evidence. The take tells the frames the capture
@@ -212,10 +219,11 @@ that fails stops the others, and the work folder goes once their encoders have e
   before it (the first lies under the title card) and out over its first beat, which it holds until then; the end card
   (the install lines and `piwitests.dev`); and the parts' rail across the top through the beats, each part done
   ticked, the one shown with its progress through its beats and the beat's title.
-- **The agent's panel** (`agentPanel`): a window the stage draws itself in the Runs window's place, named as scripted
-  for the video, up from the agent's first note: what it was asked, then each tool call it made in words, its tool's
-  name beside it, the last one running until the next starts or the agent is done. The agent's calls are not on the key
-  strip.
+- **The agent's chat** (`agentPanel`): a window the stage draws itself, docked beside the editor over the right
+  column, named as scripted for the video, up as the person's prompt is typed into its box (`AGENT.typeS`). Then the
+  prompt as a message, the agent's replies, and each tool call, running until its answer came back, then with what came
+  back and the code it wrote as added lines; the newest at the bottom, the oldest leaving at the top. The agent's calls
+  are not on the key strip.
 
 The stage (`stage/`) is a page of 1920 × 1080 CSS pixels (at device scale 2 for 4K) that draws a state and nothing
 else: each window's content drawn on a canvas from the master's frame, cropped and scaled (`imageSmoothingQuality:
@@ -225,24 +233,25 @@ screenshotted (CDP, PNG), or the last screenshot sent again when neither the sta
 piped into ffmpeg (H.264, CRF 12). No frame is written to disk. The ranges' files, concatenated, are the render, from
 which ffmpeg makes the outputs; the subtitles are the stage's plates (PNG with transparency, one a cue), overlaid.
 
-| Output (in `cut/`)                                   | What it is                                                                                                     |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in, its voice in AAC when voiced           |
-| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34), its voice in Opus                                                                      |
-| `piwi-showcase-voice.m4a`                            | the voice track, when the take was voiced or `--voice-track` was given                                         |
-| `piwi-showcase.cues.csv`                             | the cue sheet: each line's start and end, its beat and its text, for a person who reads them                   |
-| `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                     |
-| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the parts as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">`       |
-| `teaser.mp4`, `teaser.webm`                          | the story from the red run to the green test (`TEASER_BEATS`), about 45 s, subtitled, 1920 × 1080, within 7 MB |
-| `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                                            |
-| `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                             |
-| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card but the parts', at the middle of its lines                      |
-| `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                             |
+| Output (in `cut/`)                                   | What it is                                                                                                      |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20): voiced (AAC) when the take was, else silent; with the subtitles burned in, silent |
+| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34), the voice in Opus                                                                       |
+| `piwi-showcase-voice.m4a`                            | the voice track, when the take was voiced or `--voice-track` was given                                          |
+| `piwi-showcase.cues.csv`                             | the cue sheet: each line's start and end, its beat and its text, for a person who reads them                    |
+| `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                      |
+| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the parts as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">`        |
+| `teaser.mp4`, `teaser.webm`                          | the story from the red run to the green test (`TEASER_BEATS`), about 45 s, subtitled, 1920 × 1080, within 7 MB  |
+| `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                                             |
+| `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                              |
+| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card but the parts', at the middle of its lines                       |
+| `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                              |
 
 The voice track lays each line's reading at its cue, the cards' too (`mixArguments`: `adelay`, `amix`), as long as the
 cut, at −16 LUFS and a true peak of −1.5 dBTP (`loudnorm`, `LOUDNESS`), 48 kHz; a line plays at its own speed, as the
 cut never plays a line fast. `--voice-track <recording>` takes a person's recording of the cue sheet in its place, laid
-from the cut's start. The teaser and the clips stay muted.
+from the cut's start. The voiced cut burns no subtitles in, its captions in the subtitle files; the subtitled cut, the
+teaser and the clips are muted.
 
 The teaser takes each of its beats from its start through its lines and 0.6 s more, grown or shrunk evenly to about
 45 s (`teaserParts`), crossfades them, and is encoded in two passes at about the full cut's bitrate (6 MB), lower until

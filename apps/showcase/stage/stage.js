@@ -32,29 +32,53 @@
     return windows.get(id);
   }
 
-  /** The agent's panel: what it was asked, then each tool call it made, in words, the running one marked. */
+  /**
+   * The agent's chat: its messages and tool calls, the newest at the bottom above its input box, the oldest leaving at
+   * the top; a call runs until its answer came back, then shows it, and the code it wrote as added lines.
+   */
   function drawAgent(panel, agent, scale) {
-    const text = JSON.stringify([agent.task?.text, agent.steps.map((s) => [s.say, s.tool, s.done])]);
+    const element = (tag, className, content = '') =>
+      Object.assign(document.createElement(tag), { className, textContent: content });
+    const text = JSON.stringify(agent.entries.map((e) => [e.kind, e.text, e.tool, e.done, e.result]));
     if (panel.dataset.text !== text) {
       panel.dataset.text = text;
-      const element = (tag, className, content = '') =>
-        Object.assign(document.createElement(tag), { className, textContent: content });
-      const asked = element('p', 'asked');
-      if (agent.task) asked.append(element('span', 'label', 'Asked'), element('span', 'task', agent.task.text));
-      const steps = element('ol', 'steps');
-      for (const step of agent.steps) {
-        const item = element('li', step.done ? 'done' : 'running');
-        item.append(element('span', 'mark', step.done ? '✓' : '●'), element('span', 'say', step.say));
-        item.append(element('code', 'tool', step.tool));
-        steps.append(item);
+      const chat = element('div', 'chat');
+      for (const entry of agent.entries) {
+        if (entry.kind === 'user') chat.append(element('div', 'message user', entry.text));
+        else if (entry.kind === 'reply') {
+          const reply = element('div', 'message reply');
+          reply.append(element('span', 'who', 'Agent'), element('p', 'text', entry.text));
+          chat.append(reply);
+        } else {
+          const call = element('div', `call ${entry.done ? 'done' : 'running'}`);
+          const head = element('div', 'head');
+          head.append(
+            element('span', 'mark', entry.done ? '✓' : '●'),
+            element('code', 'tool', entry.tool),
+            element('span', 'detail', entry.detail ?? ''),
+          );
+          if (entry.done && entry.result) head.append(element('span', 'result', entry.result));
+          call.append(head);
+          if (entry.done && entry.code?.length) {
+            const diff = element('pre', 'diff');
+            for (const line of entry.code) diff.append(element('span', 'added', `+ ${line.trim()}`));
+            call.append(diff);
+          }
+          chat.append(call);
+        }
       }
-      panel.replaceChildren(asked, steps);
+      const input = element('div', 'input');
+      input.append(element('span', 'typed'), element('span', 'send', '↵'));
+      panel.replaceChildren(chat, input);
     }
-    panel.style.fontSize = `${36 * scale}px`;
-    panel.querySelector('.asked').style.opacity = String(agent.task?.opacity ?? 0);
-    [...panel.querySelectorAll('.steps li')].forEach((item, i) => {
-      item.style.opacity = String(agent.steps[i].opacity);
+    panel.style.fontSize = `${44 * scale}px`;
+    [...panel.querySelector('.chat').children].forEach((item, i) => {
+      item.style.opacity = String(agent.entries[i].opacity);
     });
+    const typed = panel.querySelector('.input .typed');
+    typed.textContent = agent.input ?? '';
+    typed.classList.toggle('placeholder', !agent.input);
+    if (!agent.input) typed.textContent = 'Ask the agent…';
   }
 
   async function load(frame) {
@@ -90,7 +114,7 @@
       if (w.agent) {
         canvas.style.display = 'none';
         Object.assign(panel.style, {
-          display: 'block',
+          display: 'flex',
           top: `${barHeight}px`,
           height: `${frame.height - barHeight}px`,
         });

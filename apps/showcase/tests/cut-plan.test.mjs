@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  AGENT,
   FAST,
   RAIL_BAND,
   TITLE_BAR,
@@ -260,57 +261,79 @@ describe('the parts', () => {
   });
 });
 
-describe('the agent’s panel', () => {
+describe('the agent’s chat', () => {
+  const PROMPT = 'Finish the test.';
   const notes = [
-    { t: 1000, beat: 'agent', kind: 'note', agent: { task: 'Finish the test.' } },
-    { t: 2000, beat: 'agent', kind: 'note', agent: { tool: 'run_list', say: 'Finds the run' } },
-    { t: 3000, beat: 'agent', kind: 'note', agent: { tool: 'page_act', say: 'Clicks Orders' } },
-    { t: 5000, beat: 'agent', kind: 'note', agent: { done: true } },
+    { t: 3000, beat: 'agent', kind: 'note', agent: { user: PROMPT } },
+    { t: 4000, beat: 'agent', kind: 'note', agent: { reply: 'I’ll look.' } },
+    { t: 5000, beat: 'agent', kind: 'note', agent: { tool: 'run_list', detail: 'the runs', id: 1 } },
+    { t: 5500, beat: 'agent', kind: 'note', agent: { done: 1, result: 'one stopped' } },
+    { t: 6000, beat: 'agent', kind: 'note', agent: { tool: 'code_write', detail: 'the steps', id: 2 } },
+    { t: 6500, beat: 'agent', kind: 'note', agent: { done: 2, result: 'written', code: ['await a();'] } },
   ];
   const at = (n) => n.t / 1000;
 
-  test('shows what the agent was asked and the calls it made by then, the last one running', () => {
-    assert.deepEqual(agentPanel(notes, 3500, 10, at), {
-      task: { text: 'Finish the test.', opacity: 1 },
-      steps: [
-        { tool: 'run_list', say: 'Finds the run', done: true, opacity: 1 },
-        { tool: 'page_act', say: 'Clicks Orders', done: false, opacity: 1 },
+  test('types the person’s prompt into its box before it is sent', () => {
+    assert.deepEqual(agentPanel(notes, 2000, 3 - AGENT.typeS / 2, at), { input: 'Finish t', entries: [] });
+    assert.equal(agentPanel(notes, 1000, 3 - AGENT.typeS - 0.1, at).input, '');
+    const sent = agentPanel(notes, 3000, 3.5, at);
+    assert.equal(sent.input, null);
+    assert.deepEqual(
+      sent.entries.map((e) => [e.kind, e.text]),
+      [['user', PROMPT]],
+    );
+  });
+
+  test('shows each reply and call, a call running until its answer came back, then with what came back', () => {
+    const running = agentPanel(notes, 5200, 10, at).entries;
+    assert.deepEqual(
+      running.map((e) => [e.kind, e.tool ?? e.text, e.done ?? null]),
+      [
+        ['user', PROMPT, null],
+        ['reply', 'I’ll look.', null],
+        ['tool', 'run_list', false],
       ],
-    });
-    assert.deepEqual(agentPanel(notes, 500, 0.5, at), { task: null, steps: [] });
+    );
+    const later = agentPanel(notes, 7000, 10, at).entries;
+    assert.deepEqual(
+      later.filter((e) => e.kind === 'tool').map((e) => [e.tool, e.done, e.result, e.code]),
+      [
+        ['run_list', true, 'one stopped', []],
+        ['code_write', true, 'written', ['await a();']],
+      ],
+    );
   });
 
-  test('marks every call done once the agent is, and fades each in from its time', () => {
-    assert.ok(agentPanel(notes, 6000, 10, at).steps.every((step) => step.done));
-    const fading = agentPanel(notes, 3000, 3.1, at).steps[1].opacity;
-    assert.ok(fading > 0 && fading < 1, `the new call fades in (${fading})`);
+  test('fades each entry in from its time', () => {
+    const fading = agentPanel(notes, 4000, 4.1, at).entries[1].opacity;
+    assert.ok(fading > 0 && fading < 1, `the reply fades in (${fading})`);
   });
 
-  test('is a window at the Runs window’s place, up from the agent’s first note, its calls off the key strip', () => {
-    assert.deepEqual(world(WINDOWS).agent.frame, world(WINDOWS).runs.frame);
-    assert.equal(world(WINDOWS).agent.crop, null);
+  test('docks over the right column, up as the prompt is typed, its calls off the key strip', () => {
+    const placed = world(WINDOWS);
+    assert.equal(placed.agent.crop, null);
+    assert.equal(placed.agent.frame.x, placed.runs.frame.x);
+    assert.equal(placed.agent.frame.y, placed['test-browser'].frame.y);
+    assert.equal(placed.agent.frame.y + placed.agent.frame.height, placed.runs.frame.y + placed.runs.frame.height);
     const log = take();
     log.story[1] = { ...log.story[1], focus: ['vscode', 'agent'] };
     log.raises = [{ t: 1500, up: 'tiles', window: 'vscode' }];
-    log.gestures = notes.map((n) => ({ ...n, beat: 'red-run', t: n.t + 4000, what: 'the agent' }));
+    log.gestures = notes.map((n) => ({ ...n, beat: 'red-run', t: n.t + 3000, what: 'the agent' }));
     const plan = planCut(log, { flashFrame: 24, frames: 10_000 });
     const red = plan.segments.find((s) => s.id === 'red-run');
     const late = plan.frames[Math.round((red.end - 0.1) * 30)];
     const agent = late.windows.find((w) => w.id === 'agent');
-    assert.ok(agent, 'the panel is up at the beat’s end');
+    assert.ok(agent, 'the chat is up at the beat’s end');
     assert.equal(agent.name, 'Coding agent · scripted for this video');
     assert.deepEqual(
-      agent.agent.steps.map((step) => [step.say, step.done]),
-      [
-        ['Finds the run', true],
-        ['Clicks Orders', true],
-      ],
+      agent.agent.entries.map((e) => e.kind),
+      ['user', 'reply', 'tool', 'tool'],
     );
     const early = plan.frames[Math.round((red.start + 0.2) * 30)];
     assert.equal(
       early.windows.some((w) => w.id === 'agent'),
       false,
-      'not before its first note',
+      'not before the prompt is typed',
     );
     assert.ok(
       plan.frames.every((f) => !f.keys),

@@ -64,7 +64,31 @@ export function wrap(line, width = ROW_CHARS) {
   return rows;
 }
 
-/** What is wrong with the lines of `beats` in `language`: a line over two rows, a beat whose lines read too fast. */
+/** A line's text: a line is its text, or `{ text, at }` when the beat's run says it at the moment `at`. */
+export const lineText = (line) => (typeof line === 'string' ? line : line.text);
+
+/**
+ * A beat's lines in the groups it says them in: those before its first line with a moment (`at`) from its start, then
+ * each line with a moment and the lines after it up to the next, said together when the run reaches that moment
+ * (`context.say(at)`). Texts, by group.
+ */
+export function lineGroups(lines) {
+  const groups = { start: [], at: new Map() };
+  let current = groups.start;
+  for (const line of lines) {
+    if (typeof line !== 'string' && line.at) {
+      current = [];
+      groups.at.set(line.at, current);
+    }
+    current.push(lineText(line));
+  }
+  return groups;
+}
+
+/**
+ * What is wrong with the lines of `beats` in `language`: a line over two rows, a beat whose lines read too fast, a
+ * moment named twice.
+ */
 export function lintLines(beats, language = 'en') {
   const problems = [];
   const played = beats.filter((b) => b.run);
@@ -78,7 +102,12 @@ export function lintLines(beats, language = 'en') {
     }
   }
   for (const b of beats) {
-    const lines = b.lines?.[language] ?? [];
+    const given = b.lines?.[language] ?? [];
+    const lines = given.map(lineText);
+    const moments = given.filter((line) => typeof line !== 'string').map((line) => line.at);
+    for (const at of new Set(moments.filter((m, i) => moments.indexOf(m) !== i))) {
+      problems.push(`${b.id}: two lines are said at the moment "${at}"`);
+    }
     if (!b.title) problems.push(`${b.id}: no title, which names its chapter`);
     if (!lines.length) problems.push(`${b.id}: no line in ${language}`);
     for (const line of lines) {
@@ -223,6 +252,15 @@ export class Gestures {
   note(what, extra = {}) {
     this.log.push({ t: Date.now(), beat: this.beat, kind: 'note', what, ...extra });
   }
+
+  /**
+   * A note the cut shows as it comes (an agent's message, a tool call it makes): logged after `pace.before`, as a
+   * gesture acts, so that a take leaves the time to read the one before.
+   */
+  async tell(what, extra = {}) {
+    if (this.pace.before) await new Promise((resolve) => setTimeout(resolve, this.pace.before));
+    this.note(what, extra);
+  }
 }
 
 /** Writes the whole X screen to `file`, with ImageMagick's `import`, else one frame of ffmpeg's; best-effort. */
@@ -270,6 +308,14 @@ export async function play({
     const skipped = [];
     context.gesture.beat = b.id;
     context.skip = (bug, what) => skipped.push({ bug, what });
+    // The run says each of its lines with a moment there: a take holds the action while it is spoken.
+    const moments = lineGroups(b.lines?.en ?? []).at;
+    const said = new Set();
+    context.say = async (at) => {
+      if (!moments.has(at)) throw new Error(`${b.id} has no line to say at "${at}"`);
+      said.add(at);
+      await hooks.say?.(b, at);
+    };
     const seconds = () => ((Date.now() - started) / 1000).toFixed(1);
     if (!b.run) {
       outcomes.push({ id: b.id, outcome: 'card' });
@@ -282,6 +328,8 @@ export async function play({
             await hooks.started?.(b);
             await context.raise?.(b.focus[0]);
             await b.run(context);
+            const unsaid = [...moments.keys()].filter((at) => !said.has(at));
+            if (unsaid.length) throw new Error(`the run never reached the moment of its lines: ${unsaid.join(', ')}`);
             if (b.check) await b.check(context);
             await hooks.ended?.(b);
           })(),

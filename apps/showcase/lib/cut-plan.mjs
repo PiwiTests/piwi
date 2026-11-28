@@ -60,8 +60,8 @@ function lastAt(events, t) {
  * The stage's world: each window's content as the master holds it (`crop`; VS Code's with its own title bar, as its
  * command center drops Quick Open and the command palette over it), and where the stage draws its frame and content
  * (`frame`, `content`, in master pixels): the right column moved off VS Code, and the Runs window off the test's
- * browser, by `GAP` and the frame's bar. A test's browser the take never reached takes its tile. The agent's panel,
- * which the stage draws itself (no `crop`), takes the Runs window's place.
+ * browser, by `GAP` and the frame's bar. A test's browser the take never reached takes its tile. The agent's chat,
+ * which the stage draws itself (no `crop`), takes the right column, beside the editor.
  */
 export function world(windows) {
   const crop = { ...windows };
@@ -82,7 +82,14 @@ export function world(windows) {
     const frame = { x: content.x, y: content.y - TITLE_BAR, width: r.width, height: r.height + TITLE_BAR };
     placed[id] = { crop: r, content, frame, offset: offsets[id] };
   }
-  placed.agent = { ...placed.runs, crop: null };
+  // The agent's chat docks beside the editor, over the right column: the test's browser's place and the Runs window's.
+  const column = union([placed['test-browser'].frame, placed.runs.frame]);
+  placed.agent = {
+    crop: null,
+    frame: column,
+    content: { ...column, y: column.y + TITLE_BAR, height: column.height - TITLE_BAR },
+    offset: placed.runs.offset,
+  };
   return placed;
 }
 
@@ -163,26 +170,36 @@ function beatWindows(story, gestures) {
   return [...new Set(ids)];
 }
 
+/** The agent's chat: how long the person's prompt takes to type into its box, in seconds. */
+export const AGENT = { typeS: 1.6 };
+
 /**
- * The agent's panel at the wall-clock `w`, in the cut's second `time`: what it was asked and each tool call it made by
- * then (`notes`, the take's notes with an `agent`), each fading in from its note's time (`at`, the cut's seconds), the
- * last one running until the next starts or the agent is done.
+ * The agent's chat at the wall-clock `w`, in the cut's second `time`, from the take's notes with an `agent` (`notes`,
+ * in order), each at `at(note)` in the cut: the person's prompt typed into its box over `AGENT.typeS` before it is sent;
+ * then each message (the prompt, the agent's replies) and each tool call, running until its answer came back, then with
+ * what came back (`result`, and the code it wrote); each fading in from its time.
  */
 export function agentPanel(notes, w, time, at) {
-  const shown = notes.filter((n) => n.t <= w);
   const fade = (n) => Math.max(0, Math.min(1, (time - at(n)) / FADE.window));
-  const task = shown.find((n) => n.agent.task);
-  const steps = shown.filter((n) => n.agent.tool);
-  const done = shown.some((n) => n.agent.done);
-  return {
-    task: task ? { text: task.agent.task, opacity: fade(task) } : null,
-    steps: steps.map((n, i) => ({
-      tool: n.agent.tool,
-      say: n.agent.say ?? n.agent.tool,
-      done: done || i < steps.length - 1,
-      opacity: fade(n),
-    })),
-  };
+  const prompt = notes.find((n) => n.agent.user);
+  let input = null;
+  if (prompt && prompt.t > w) {
+    const typed = Math.max(0, Math.min(1, 1 - (at(prompt) - time) / AGENT.typeS));
+    input = prompt.agent.user.slice(0, Math.round(prompt.agent.user.length * typed));
+  }
+  const entries = [];
+  for (const n of notes.filter((note) => note.t <= w)) {
+    const { user, reply, tool, done } = n.agent;
+    if (user) entries.push({ kind: 'user', text: user, opacity: fade(n) });
+    else if (reply) entries.push({ kind: 'reply', text: reply, opacity: fade(n) });
+    else if (tool)
+      entries.push({ kind: 'tool', id: n.agent.id, tool, detail: n.agent.detail, done: false, opacity: fade(n) });
+    else if (done) {
+      const call = entries.find((e) => e.kind === 'tool' && e.id === done);
+      if (call) Object.assign(call, { done: true, result: n.agent.result ?? null, code: n.agent.code ?? [] });
+    }
+  }
+  return { input, entries };
 }
 
 /** What the key strip shows for a gesture or a note, or null: the agent's notes show in its panel. */
@@ -210,11 +227,11 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const limits = { minWidth: width * dpr };
   const span = viewRect(fit(union(Object.values(placed).map((p) => p.frame)))).width;
   const raises = log.raises ?? [];
-  // The agent's panel comes up with its first note, as a window does.
+  // The agent's chat comes up as a window does, as the person starts typing to it.
   const agentNotes = log.gestures.filter((g) => g.kind === 'note' && g.agent);
   const presence = [
     ...(log.presence ?? []),
-    ...agentNotes.slice(0, 1).map((n) => ({ t: n.t - 300, window: 'agent', open: true })),
+    ...agentNotes.slice(0, 1).map((n) => ({ t: n.t - AGENT.typeS * 1000 - 300, window: 'agent', open: true })),
   ].sort((a, b) => a.t - b.t);
   const layerAt = (w) => lastAt(raises, w)?.up ?? 'dashboard';
   const openAt = (id, w) =>
