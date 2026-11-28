@@ -39,8 +39,8 @@
       panel.dataset.text = text;
       const element = (tag, className, content = '') =>
         Object.assign(document.createElement(tag), { className, textContent: content });
-      const asked = element('div', 'asked');
-      if (agent.task) asked.append(element('span', 'label', 'Asked'), element('p', 'task', agent.task.text));
+      const asked = element('p', 'asked');
+      if (agent.task) asked.append(element('span', 'label', 'Asked'), element('span', 'task', agent.task.text));
       const steps = element('ol', 'steps');
       for (const step of agent.steps) {
         const item = element('li', step.done ? 'done' : 'running');
@@ -50,7 +50,7 @@
       }
       panel.replaceChildren(asked, steps);
     }
-    panel.style.fontSize = `${44 * scale}px`;
+    panel.style.fontSize = `${36 * scale}px`;
     panel.querySelector('.asked').style.opacity = String(agent.task?.opacity ?? 0);
     [...panel.querySelectorAll('.steps li')].forEach((item, i) => {
       item.style.opacity = String(agent.steps[i].opacity);

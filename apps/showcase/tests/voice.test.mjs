@@ -94,12 +94,14 @@ describe('the cue sheet', () => {
     const sheet = cueSheet([
       { start: 4, end: 6.5, beat: 'title', text: 'Hello there.' },
       { start: 65.25, end: 70.57, beat: 'red-run', text: 'Piwi kept it: the page, "the" timeline.' },
+      { start: 16.755, end: 21.8, beat: 'red-run', text: 'Rounded alike.' },
     ]);
     assert.equal(
       sheet,
       'start,end,start_s,end_s,beat,line\n' +
         '0:04.00,0:06.50,4.00,6.50,title,Hello there.\n' +
-        '1:05.25,1:10.57,65.25,70.57,red-run,"Piwi kept it: the page, ""the"" timeline."\n',
+        '1:05.25,1:10.57,65.25,70.57,red-run,"Piwi kept it: the page, ""the"" timeline."\n' +
+        '0:16.76,0:21.80,16.76,21.80,red-run,Rounded alike.\n',
     );
   });
 });

@@ -165,12 +165,15 @@ export function chaptersText(chapters, end) {
  */
 export function cueSheet(cues) {
   const field = (value) => (/[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+  // Both columns from the same hundredths, so that they agree.
+  const hundredths = (seconds) => Math.round(seconds * 100);
   const clock = (seconds) => {
-    const hundredths = Math.round(seconds * 100);
-    return `${chapterTime(Math.floor(hundredths / 100))}.${String(hundredths % 100).padStart(2, '0')}`;
+    const h = hundredths(seconds);
+    return `${chapterTime(Math.floor(h / 100))}.${String(h % 100).padStart(2, '0')}`;
   };
+  const plain = (seconds) => (hundredths(seconds) / 100).toFixed(2);
   const rows = cues.map((c) =>
-    [clock(c.start), clock(c.end), c.start.toFixed(2), c.end.toFixed(2), c.beat ?? '', c.text].map(field).join(','),
+    [clock(c.start), clock(c.end), plain(c.start), plain(c.end), c.beat ?? '', c.text].map(field).join(','),
   );
   return `${['start', 'end', 'start_s', 'end_s', 'beat', 'line'].join(',')}\n${rows.join('\n')}\n`;
 }
