@@ -150,3 +150,12 @@ export async function readJsonBodyWithin(event: H3Event, maxBytes: number, tooLa
     return undefined;
   }
 }
+
+/**
+ * The bytes of a request's body as its `Content-Length` header declares them: what a run's results sent as JSON weigh,
+ * which the run counts toward the storage quota. `bodyLimitError` refuses a body sent without the header; 0 without one.
+ */
+export function declaredBodyBytes(contentLength: string | undefined): number {
+  const length = Number(contentLength);
+  return Number.isSafeInteger(length) && length > 0 ? length : 0;
+}

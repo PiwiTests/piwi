@@ -139,7 +139,7 @@ describe('metadata.tagsTruncated', () => {
     };
     const joined = await batchShardRun(db as never, projectId, shard.instanceId, batch as never);
     expect(joined.id).toBe(runId);
-    await addBatchShard(db as never, runId, batchShardTally(batch as never, []));
+    await addBatchShard(db as never, runId, batchShardTally(batch as never, [], 0));
     await begin({
       params: { id: String(runId) },
       body: {
@@ -171,7 +171,7 @@ describe('metadata.tagsTruncated', () => {
       };
       const run = await batchShardRun(db as never, projectId, 'ci-run-8', body as never);
       runId = run.id;
-      await addBatchShard(db as never, run.id, batchShardTally(body as never, []));
+      await addBatchShard(db as never, run.id, batchShardTally(body as never, [], 0));
     }
     expect(await storedTagsTruncated(runId)).toEqual({ tests: 5, examples: [A, B] });
   });

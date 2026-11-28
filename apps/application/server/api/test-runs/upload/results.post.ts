@@ -3,6 +3,8 @@ import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { runReporterId } from '../../../utils/run-viewer';
 import { checkSubmitBody } from '../../../utils/batch-payload';
+import { declaredBodyBytes } from '../../../utils/body-limit';
+import { refuseRunsPastCeiling } from '../../../utils/storage-quota';
 import { createBatchRun, renewHeldRunToken } from '../../../utils/batch-run';
 import { deliverOnce, readDeliveryKey } from '../../../utils/run-deliveries';
 import { runEventBus } from '../../../utils/run-events';
@@ -16,7 +18,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Upload the results of a run ahead of its files',
     description:
-      'The first request of a run uploaded in parts, so that no request carries more than one test’s files or one report. Takes the body of `/api/test-runs/submit`, creates the run with its executions and holds it `finalizing`. The answer’s `streamToken` authenticates the files of each test, sent to `/api/test-runs/{id}/case-files` while the run is finalizing. An upload to `/api/test-runs/upload` with `runId` (a report, or none) settles the run to the status sent here, with the finish-time side effects; a run no upload settles is settled after ten minutes with no request for it: these results, a file, or a repeated delivery. A repeated `deliveryKey` answers with the run its first delivery created, with `duplicate: true`: while that run waits for its files, with a new `streamToken`, which takes the place of the one the first answer carried, and once it settled, with no token. A repeat sent in one upload to `/api/test-runs/upload`, or as JSON to `/api/test-runs/submit`, answers the same, its files unread: they then go to `/api/test-runs/{id}/case-files` with that token. A shard is refused with 400: its run settles with its last shard, so a shard sends its results and its files in one upload.',
+      'The first request of a run uploaded in parts, so that no request carries more than one test’s files or one report. Takes the body of `/api/test-runs/submit`, creates the run with its executions and holds it `finalizing`. The answer’s `streamToken` authenticates the files of each test, sent to `/api/test-runs/{id}/case-files` while the run is finalizing. An upload to `/api/test-runs/upload` with `runId` (a report, or none) settles the run to the status sent here, with the finish-time side effects; a run no upload settles is settled after ten minutes with no request for it: these results, a file, or a repeated delivery. A repeated `deliveryKey` answers with the run its first delivery created, with `duplicate: true`: while that run waits for its files, with a new `streamToken`, which takes the place of the one the first answer carried, and once it settled, with no token. A repeat sent in one upload to `/api/test-runs/upload`, or as JSON to `/api/test-runs/submit`, answers the same, its files unread: they then go to `/api/test-runs/{id}/case-files` with that token. A shard is refused with 400: its run settles with its last shard, so a shard sends its results and its files in one upload. Past the storage quota’s ceiling (`PIWI_STORAGE_QUOTA_BYTES`), a new run is refused with 409 and `errorCode` `STORAGE_QUOTA_EXCEEDED`, and a repeated delivery goes on; at the quota, its files are refused (`STORAGE_QUOTA_FILES_REFUSED` from `/case-files`).',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -53,13 +55,16 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription, {
+    beforeCreate: () => refuseRunsPastCeiling(db),
+  });
 
   const delivered = await deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
     const streamToken = randomBytes(32).toString('hex');
     const testRun = await createBatchRun(db, project.id, body, {
       awaitingFiles: { streamToken },
       reporterId: runReporterId(event, user),
+      resultsBytes: declaredBodyBytes(getRequestHeader(event, 'content-length')),
     });
 
     runEventBus.publishGlobal({

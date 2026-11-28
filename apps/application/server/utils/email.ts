@@ -4,6 +4,7 @@ import { renderReportEmail } from '#shared/reports/render-email';
 import { emailButton, emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
 import { BRAND_MARK_CID, piwiMarkPng } from '#shared/brand';
 import { formatBytes } from '#shared/utils/format-bytes';
+import { storageWarningTitle, type StorageQuotaState, type StorageWarningLevel } from '#shared/storage-quota';
 import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import {
   renderDigestEmailAt,
@@ -190,26 +191,41 @@ export function renderOperatorInviteNoticeEmail(invited: string): { html: string
   return { html, text };
 }
 
-/** Tells an administrator the stored bytes crossed a level of the storage quota, and where to see what takes the room. */
+/**
+ * Tells an administrator the stored bytes crossed a level of the storage quota, what the quota refuses from that level
+ * on, and where to see what takes the room.
+ */
 export function renderStorageWarningEmail(
-  usedBytes: number,
-  quotaBytes: number,
-  level: number,
+  state: StorageQuotaState,
+  level: Exclude<StorageWarningLevel, 0>,
 ): { html: string; text: string } {
   const url = `${siteUrl()}/settings/storage`;
+  const { usedBytes, quotaBytes, over } = state;
   const percent = Math.floor((usedBytes / quotaBytes) * 100);
-  const title = `Storage is at ${level}% of its quota`;
+  const title = storageWarningTitle(level);
   const usage = `This instance stores ${formatBytes(usedBytes)} of its ${formatBytes(quotaBytes)} quota (${percent}%).`;
+  const ceiling = over ? formatBytes(over.ceilingBytes) : null;
+  const refusal =
+    level === 'ceiling'
+      ? 'New runs are refused until space is freed. The runs in progress finish, their results kept and their files not.'
+      : level === 100
+        ? `Piwi keeps taking test results but no longer keeps their files: traces, screenshots, videos, attachments and reports.${ceiling ? ` Once the stored bytes reach ${ceiling}, new runs are refused too.` : ''}`
+        : null;
   const next =
     'Settings → Storage shows what takes the room. Deleting old runs, or a shorter data retention, frees it; whoever runs the instance can raise the quota.';
+  const paragraphs = [usage, refusal, next].filter((line): line is string => line !== null);
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">${escapeHtml(title)}</h2>
-    <p style="margin:0 0 16px;color:#52525b;">${escapeHtml(usage)}</p>
-    <p style="margin:0 0 24px;color:#52525b;">${escapeHtml(next)}</p>
+    ${paragraphs
+      .map(
+        (line, i) =>
+          `<p style="margin:0 0 ${i === paragraphs.length - 1 ? 24 : 16}px;color:#52525b;">${escapeHtml(line)}</p>`,
+      )
+      .join('\n    ')}
     ${emailButton(url, 'Open Storage')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
   const { html } = emailLayout(title, body);
-  return { html, text: `${title}\n\n${usage}\n\n${next}\n\n${url}` };
+  return { html, text: `${title}\n\n${paragraphs.join('\n\n')}\n\n${url}` };
 }
 
 export function renderVerifyEmail(token: string): { html: string; text: string } {

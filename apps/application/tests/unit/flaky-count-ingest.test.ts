@@ -152,8 +152,8 @@ describe('the flaky count of a run', () => {
         },
       });
     const other = [attempt('lists orders', 3, ['passed']), attempt('lists orders', 3, ['passed', 'passed'])];
-    expect(batchShardTally({ ...COUNTS } as never, SERIAL_GROUP).flakyTests).toBe(1);
-    expect(batchShardTally({} as never, other).flakyTests).toBe(0);
+    expect(batchShardTally({ ...COUNTS } as never, SERIAL_GROUP, 0).flakyTests).toBe(1);
+    expect(batchShardTally({} as never, other, 0).flakyTests).toBe(0);
 
     await shard(1, SERIAL_GROUP, COUNTS);
     const { runId } = await shard(2, other, { totalTests: 1, passedTests: 1 });

@@ -17,6 +17,8 @@ import {
   type ShardReport,
 } from './shard-spans';
 import { cancelInstanceRuns } from './cancel-instance-runs';
+import { refuseRunsPastCeiling } from './storage-quota';
+import { reportedNotKept, withIngestHealth, withoutReportedNotKept } from '#shared/ingest-health';
 import { withInstanceRunLock } from './ingest-locks';
 import { sanitizeMetadata } from './sanitize';
 import { resolveRunBranch } from './run-branch';
@@ -67,6 +69,8 @@ export interface BatchShardTally {
   setupSteps: BatchRunBody['setupSteps'];
   /** The shard's errors outside any test, as the run stores them (`storableRunErrors`). */
   runErrors: WireRunError[] | null;
+  /** The size of the shard's results as it sent them, which the run counts toward the storage quota. */
+  resultsBytes: number;
 }
 
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
@@ -102,8 +106,12 @@ export function countFlakyBatchCases(testCases: ReadonlyArray<BatchCase>): numbe
   return flakyFinalAttempts(rows).size;
 }
 
-/** A batch shard's tally, from its run-level counters and its test cases. */
-export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<BatchCase>): BatchShardTally {
+/** A batch shard's tally, from its run-level counters, its test cases and the size of its results. */
+export function batchShardTally(
+  body: BatchRunBody,
+  testCases: ReadonlyArray<BatchCase>,
+  resultsBytes: number,
+): BatchShardTally {
   return {
     totalTests: body.totalTests ?? 0,
     passedTests: body.passedTests ?? 0,
@@ -121,13 +129,16 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
     durations: testCases.map((tc) => tc.duration),
     setupSteps: body.setupSteps,
     runErrors: storableRunErrors(body.runErrors),
+    resultsBytes,
   };
 }
 
 /**
  * The run a shard of a batch submission joins: the instance's active sharded
  * run, or a new one, running with no shard counted yet, for the first shard to
- * arrive, reported by `reporterId` (`runReporterId`). A new run cancels the instance's earlier non-sharded runs.
+ * arrive, reported by `reporterId` (`runReporterId`). A new run cancels the instance's earlier non-sharded runs, and
+ * is refused past the storage quota's ceiling (`refuseRunsPastCeiling`). The files its reporter says it did not send
+ * join the run shard by shard, the first shard's too, as `addBatchShard` counts each in.
  */
 export function batchShardRun(
   db: DbClient,
@@ -140,9 +151,10 @@ export function batchShardRun(
     const active = await findActiveShardedRun(db, projectId, instanceId, body.shardTotal!);
     if (active) return active;
 
+    await refuseRunsPastCeiling(db);
     await cancelInstanceRuns(db, projectId, instanceId, undefined, true);
     // Each shard's cut tags join the run as `addBatchShard` counts the shard in, the first shard's too.
-    const metadata = withoutTagsTruncated(sanitizeMetadata(body.metadata || null));
+    const metadata = withoutReportedNotKept(withoutTagsTruncated(sanitizeMetadata(body.metadata || null)));
     const [run] = await db
       .insert(testRuns)
       .values({
@@ -181,9 +193,10 @@ export function batchShardRun(
 /**
  * Count a shard of a batch submission into its run, once its executions are
  * stored: the counters add up, the shard's span, suite setup steps and errors
- * outside any test join the run's (`recordShardEnd`), and the shard counts as
- * finished. A shard whose end the run already holds (its `/finish` answer was
- * lost, and its reporter fell back to the batch upload) counts once.
+ * outside any test join the run's (`recordShardEnd`), as do the files its
+ * reporter did not send, and the shard counts as finished. A shard whose end
+ * the run already holds (its `/finish` answer was lost, and its reporter fell
+ * back to the batch upload) counts once.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
   const span = shardSpan(tally.shard, Date.now());
@@ -194,7 +207,13 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
     (metadata) =>
       hasShardEnded(metadata, span.shardIndex)
         ? null
-        : withShardDurations(addRunTagsTruncated(metadata, tally.shard.metadata), tally.durations),
+        : withShardDurations(
+            addRunTagsTruncated(
+              withIngestHealth(metadata, reportedNotKept(tally.shard.metadata)),
+              tally.shard.metadata,
+            ),
+            tally.durations,
+          ),
     {
       updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
@@ -204,6 +223,7 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
       flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+      resultsBytes: sql`${testRuns.resultsBytes} + ${tally.resultsBytes}`,
     },
     tally.setupSteps ?? [],
     tally.runErrors ?? [],

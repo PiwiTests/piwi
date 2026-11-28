@@ -48,7 +48,9 @@ by `docs:dev` and `docs:build`:
 
 - To change a variable's name, description, default or category → edit the **registry**.
 - To change section prose or ordering → edit `PIWI_ENV_CATEGORIES` (title/intro/note/order; `mergeInto` folds one
-  category's table into another; `internal` hides harness-only vars).
+  category's table into another; `internal` hides harness-only vars). A variable marked `unlisted` in the registry is
+  left out of the reference and the generator, and names no `docs` page: a setting for whoever runs instances for
+  others, documented where they run them.
 - The interactive generator at `/reference/configuration/generator` reads the **same registry** through the `#shared` Vite alias
   wired in `apps/docs/.vitepress/config.mts`, and emits output through the pure emitters in `apps/application/shared/env-format.ts`
   (unit-tested quoting for .env / compose / docker run / K8s / systemd / shell). Change the emitters, not the markup.

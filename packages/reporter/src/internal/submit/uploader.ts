@@ -9,6 +9,7 @@ import { errorMessage } from '../support/errors.js';
 import { Logger } from '../support/logger.js';
 import { requestedRunTarget } from '../config/env.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
+import { StorageQuota, quotaRefusesFiles, type FilesNotKept } from './storage-quota.js';
 import type { CollectedTestCase, TraceHashInfo, FilterDetails, WireResourceReport, SetupStep } from '../../types.js';
 import type { WireEnvironmentSnapshot, WireRunError } from '../../types/wire.js';
 
@@ -134,14 +135,16 @@ interface CaseFiles {
  */
 export class Uploader {
   /**
-   * @param httpClient  HTTP client for server communication.
-   * @param fileHandler File discovery and compression helper.
-   * @param logger      Prefixed logger.
+   * @param httpClient   HTTP client for server communication.
+   * @param fileHandler  File discovery and compression helper.
+   * @param logger       Prefixed logger.
+   * @param storageQuota The dashboard's storage quota as it answered this run, shared with every sender of the run.
    */
   constructor(
     private readonly httpClient: HttpClient,
     private readonly fileHandler: FileHandler,
     private readonly logger: Logger = new Logger(),
+    readonly storageQuota: StorageQuota = new StorageQuota(logger),
   ) {}
 
   /** Submit test results as a plain JSON payload (no file attachments); fails unless the answer names the run */
@@ -182,6 +185,7 @@ export class Uploader {
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     const runId = deliveredRunId(response, '/api/test-runs/upload');
+    this.storageQuota.readAnswer(response);
     this.logger.debug(`Successfully uploaded test results with files`);
     this.logger.debug(`Test Run ID: ${runId}, Project ID: ${response.projectId}`);
     if (response.reports) {
@@ -222,8 +226,10 @@ export class Uploader {
   /**
    * Upload each of `reports` to run `runId` in a request of its own, so a report the dashboard refuses (over its
    * upload limit, say) leaves out that one alone. Any such upload settles a run the dashboard holds `finalizing`
-   * until its files are in, and so does the one carrying no report that follows when none went through. Never
-   * throws: the dashboard settles a run no upload settled ten minutes after its last file.
+   * until its files are in, and so does the one carrying no report that follows when none went through. Once the
+   * storage quota refuses the run's files, the reports left are counted and not sent, and the upload carrying no
+   * report goes with the counts of everything it left out (`StorageQuota.notKept`). Never throws: the dashboard
+   * settles a run no upload settled ten minutes after its last file.
    */
   async uploadReportsAndSettle(
     projectName: string,
@@ -235,6 +241,10 @@ export class Uploader {
     let settled = false;
     for (const report of reports) {
       if (this.httpClient.closed) return;
+      if (this.storageQuota.refusesFiles) {
+        this.storageQuota.leaveOutReports([report]);
+        continue;
+      }
       try {
         await this.uploadReportsForStreamingRun(projectName, runId, [report], startTime, auth);
         settled = true;
@@ -242,9 +252,10 @@ export class Uploader {
         this.logger.warn(`Could not upload the ${report.type} report of run #${runId}: ${errorMessage(error)}`);
       }
     }
-    if (settled || this.httpClient.closed) return;
+    const notKept = this.storageQuota.notKept();
+    if ((settled && !notKept) || this.httpClient.closed) return;
     try {
-      await this.uploadReportsForStreamingRun(projectName, runId, [], startTime, auth);
+      await this.uploadReportsForStreamingRun(projectName, runId, [], startTime, auth, notKept);
     } catch (error) {
       this.logger.debug(`Could not settle run #${runId} without its reports: ${errorMessage(error)}`);
     }
@@ -252,7 +263,8 @@ export class Uploader {
 
   /**
    * Upload `reports` for a run the dashboard already holds: a streamed run, or one uploaded in parts. Any such upload,
-   * one with no report too, settles a run the dashboard keeps `finalizing` until its files arrive.
+   * one with no report too, settles a run the dashboard keeps `finalizing` until its files arrive. `notKept`, the files
+   * the reporter left out for the storage quota, goes in its run body's `metadata.ingestHealth`.
    */
   async uploadReportsForStreamingRun(
     projectName: string,
@@ -260,6 +272,7 @@ export class Uploader {
     reports: FoundReport[],
     startTime: string | null,
     auth: string | null,
+    notKept: FilesNotKept | null = null,
   ): Promise<void> {
     const form = new FormData();
     form.append('runId', String(runId));
@@ -274,7 +287,7 @@ export class Uploader {
         passedTests: 0,
         failedTests: 0,
         skippedTests: 0,
-        metadata: {},
+        metadata: notKept ? { ingestHealth: notKept } : {},
       }),
     );
     form.append('testCases', JSON.stringify([]));
@@ -282,6 +295,7 @@ export class Uploader {
     await this.appendReportsToForm(form, reports);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
+    this.storageQuota.readAnswer(response);
     this.logger.debug(`Successfully uploaded ${reports.length} report(s) for run #${runId}`);
     if (response.reports) {
       for (const r of response.reports) this.logger.debug(`${r.label}: ${r.path}`);
@@ -292,8 +306,9 @@ export class Uploader {
    * Upload one test case's trace and attachments to a run that takes them with `streamToken`: a streaming run, or a
    * run uploaded in parts. A streamed case's `complete` event must have been flushed to the server first. Returns
    * `false` when the case has no files to upload. Files the dashboard refuses together as too large (413) go again in
-   * a request each, its attachments of one name together, and one it still refuses is left out alone. `signal` ends
-   * the upload, its trace check included, or fails it before it starts.
+   * a request each, its attachments of one name together, and one it still refuses is left out alone. Once the storage
+   * quota refuses the run's files, the case's files that did not go are counted (`StorageQuota.leaveOutCase`) and it
+   * returns `false` unless some went. `signal` ends the upload, its trace check included, or fails it before it starts.
    */
   async uploadCaseFiles(
     projectName: string,
@@ -305,6 +320,10 @@ export class Uploader {
     signal?: AbortSignal,
   ): Promise<boolean> {
     signal?.throwIfAborted();
+    if (this.storageQuota.refusesFiles) {
+      this.leaveOutCase(testCase, uploadTraces);
+      return false;
+    }
     const attachments = this.fileHandler.findAllAttachments(testCase);
     const trace = uploadTraces ? await this.fileHandler.computeSingleTraceHash(testCase) : null;
     if (!trace && attachments.length === 0) return false;
@@ -328,12 +347,22 @@ export class Uploader {
     try {
       await send(whole);
     } catch (error) {
+      if (quotaRefusesFiles(error)) {
+        this.filesRefused(testCase, [whole]);
+        return false;
+      }
       const parts = splitCaseFiles(whole);
       if (!isTooLarge(error) || parts.length < 2) throw error;
-      for (const part of parts) {
+      let sent = false;
+      for (const [i, part] of parts.entries()) {
         try {
           await send(part);
+          sent = true;
         } catch (partError) {
+          if (quotaRefusesFiles(partError)) {
+            this.filesRefused(testCase, parts.slice(i));
+            return sent;
+          }
           if (!isTooLarge(partError)) throw partError;
           this.logger.warn(
             `Left out ${describeCaseFiles(part)} of "${testCase.title}": the dashboard refused it as too large (${errorMessage(partError)}).`,
@@ -346,6 +375,29 @@ export class Uploader {
       `Uploaded files for "${testCase.title}" (trace: ${trace ? 'yes' : 'no'}, attachments: ${attachments.length})`,
     );
     return true;
+  }
+
+  /** The storage quota refused `files` of `testCase`: no file goes for the rest of the run, and these count as not kept. */
+  private filesRefused(testCase: CollectedTestCase, files: CaseFiles[]): void {
+    this.storageQuota.refuseFiles();
+    this.storageQuota.leaveOutCase(
+      testCase,
+      files.filter((part) => part.trace).length,
+      files.reduce((count, part) => count + part.attachments.length, 0),
+    );
+  }
+
+  /** Count the files of `testCase` the reporter does not send for the storage quota: its trace and its attachments. */
+  private leaveOutCase(testCase: CollectedTestCase, uploadTraces: boolean | undefined): void {
+    const trace =
+      !!uploadTraces && this.fileHandler.findTraceFiles(testCase).some((tracePath) => fs.existsSync(tracePath));
+    this.storageQuota.leaveOutCase(testCase, trace ? 1 : 0, this.fileHandler.findAllAttachments(testCase).length);
+  }
+
+  /** Count every file of the run the reporter does not send for the storage quota: each test's, and each of `reports`. */
+  leaveOutFiles(testCases: CollectedTestCase[], reports: FoundReport[], uploadTraces: boolean | undefined): void {
+    for (const testCase of testCases) this.leaveOutCase(testCase, uploadTraces);
+    this.storageQuota.leaveOutReports(reports);
   }
 
   /** Post some of a test's files; a trace sent by its hash alone goes again with its file when the dashboard lacks it. */
@@ -536,7 +588,8 @@ function isTooLarge(error: unknown): boolean {
  * (`Uploader.uploadCaseFiles`), skipping those `skip` names, and calling `uploaded` for each test whose files went.
  * A test whose files fail is logged and the next one goes; the uploads stop after
  * `MAX_UPLOAD_CONNECTION_FAILURES` of them in a row got no answer at all, once the dashboard answers that the run
- * takes no more files (409: it ended), and once `signal` is aborted.
+ * takes no more files (409: it ended), and once `signal` is aborted. Once the storage quota refuses the run's files,
+ * each test left is counted and not sent (`Uploader.uploadCaseFiles`), with no line of its own.
  */
 export async function uploadCaseFilesInTurn(
   uploader: Pick<Uploader, 'uploadCaseFiles'>,

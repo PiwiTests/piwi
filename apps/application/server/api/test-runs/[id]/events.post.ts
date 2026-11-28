@@ -10,6 +10,7 @@ import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { testBeginData, testStopRunEvent, testCompletedData } from '../../../utils/live-case-events';
 import { resolveIngestLimits } from '../../../utils/ingest-limits';
 import { authorizeStreamToken, requireStreamingRun } from '../../../utils/stream-auth';
+import { declaredBodyBytes } from '../../../utils/body-limit';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
@@ -154,11 +155,17 @@ export default eventHandler(async (event) => {
   // `totalTests` is the planned suite size set once at /start, so it is not
   // touched here — incrementing per inserted row would count retry attempts as
   // extra tests. The per-status counters still accumulate for live progress;
-  // the reporter's distinct final counts replace them at /finish.
+  // the reporter's distinct final counts replace them at /finish. The batch's
+  // size counts toward the storage quota in the share of its results stored:
+  // none for a batch sent again.
+  const storedBytes = Math.round(
+    (declaredBodyBytes(getRequestHeader(event, 'content-length')) * insertedRunCases.length) / completeEvents.length,
+  );
   const updatedRuns = await db
     .update(testRuns)
     .set({
       updatedAt: new Date(),
+      resultsBytes: sql`${testRuns.resultsBytes} + ${storedBytes}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,

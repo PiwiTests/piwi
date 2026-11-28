@@ -1575,6 +1575,9 @@ for (const proj of DEMO_PROJECTS) {
             },
           }
         : {}),
+      // One run whose files the storage quota refused, so the run page says
+      // how many were not kept.
+      ...(proj.id === 1 && i === 4 ? { ingestHealth: { tracesNotKept: 3, attachmentsNotKept: 12 } } : {}),
       // One run whose suite declared more tags than a test keeps, so the run
       // page names the tests whose tags were cut (`metadata.tagsTruncated`).
       ...(proj.id === 1 && i === 5 ? { tagsTruncated: demoTagsTruncated(caseIds.slice(0, 2)) } : {}),

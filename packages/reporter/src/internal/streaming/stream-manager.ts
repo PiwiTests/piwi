@@ -8,6 +8,7 @@ import type { StreamBuffer } from './stream-buffer.js';
 import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
 import { uploadCaseFilesInTurn, type Uploader } from '../submit/uploader.js';
+import { StorageQuota, quotaRefusesRun } from '../submit/storage-quota.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
@@ -202,6 +203,7 @@ export class StreamManager {
    * @param fileHandler File-discovery helper for finding traces and attachments.
    * @param options     Piwi reporter options.
    * @param logger      Prefixed logger.
+   * @param storageQuota The dashboard's storage quota as it answered this run, the uploader's.
    */
   constructor(
     private readonly httpClient: HttpClient,
@@ -211,6 +213,7 @@ export class StreamManager {
     private readonly fileHandler: FileHandler,
     private readonly options: PiwiDashboardOptions,
     private readonly logger: Logger = new Logger(),
+    private readonly storageQuota: StorageQuota = new StorageQuota(logger),
   ) {
     this.pendingEvents = new BoundedEventQueue(this.options.maxStreamBufferBytes ?? 0);
   }
@@ -260,9 +263,15 @@ export class StreamManager {
   }
 
   // Open the stream, asking again after a failure a later try may not meet (no answer, a server error, a timeout or
-  // a rate limit) until the run ends. A refusal that stays (another client error) gives it up at once.
+  // a rate limit) until the run ends. A refusal that stays (another client error) gives it up at once, and so does
+  // a dashboard that refused the run for its storage quota, as the global setup heard, or as the replay of a saved run
+  // heard for a run the global setup did not register.
   private async _doStart(run: RunStart): Promise<void> {
     this.setupInfo = readSetupInfo(this.options.projectName!);
+    if (this.storageQuota.refusesRun) {
+      this.giveUpStart(null);
+      return;
+    }
     let authResolved = false;
     let failures = 0;
     for (;;) {
@@ -270,8 +279,16 @@ export class StreamManager {
         if (!authResolved) {
           this._auth = await this.httpClient.resolveAuth(this.options);
           authResolved = true;
-          // A request token starts this run alone: a run saved earlier is sent with another run's credentials.
-          if (!requestedRunTarget()) await this.recovery.tryUpload(this.httpClient, this._auth);
+          // A request token starts this run alone: a run saved earlier is sent with another run's credentials. A
+          // replay refused for the storage quota refuses this run too, unless the global setup registered it.
+          if (!requestedRunTarget()) {
+            const quota = this.setupInfo ? undefined : this.storageQuota;
+            await this.recovery.tryUpload(this.httpClient, this._auth, quota);
+          }
+          if (this.storageQuota.refusesRun) {
+            this.giveUpStart(null);
+            return;
+          }
         }
         const response = await this.openRun(run);
         if (!response?.runId || !response?.streamToken) {
@@ -387,10 +404,13 @@ export class StreamManager {
     if (this.pendingEvents.length > 0) this.flush();
   }
 
-  // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run.
+  // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run, unless
+  // the dashboard refused the run for its storage quota: that is said once a run, and nothing of the run is sent.
   private giveUpStart(error: unknown): void {
     const requested = requestedRunTarget();
-    if (requested) {
+    if (quotaRefusesRun(error) || this.storageQuota.refusesRun) {
+      this.storageQuota.refuseRun();
+    } else if (requested) {
       // A requested run starts with its request token alone and has no batch upload to fall back to.
       this.logger.warn(
         `The run could not start on ${requested}, which asked for it (${errorMessage(error)}): ` +

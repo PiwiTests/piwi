@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
+import { StorageQuota } from '../src/internal/submit/storage-quota.js';
 import { jsonRes, startServer, stubPlatform, textRes, type FakeServer } from './_helpers.js';
 
 const projectName = 'piwi-recovery-' + process.pid;
@@ -89,6 +90,35 @@ describe('the crash-recovery file', () => {
     expect(recovery.load()).toBeNull();
   });
 
+  it('keeps the counts of the files the copy left out, beside the mark of its delivery from recovery', async () => {
+    const bodies: any[] = [];
+    server = await startServer((req, res) => {
+      bodies.push(JSON.parse(req.body));
+      jsonRes(res, 200, { runId: 1 });
+    });
+    const recovery = recoveryFor(server.url);
+    const ingestHealth = {
+      tracesNotKept: 1,
+      attachmentsNotKept: 2,
+      reportsNotKept: 1,
+      submitFallback: { path: 'submit', reason: 'finish-failed' },
+    };
+    recovery.save({ projectName, metadata: { branch: 'main', ingestHealth }, testCases: [] });
+
+    await recovery.tryUpload(new HttpClient(server.url, logger));
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].metadata).toEqual({
+      branch: 'main',
+      ingestHealth: {
+        tracesNotKept: 1,
+        attachmentsNotKept: 2,
+        reportsNotKept: 1,
+        submitFallback: { path: 'recovery' },
+      },
+    });
+  });
+
   it("is kept when the answer is not the dashboard's: a sign-in page, or JSON that names no run", async () => {
     let signInPage = true;
     server = await startServer((_req, res) => {
@@ -105,6 +135,29 @@ describe('the crash-recovery file', () => {
     signInPage = false;
     await recovery.tryUpload(new HttpClient(server.url, logger));
     expect(recovery.load()).not.toBeNull();
+  });
+
+  it("is kept when the dashboard's storage quota refuses it, which refuses the run of this process too", async () => {
+    server = await startServer((_req, res) =>
+      jsonRes(res, 409, { statusCode: 409, message: 'Refused.', data: { errorCode: 'STORAGE_QUOTA_EXCEEDED' } }),
+    );
+    const recovery = recoveryFor(server.url);
+    recovery.save({ projectName, testCases: [] });
+    const quota = new StorageQuota(logger);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await recovery.tryUpload(new HttpClient(server.url, logger), null, quota);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(info).toHaveBeenLastCalledWith(
+        '[Piwi Dashboard] The dashboard refused the saved test data for its storage quota: it stays on this machine for a later run.',
+      );
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
+    }
+    expect(recovery.load()).not.toBeNull();
+    expect(quota.refusesRun).toBe(true);
   });
 
   it('is kept when the replay fails, and deleted when the dashboard refuses the run itself', async () => {

@@ -733,9 +733,9 @@ export const HELP_TOPICS = {
   },
   'run.ingestHealth': {
     title: 'Ingest',
-    text: 'What the dashboard left out or rebuilt while storing this run: steps and console entries over the ingest caps, traces it could not store, evidence rebuilt from a trace, and the fallback the reporter took when its usual way of sending the run failed. A missing step or console line may be one of these, not something the test skipped.',
+    text: 'What the dashboard left out or rebuilt while storing this run: steps and console entries over the ingest caps, traces it could not store, files not kept because the storage quota was reached, evidence rebuilt from a trace, and the fallback the reporter took when its usual way of sending the run failed. A missing step, console line or file may be one of these, not something the test skipped.',
     doc: 'features/ui-overview#test-run-detail',
-    envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
+    envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES', 'PIWI_STORAGE_QUOTA_BYTES'],
   },
   'run.errors': {
     title: 'Errors outside the tests',
@@ -1203,7 +1203,7 @@ export const HELP_TOPICS = {
   // ── Settings ──────────────────────────────────────────────────────────
   'settings.storage-stats': {
     title: 'Storage analysis',
-    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up. With a storage quota set, the total shows the share of it used.',
+    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up. With a storage quota set, the total shows the share of it used, the results of runs counted too, and says once files or new runs are refused.',
     doc: 'operate/storage#storage-management',
     envVars: ['PIWI_STORAGE_QUOTA_BYTES'],
   },

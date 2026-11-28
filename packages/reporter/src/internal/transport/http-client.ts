@@ -13,12 +13,14 @@ export { FormData };
  * An HTTP response with a non-2xx status. Carries the numeric `status` so
  * callers can branch on a specific code (401, 404, 409, 422, …) via
  * `error instanceof HttpError && error.status === …` instead of sniffing the
- * message string.
+ * message string, and the dashboard's `errorCode` when its answer names one.
  */
 export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string = `Request failed with status ${status}`,
+    /** The `data.errorCode` of the dashboard's JSON answer; null when it names none. */
+    readonly errorCode: string | null = null,
   ) {
     super(message);
     this.name = 'HttpError';
@@ -72,10 +74,31 @@ export function failureDetail(res: Pick<HttpResponse, 'text' | 'headers'>): stri
   return line.length > FAILURE_DETAIL_MAX ? `${line.slice(0, FAILURE_DETAIL_MAX - 1)}…` : line;
 }
 
-/** The error of an answer with a non-2xx status: it names the status, and the server's word on it when there is one. */
+/**
+ * The code the dashboard names a failed request with: the `data.errorCode` of its JSON body, as every refusal of its
+ * own carries one (`{ statusCode, message, data: { errorCode } }`). Null for any other body.
+ */
+function failureCode(res: Pick<HttpResponse, 'text'>): string | null {
+  try {
+    const body = JSON.parse(res.text) as { data?: { errorCode?: unknown } | null } | null;
+    const code = body?.data?.errorCode;
+    return typeof code === 'string' && code !== '' ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The error of an answer with a non-2xx status: it names the status, and the server's word on it when there is one,
+ * and carries the dashboard's error code.
+ */
 function failedRequest(res: HttpResponse): HttpError {
   const detail = failureDetail(res);
-  return new HttpError(res.status, `Request failed with status ${res.status}${detail ? `: ${detail}` : ''}`);
+  return new HttpError(
+    res.status,
+    `Request failed with status ${res.status}${detail ? `: ${detail}` : ''}`,
+    failureCode(res),
+  );
 }
 
 /**

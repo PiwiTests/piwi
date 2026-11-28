@@ -34,6 +34,23 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   trims it and sets `environment_id` to the environment of the project it resolves to, discovering one for a new
   label: spread its result, never set `environment` on its own (`tests/unit/run-environment-column.test.ts`).
 
+## The storage quota
+
+- **A path that creates a run calls `refuseRunsPastCeiling` before it cancels or writes anything, a new project
+  included (`resolveIngestProject`'s `beforeCreate`), and one that stores files refuses them at the quota**
+  (`server/utils/storage-quota.ts`: `refuseFilesAtQuota`, `refuseImportAtQuota`, `storageQuotaState`), never a check
+  of its own; a run in progress, a shard joining its run, a repeated delivery and a re-import go on, and `begin`,
+  `events`, `heartbeat` and `finish` never answer a quota code (`tests/unit/storage-quota-ingest.test.ts`).
+- **`test_runs.results_bytes`, which the storage total counts, adds only the results a run stored**: the
+  `Content-Length` of a `submit` or `upload/results` body that creates the run or adds a shard, that of an `events`
+  batch times the share of its complete results inserted, and the `testRun` and `testCases` fields of an `upload` that
+  creates the run or adds a shard. Nothing else counts: `setup`, `start`, `begin`, `finish`, a repeated delivery, an
+  upload with `runId`, an import.
+- **The reporter's counts of files not kept stay apart from the server's**: `ingestHealth.reporterNotKept` takes the
+  larger of the stored and the sent count on every write (`withReportedNotKept`, `carryIngestHealth`), added only shard
+  by shard, while the parts an upload skipped add up in `tracesNotKept` and the rest; readers show the sum
+  (`describeIngestHealth`; `tests/unit/storage-quota-ingest.test.ts`).
+
 ## Timed-out tests fold into `failedTests`
 
 `test_runs` has no `timedOutTests` column. Playwright's `'timedOut'` (stored as `'timedout'`) counts as failed, so that

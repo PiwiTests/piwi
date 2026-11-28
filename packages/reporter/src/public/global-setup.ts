@@ -21,6 +21,7 @@ import { isPiwiReporterModule } from '../internal/support/reporter-entry.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { relayRunLog } from '../internal/support/run-log.js';
 import { announceLiveRun } from '../internal/support/ci-output.js';
+import { StorageQuota, quotaRefusesRun } from '../internal/submit/storage-quota.js';
 
 /** Whether this process relays its workers' lines to the run's log already. */
 let relaying = false;
@@ -182,9 +183,14 @@ export function createGlobalSetup(
         }
       }
     } catch (error) {
-      logger.warn(`Could not register global setup: ${errorMessage(error)}`);
+      // A dashboard that refuses the run for its storage quota is said here once: the reporter sends nothing of it.
+      const quotaRefused = registers && !registered && quotaRefusesRun(error);
+      if (quotaRefused) new StorageQuota(logger).refuseRun();
+      else logger.warn(`Could not register global setup: ${errorMessage(error)}`);
       // The reporter says why the run has no live view: the instance did not take its registration.
-      if (registers && !registered && opts.projectName) writeSetupFailure(opts.projectName, errorMessage(error));
+      if (registers && !registered && opts.projectName) {
+        writeSetupFailure(opts.projectName, errorMessage(error), quotaRefused);
+      }
     }
 
     if (userSetup) return userSetup(config);

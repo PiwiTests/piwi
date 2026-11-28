@@ -32,6 +32,7 @@ import { PIWI_EDITOR_ENV, followHub, runInteractive, type FollowedHub } from '..
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
+import { StorageQuota } from '../internal/submit/storage-quota.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
@@ -81,7 +82,13 @@ import {
   roughDuration,
   type ShardingTestRun,
 } from '../internal/support/shard-split.js';
-import { peekSetupFailure, peekSetupInfo, readSetupInfo, type SetupInfo } from '../internal/support/setup-file.js';
+import {
+  peekSetupFailure,
+  peekSetupInfo,
+  peekSetupRefusedForQuota,
+  readSetupInfo,
+  type SetupInfo,
+} from '../internal/support/setup-file.js';
 import { privateTempDir, readPrivateFile } from '../internal/support/private-file.js';
 import {
   LIVE_VIEW_ENV,
@@ -392,6 +399,8 @@ export class PiwiDashboardReporter {
   private metadataCollector: MetadataCollector;
   private streamManager: StreamManager | null = null;
   private recovery: CrashRecovery;
+  /** The dashboard's storage quota as it answered this run, shared by every sender of the run. */
+  private readonly storageQuota: StorageQuota;
   private submitter: RunSubmitter;
   private readonly failureLinks: FailureLinks;
   private readonly logger: Logger;
@@ -423,7 +432,8 @@ export class PiwiDashboardReporter {
       usedDesktopToken() ? (this.options.apiKey ?? null) : null,
     );
     this.fileHandler = new FileHandler(logger);
-    this.uploader = new Uploader(this.httpClient, this.fileHandler, logger);
+    this.storageQuota = new StorageQuota(logger);
+    this.uploader = new Uploader(this.httpClient, this.fileHandler, logger, this.storageQuota);
     this.recovery = new CrashRecovery(this.httpClient.baseUrl, this.options.projectName!, logger);
     this.metadataCollector = new MetadataCollector(logger);
     this.failureLinks = new FailureLinks(this.httpClient.baseUrl, logger);
@@ -441,6 +451,7 @@ export class PiwiDashboardReporter {
         this.fileHandler,
         this.options,
         logger,
+        this.storageQuota,
       );
     }
 
@@ -674,6 +685,8 @@ export class PiwiDashboardReporter {
     for (const { name, value, fallback } of this.ignoredEnv) {
       this.logger.warn(`${name}=${value} is not a number of 0 or more, so the default (${fallback}) applies.`);
     }
+    // The global setup said already that the dashboard refused the run for its storage quota: nothing of it is sent.
+    if (peekSetupRefusedForQuota(this.options.projectName!)) this.storageQuota.refuseRun(true);
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
     this.htmlReport = htmlReportFolder(config.reporter, this.testPathBase);
@@ -904,8 +917,9 @@ export class PiwiDashboardReporter {
       const why = this.liveViewMissing(setup);
       if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
-      // A CI run says why nobody can watch it, for the person who reads its log to know what to change.
-      else if (why !== 'local') {
+      // A CI run says why nobody can watch it, for the person who reads its log to know what to change; a run the
+      // dashboard refused for its storage quota was told so by the global setup.
+      else if (why !== 'local' && !this.storageQuota.refusesRun) {
         const failure = why === 'setup-failed' ? peekSetupFailure(this.options.projectName!) : null;
         this.logger.info(ciLiveViewNote(why, failure));
       }

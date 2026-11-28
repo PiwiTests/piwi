@@ -159,6 +159,7 @@ export const testRuns = pgTable(
     shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
     isFullRun: integer('is_full_run').notNull().default(1), // 1 = full suite, 0 = partial/filtered (--grep, file filter, etc.)
     reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`; -1 when the run claimed a plan whose reuse could not be recorded
+    resultsBytes: bigint('results_bytes', { mode: 'number' }).notNull().default(0), // The bytes of the results the reporter sent for the run, request by request, counted toward the storage quota (`storage_totals`); 0 for an import
     filterDetails: jsonb('filter_details'), // JSON: { grep?, grepInvert? }
 
     environment: text('environment'), // The label the run reported (e.g. 'production', 'staging'), trimmed

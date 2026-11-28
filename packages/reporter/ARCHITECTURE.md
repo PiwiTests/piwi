@@ -929,13 +929,34 @@ A requested run takes rung 1 alone: its request token starts one streamed run, s
 instance even when results were lost on the way. A run that does not finish there is reported and dropped.
 
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
-(`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
-so the dashboard can say how the run arrived. A stream the dashboard ends while it runs (a 409 to its events or its
-heartbeat: another run with the same run label started and cancelled it) sends nothing more, and the run skips rung 1
-for the batch, with the reason `run-ended`.
+(`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`
+beside the counts of the files its copy left out, so the dashboard can say how the run arrived. A stream the
+dashboard ends while it runs (a 409 to its events or its heartbeat: another run with the same run label started and
+cancelled it) sends nothing more, and the run skips rung 1 for the batch, with the reason `run-ended`.
+
+The dashboard's storage quota answers with a 409 that names its `errorCode` (`internal/submit/storage-quota.ts`, one
+`StorageQuota` a run, the uploader's, shared with the stream and the global setup's setup file), each said once a run and
+neither changing the run's exit code:
+
+- **`STORAGE_QUOTA_FILES_REFUSED`** to a test's `/case-files`, or an `/upload` answered with `filesNotKept`: the
+  dashboard keeps the results alone. No file goes for the rest of the run (no `/case-files`, no report, no multipart
+  rung: a run not delivered yet goes as JSON), and what the reporter did not send is counted, each test and report
+  once, as `tracesNotKept`, `attachmentsNotKept` and `reportsNotKept` in the run's `metadata.ingestHealth`: in the
+  body of `/finish`, `/submit` or the recovery copy when they follow the refusal, else in the upload that carries no
+  report and settles the run (`uploadReportsAndSettle`). The dashboard counts the files it skipped itself.
+- **`STORAGE_QUOTA_EXCEEDED`** to a request that creates a run (`/setup`, `/start`, `/upload/results`, `/upload`,
+  `/submit`, the replay of a saved run): the dashboard refuses new runs. The stream gives up, the ladder stops with
+  no other rung and no recovery copy, a saved run's copy is kept, and a refusal the global setup heard is written to
+  the setup file, so the reporter sends nothing and says nothing more. Two refusals leave the run alone: the replay's
+  of a run the global setup registered, which still `/begin`s, and a batch rung's after the run's stream opened,
+  where the dashboard keeps what streamed: the ladder stops, said in a line of its own, with the recovery copy saved,
+  which a later run sends to replace the streamed run (`replacesRun`).
+
+A 409 without one of these codes (an older dashboard) keeps the meaning it has above.
 
 All HTTP to the dashboard goes through `internal/transport/http-client.ts`, which throws `HttpError`
-(carrying `status`) so callers branch on `error.status`, never the message text. A successful answer that is not
+(carrying `status`, and the dashboard's `errorCode` when its answer names one) so callers branch on `error.status`,
+never the message text. A successful answer that is not
 JSON fails as well, naming its content type (a sign-in page or a proxy answering in the dashboard's place), and a
 batch delivery (`/submit`, `/upload`, the recovery replay) counts only when its answer names the run
 (`deliveredRunId`).
@@ -994,7 +1015,8 @@ src/
                init inspects and edits), add-reporter (`run`'s --add-reporter),
                report (the step results init and skills print)
   internal/
-    submit/     run-submitter, uploader, serializer
+    submit/     run-submitter, uploader, serializer, storage-quota (the dashboard's
+                storage quota as it answered the run)
     transport/  http-client (+ HttpError), backend-request
     streaming/  stream-manager, stream-buffer, bounded-queue, crash-recovery,
                 live-resources (a watched run's CPU, memory and open pages,

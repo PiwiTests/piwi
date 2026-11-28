@@ -11,6 +11,7 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { readBugReportArchive, storeBugReport } from '../../utils/bug-report-store';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
+import { refuseFilesAtQuota } from '../../utils/storage-quota';
 import { formatBytes } from '#shared/utils/format-bytes';
 
 defineRouteMeta({
@@ -18,7 +19,7 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Import a local bug report file (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. Imports a bug report saved by Piwi Picker (a `.piwibug` file, or a `.zip` holding its `steps.json` and `evidence.json`) from an absolute path on the machine the app runs on, into the named project, as **Send to Piwi…** would. Answers `{ id, url }`.',
+      'Desktop build only — 404 on the server build. Imports a bug report saved by Piwi Picker (a `.piwibug` file, or a `.zip` holding its `steps.json` and `evidence.json`) from an absolute path on the machine the app runs on, into the named project, as **Send to Piwi…** would. Answers `{ id, url }`. Once the stored bytes reach `PIWI_STORAGE_QUOTA_BYTES`, a report with screenshots answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`.',
     'x-required-permission': 'storage:manage',
     requestBody: {
       content: {
@@ -72,6 +73,7 @@ export default eventHandler(async (event) => {
   if (!read) throw apiError({ statusCode: 400, message: 'Not a bug report saved by Piwi Picker' });
 
   const db = await getDatabase();
+  if (read.screenshots.size > 0 || read.stepShots.size > 0) await refuseFilesAtQuota(db);
   const project = await resolveIngestProject(db, await getProjectScope(db, user), projectName);
   const { id } = await storeBugReport(db, {
     projectId: project.id,

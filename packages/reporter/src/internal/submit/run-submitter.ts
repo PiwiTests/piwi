@@ -6,6 +6,7 @@ import type { HttpClient } from '../transport/http-client.js';
 import { HttpError, runTokenHeaders } from '../transport/http-client.js';
 import { heldRepeat, uploadCaseFilesInTurn } from './uploader.js';
 import type { Uploader, RunPayload, ReportOptions, FoundReport, HeldRun } from './uploader.js';
+import { quotaRefusesRun, type StorageQuota } from './storage-quota.js';
 import type { CrashRecovery } from '../streaming/crash-recovery.js';
 import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
@@ -102,7 +103,7 @@ type SubmitFallbackReason = 'results-lost' | 'finish-failed' | 'upload-failed' |
  * dashboard shows how the run was delivered.
  */
 function markSubmitFallback(run: CollectedRun, path: 'upload' | 'submit', reason: SubmitFallbackReason): void {
-  run.metadata.ingestHealth = { submitFallback: { path, reason } };
+  run.metadata.ingestHealth = { ...run.metadata.ingestHealth, submitFallback: { path, reason } };
 }
 
 /**
@@ -163,6 +164,11 @@ export class RunSubmitter {
     }
   }
 
+  /** The dashboard's storage quota as it answered this run: the uploader's, which every delivery goes through. */
+  private get storageQuota(): StorageQuota {
+    return this.uploader.storageQuota;
+  }
+
   private expireBudget(budgetMs: number): void {
     this.logger.warn(
       `The dashboard did not take the run within ${Math.round(budgetMs / 1000)}s (submitTimeout) — stopping the upload and saving the results locally.`,
@@ -207,6 +213,10 @@ export class RunSubmitter {
     const sm = this.streamManager;
     await sm?.drain();
 
+    // The dashboard refused the run for its storage quota, as the global setup or the stream heard: nothing of the run
+    // is sent, and no copy is saved for a later run.
+    if (this.storageQuota.refusesRun) return null;
+
     let auth: string | null;
     try {
       auth = sm?.auth ?? (await this.httpClient.resolveAuth(run.options));
@@ -220,7 +230,8 @@ export class RunSubmitter {
     // A streaming session retries the recovery file when it opens; without one,
     // retry it here so a saved payload still reaches the server.
     const requested = requestedRunTarget() !== null;
-    if (!sm && !requested) await this.recovery.tryUpload(this.httpClient, auth);
+    if (!sm && !requested) await this.recovery.tryUpload(this.httpClient, auth, this.storageQuota);
+    if (this.storageQuota.refusesRun) return null;
 
     // The reports on disk that go with the run, found once for every rung.
     const reports = this.uploader.findReports(this.reportOptions(run));
@@ -256,12 +267,14 @@ export class RunSubmitter {
       return null;
     }
 
-    // The multipart upload runs only with a file to carry. Once the time budget
-    // closed the client, it is skipped: the JSON rung below fails at once and
-    // saves the recovery copy.
+    // The multipart upload runs only with a file to carry, so not once the
+    // storage quota refused the run's files. Once the time budget closed the
+    // client, it is skipped: the JSON rung below fails at once and saves the
+    // recovery copy.
     if (
       !outcome.done &&
       !this.httpClient.closed &&
+      !this.storageQuota.refusesFiles &&
       (this.hasReports(run) || run.options.uploadTraces) &&
       this.uploader.hasFiles(run.testCases, reports, run.options.uploadTraces)
     ) {
@@ -316,7 +329,14 @@ export class RunSubmitter {
     };
   }
 
+  /** Put what the reporter left out for the storage quota in the run's `metadata.ingestHealth`, beside its fallback. */
+  private noteNotKept(run: CollectedRun): void {
+    const notKept = this.storageQuota.notKept();
+    if (notKept) run.metadata.ingestHealth = { ...run.metadata.ingestHealth, ...notKept };
+  }
+
   private buildRunPayload(run: CollectedRun, status: string, duration: number): RunPayload {
+    this.noteNotKept(run);
     return {
       projectName: run.options.projectName!,
       projectDescription: run.options.projectDescription,
@@ -373,6 +393,11 @@ export class RunSubmitter {
       const durations = run.testCases.filter((tc) => tc.duration != null).map((tc) => tc.duration as number);
 
       await sm.uploadRemaining(run.testCases, this.filesDeadline());
+      // The reports go after `/finish`, unless the storage quota refused the run's files: they count as not kept then,
+      // with the tests' files, in the metadata `/finish` carries.
+      if (this.storageQuota.refusesFiles) this.storageQuota.leaveOutReports(reports);
+      const sendsReports = reports.length > 0 && !this.storageQuota.refusesFiles;
+      this.noteNotKept(run);
 
       const finishBody: Record<string, unknown> = {
         streamToken: sm.token,
@@ -391,7 +416,7 @@ export class RunSubmitter {
         label: run.options.label || null,
         keep: run.options.keep === true,
         metadata: run.metadata,
-        hasPendingUploads: reports.length > 0,
+        hasPendingUploads: sendsReports,
         playwrightVersion: run.playwrightVersion ?? undefined,
         reporterVersion: run.reporterVersion ?? undefined,
         setupSteps: run.setupSteps.length > 0 ? run.setupSteps : undefined,
@@ -411,7 +436,7 @@ export class RunSubmitter {
       this.logger.debug(`Successfully finalized streaming run #${sm.runId}`);
       this.dropLocalCopies();
 
-      if (reports.length > 0) {
+      if (sendsReports) {
         await this.uploader.uploadReportsAndSettle(run.options.projectName!, sm.runId!, reports, run.startTime, auth);
       }
       return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus, { runUrl: sm.runUrl }) };
@@ -489,6 +514,7 @@ export class RunSubmitter {
         output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
       };
     } catch (error) {
+      if (quotaRefusesRun(error)) return this.stopForStorageQuota(payload);
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
       return { done: false, output: null };
@@ -602,7 +628,8 @@ export class RunSubmitter {
 
   /**
    * Send the run's results as JSON, the last rung, and the files of a run the dashboard answers them as a repeat of
-   * (`sendFilesOfHeldRepeat`). Saves the recovery copy when the dashboard does not take them.
+   * (`sendFilesOfHeldRepeat`). Once the storage quota refused the run's files, every file of the run counts as not
+   * kept in the results' metadata. Saves the recovery copy when the dashboard does not take them.
    */
   private async tryUploadJSON(
     run: CollectedRun,
@@ -611,6 +638,7 @@ export class RunSubmitter {
     auth: string | null,
     reports: FoundReport[],
   ): Promise<SubmitOutcome> {
+    if (this.storageQuota.refusesFiles) this.uploader.leaveOutFiles(run.testCases, reports, run.options.uploadTraces);
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
       const response = await this.uploader.uploadJSON(payload, auth);
@@ -621,6 +649,7 @@ export class RunSubmitter {
         output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
       };
     } catch (error) {
+      if (quotaRefusesRun(error)) return this.stopForStorageQuota(payload);
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);
       this.logRecoverySaved(
@@ -661,6 +690,23 @@ export class RunSubmitter {
     );
     this.logRecoverySaved();
     this.saveRecovery(payload);
+    return { done: true, output: null };
+  }
+
+  /**
+   * The dashboard refused the run's batch delivery for its storage quota. Every other rung would be refused alike, so
+   * the ladder stops. A run whose stream opened stays on the dashboard as streamed, and `payload` is saved as its
+   * recovery copy, which a later run sends once the dashboard has room, naming the streamed run it replaces
+   * (`replacesRun`, a shard's aside). Any other run is refused, said once a run, with no copy saved. The test run's own
+   * result stays what Playwright made it.
+   */
+  private stopForStorageQuota(payload: RunPayload): SubmitOutcome {
+    if (this.streamManager?.runId != null) {
+      this.storageQuota.refuseRestOfStreamedRun();
+      this.saveRecovery(payload);
+    } else {
+      this.storageQuota.refuseRun();
+    }
     return { done: true, output: null };
   }
 

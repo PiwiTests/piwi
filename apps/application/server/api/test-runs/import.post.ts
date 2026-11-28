@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Import a historical Playwright blob report or trace',
     description:
-      'Import one archive as historical results. A blob report (blob-report/report-*.zip) becomes a complete run with its traces and attachments. A bare trace (trace.zip) becomes a single execution; pass the same importGroup with several traces to gather them into one run. Intended for backfilling runs recorded before Piwi was adopted: re-importing the same archive is a no-op, and imports deliberately do not trigger notifications, AI diagnosis or regression signals.',
+      'Import one archive as historical results. A blob report (blob-report/report-*.zip) becomes a complete run with its traces and attachments. A bare trace (trace.zip) becomes a single execution; pass the same importGroup with several traces to gather them into one run. Intended for backfilling runs recorded before Piwi was adopted: re-importing the same archive is a no-op, and imports deliberately do not trigger notifications, AI diagnosis or regression signals. Once the stored bytes reach `PIWI_STORAGE_QUOTA_BYTES`, an archive not imported yet answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, and past the quota’s ceiling `STORAGE_QUOTA_EXCEEDED`, creating no project; re-importing an archive still answers its run.',
     'x-required-permission': 'storage:manage',
     requestBody: {
       content: {

@@ -3,7 +3,7 @@ import { getDatabase, type DbClient } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
-import { carryIngestHealth } from '#shared/ingest-health';
+import { carryIngestHealth, reportedNotKept, withIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
@@ -318,7 +318,8 @@ export default eventHandler(async (event) => {
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
  * run's shard tokens in the same write that records its test durations, its
- * span, its suite setup steps and its errors outside any test, and sets the
+ * span, its suite setup steps, its errors outside any test and the files its
+ * reporter did not send (`reportedNotKept`), and sets the
  * run's start and duration from its shards' spans (`recordShardEnd`), so a
  * replayed `/finish` finds the token gone and changes nothing. The run's test
  * counters are not touched: every case (synthesized didnotrun ones included)
@@ -334,7 +335,13 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
     span,
     (metadata) => {
       const remaining = withoutShardToken(metadata, body.streamToken);
-      return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
+      return (
+        remaining &&
+        withShardDurations(
+          withIngestHealth(remaining, reportedNotKept(body.metadata)),
+          Array.isArray(body.durations) ? body.durations : [],
+        )
+      );
     },
     {},
     Array.isArray(body.setupSteps) ? body.setupSteps : [],

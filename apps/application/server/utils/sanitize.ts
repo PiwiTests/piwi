@@ -110,7 +110,8 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
   if (!metadata || typeof metadata !== 'object') return null;
 
   // A run's incident flag and a person's decision about it are the server's own. The
-  // reporter may name its submit fallback; the ingest counts are the server's own.
+  // reporter may name its submit fallback and the files it did not send once the
+  // storage quota refused them; the other ingest counts are the server's own.
   const meta = reporterIngestHealth(withoutIncidentMetadata(metadata));
 
   // Sanitize scm.remoteUrl

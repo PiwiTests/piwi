@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as http from 'node:http';
-import { Uploader, heldRepeat, type RunPayload } from '../src/internal/submit/uploader.js';
+import { Uploader, heldRepeat, uploadCaseFilesInTurn, type RunPayload } from '../src/internal/submit/uploader.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
@@ -547,6 +547,150 @@ describe('Uploader.uploadReportsAndSettle', () => {
       expect(requests).toHaveLength(2);
       expect(requests[1]!.body).toContain('already-submitted');
       expect(requests[1]!.body).not.toContain('name="report_');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
+describe("the dashboard's storage quota", () => {
+  const FILES_REFUSED = {
+    statusCode: 409,
+    message: 'The storage quota is reached.',
+    data: { errorCode: 'STORAGE_QUOTA_FILES_REFUSED' },
+  };
+  let warnings: string[];
+
+  beforeEach(() => {
+    warnings = [];
+    vi.spyOn(console, 'warn').mockImplementation((line: unknown) => void warnings.push(String(line)));
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  /** A file on disk, attached to a test the way Playwright attaches one. */
+  function attachment(name: string, file: string): { name: string; path: string; contentType: string } {
+    const filePath = path.join(tmpDir, file);
+    fs.writeFileSync(filePath, file);
+    return { name, path: filePath, contentType: name === 'trace' ? 'application/zip' : 'image/png' };
+  }
+
+  function testCase(title: string, attachments: Array<ReturnType<typeof attachment>>): CollectedTestCase {
+    return { type: 'complete', title, location: `${title}.spec.ts:1:1`, attachments } as any;
+  }
+
+  const quotaLines = () => warnings.filter((line) => line.includes('storage quota'));
+
+  it("says once that the files are refused, sends none after, and counts the refused test's and those after it", async () => {
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/traces/check') return jsonRes(res, 200, {});
+      if (req.body.includes('"title":"first"')) return jsonRes(res, 200, { success: true });
+      jsonRes(res, 409, FILES_REFUSED);
+    });
+    try {
+      const logger = new Logger(false);
+      const uploader = new Uploader(new HttpClient(url, logger), new FileHandler(logger), logger);
+      const cases = [
+        testCase('first', [attachment('screenshot', 'first.png')]),
+        testCase('second', [attachment('trace', 'second.zip'), attachment('screenshot', 'second.png')]),
+        testCase('third', [attachment('video', 'third.webm'), attachment('screenshot', 'third.png')]),
+      ];
+      const run = { projectName: 'proj', runId: 7, streamToken: 'tok', uploadTraces: true, auth: null };
+      const sent = new Set<CollectedTestCase>();
+      const turn = { skip: (tc: CollectedTestCase) => sent.has(tc), uploaded: (tc: CollectedTestCase) => sent.add(tc) };
+      await uploadCaseFilesInTurn(uploader, logger, run, cases, new AbortController().signal, turn);
+
+      expect(requests.filter((r) => r.url === '/api/test-runs/7/case-files')).toHaveLength(2);
+      expect([...sent].map((tc) => tc.title)).toEqual(['first']);
+      expect(quotaLines()).toHaveLength(1);
+      expect(quotaLines()[0]).toBe(
+        "[Piwi Dashboard] The dashboard's storage quota is reached: it keeps this run's results, but not its traces, videos, screenshots or reports, so none are sent for the rest of the run. A shorter retention on the dashboard frees space, and a higher quota (PIWI_STORAGE_QUOTA_BYTES where the dashboard runs) raises the limit.",
+      );
+      expect(warnings).toHaveLength(1);
+      expect(uploader.storageQuota.notKept()).toEqual({ tracesNotKept: 1, attachmentsNotKept: 3 });
+
+      // A later pass over the tests whose files did not go, as the end of a streamed run makes, sends and counts nothing
+      // more.
+      await uploadCaseFilesInTurn(uploader, logger, run, cases, new AbortController().signal, turn);
+      expect(requests.filter((r) => r.url === '/api/test-runs/7/case-files')).toHaveLength(2);
+      expect(uploader.storageQuota.notKept()).toEqual({ tracesNotKept: 1, attachmentsNotKept: 3 });
+      expect(quotaLines()).toHaveLength(1);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('reports a test as not sent when the refusal follows parts left out as too large, and counts the refused', async () => {
+    // A request that carries the video is too large; any other the storage quota refuses.
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/traces/check') return jsonRes(res, 200, {});
+      if (req.body.includes('HUGE-VIDEO')) return jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+      jsonRes(res, 409, FILES_REFUSED);
+    });
+    try {
+      const logger = new Logger(false);
+      const uploader = new Uploader(new HttpClient(url, logger), new FileHandler(logger), logger);
+      const tc = testCase('checkout', [attachment('video', 'HUGE-VIDEO.webm'), attachment('screenshot', 'shot.png')]);
+
+      const sent = await uploader.uploadCaseFiles('proj', 7, 'tok', tc, false, null);
+
+      expect(sent).toBe(false);
+      // Both files together, the video alone, then the screenshot alone.
+      expect(requests.filter((r) => r.url === '/api/test-runs/7/case-files')).toHaveLength(3);
+      expect(uploader.storageQuota.notKept()).toEqual({ attachmentsNotKept: 1 });
+      expect(quotaLines()).toHaveLength(1);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("sends no report after an upload's answer kept no file, and settles the run with the counts of what it left out", async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, {
+        success: true,
+        runId: 42,
+        filesNotKept: { count: 1, errorCode: 'STORAGE_QUOTA_FILES_REFUSED' },
+      }),
+    );
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      const reports = ['html', 'custom'].map((type) => {
+        const dir = path.join(tmpDir, `${type}-report`);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'index.html'), type);
+        return { type, dir, files: new FileHandler(new Logger(false)).listReport(dir)! };
+      });
+      await uploader.uploadReportsAndSettle('proj', 42, reports, null, null);
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0]!.body).toContain('name="report_html"');
+      expect(requests[1]!.body).not.toContain('name="report_');
+      expect(requests[1]!.body).toContain('"metadata":{"ingestHealth":{"reportsNotKept":1}}');
+      expect(quotaLines()).toHaveLength(1);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("keeps an older dashboard's plain 409 to a test's files as the run taking no more files", async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 409, { statusCode: 409, message: 'The run is no longer running.' }),
+    );
+    try {
+      const logger = new Logger(false);
+      const uploader = new Uploader(new HttpClient(url, logger), new FileHandler(logger), logger);
+      const cases = [
+        testCase('first', [attachment('screenshot', 'a.png')]),
+        testCase('second', [attachment('screenshot', 'b.png')]),
+      ];
+      const run = { projectName: 'proj', runId: 7, streamToken: 'tok', uploadTraces: false, auth: null };
+      await uploadCaseFilesInTurn(uploader, logger, run, cases, new AbortController().signal);
+
+      expect(requests).toHaveLength(1);
+      expect(warnings).toEqual([
+        '[Piwi Dashboard] Run #7 takes no more files (Request failed with status 409: The run is no longer running.): skipping those of the remaining tests.',
+      ]);
+      expect(uploader.storageQuota.refusesFiles).toBe(false);
+      expect(uploader.storageQuota.notKept()).toBeNull();
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

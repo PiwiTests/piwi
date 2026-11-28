@@ -4,6 +4,8 @@ import { runReporterId } from '../../utils/run-viewer';
 import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { checkSubmitBody } from '../../utils/batch-payload';
+import { declaredBodyBytes } from '../../utils/body-limit';
+import { refuseRunsPastCeiling } from '../../utils/storage-quota';
 import { runEventBus } from '../../utils/run-events';
 import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
 import { createBatchRun, renewHeldRunToken } from '../../utils/batch-run';
@@ -29,7 +31,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test results as JSON',
     description:
-      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field.',
+      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field. Past the storage quota’s ceiling (`PIWI_STORAGE_QUOTA_BYTES`), a new run is refused with 409 and `errorCode` `STORAGE_QUOTA_EXCEEDED`; a shard joining its run, and a repeated delivery, go on.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -80,7 +82,9 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription, {
+    beforeCreate: () => refuseRunsPastCeiling(db),
+  });
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored.
@@ -99,13 +103,20 @@ export default eventHandler(async (event) => {
       await saveEnvironmentSnapshots(db, run.id, body.environments);
       await applyReporterKeep(db, run.id, body.keep);
       if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(mapWireCaseToRunCase));
-      await addBatchShard(db, run.id, batchShardTally(body, testCases));
+      await addBatchShard(
+        db,
+        run.id,
+        batchShardTally(body, testCases, declaredBodyBytes(getRequestHeader(event, 'content-length'))),
+      );
       if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
       return { success: true, runId: run.id, runUrl: publicRunUrl(run.id), projectId: project.id };
     }
 
     // A run of its own: not sharded, or sharded with no instance id to join its shards by
-    const testRun = await createBatchRun(db, project.id, body, { reporterId: runReporterId(event, user) });
+    const testRun = await createBatchRun(db, project.id, body, {
+      reporterId: runReporterId(event, user),
+      resultsBytes: declaredBodyBytes(getRequestHeader(event, 'content-length')),
+    });
 
     runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 

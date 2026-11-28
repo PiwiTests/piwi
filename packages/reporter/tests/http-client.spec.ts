@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FormData, HttpClient, runTokenHeaders } from '../src/internal/transport/http-client.js';
+import { FormData, HttpClient, HttpError, runTokenHeaders } from '../src/internal/transport/http-client.js';
 import { desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { Logger } from '../src/internal/support/logger.js';
 
@@ -116,6 +116,43 @@ describe('HttpClient (against fake http.Server)', () => {
         await expect(client.postFormData('/plain', form, null)).rejects.toThrow(/status 403: With authentication off/);
         const html = await client.postJSON('/html', {}, null).catch((error: Error) => error.message);
         expect(html).toBe('Request failed with status 403');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it("carries the dashboard's error code from a refusal's data, and none from another body", async () => {
+      const answers: Record<string, (res: http.ServerResponse) => void> = {
+        '/coded': (res) =>
+          jsonRes(res, 409, {
+            statusCode: 409,
+            message: 'The storage quota is reached.',
+            data: { errorCode: 'STORAGE_QUOTA_FILES_REFUSED' },
+          }),
+        '/uncoded': (res) => jsonRes(res, 409, { statusCode: 409, message: 'The run has ended.' }),
+        '/plain': (res) => {
+          res.writeHead(409, { 'Content-Type': 'text/plain' });
+          res.end('{"data":');
+        },
+      };
+      const { server, url } = await startServer((req, res) => answers[req.url]!(res));
+      const refusal = (pathname: string, client: HttpClient) =>
+        client.postJSON(pathname, {}, null).catch((error: unknown) => error as HttpError);
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const coded = await refusal('/coded', client);
+        expect(coded).toBeInstanceOf(HttpError);
+        expect([coded.status, coded.errorCode, coded.message]).toEqual([
+          409,
+          'STORAGE_QUOTA_FILES_REFUSED',
+          'Request failed with status 409: The storage quota is reached.',
+        ]);
+        expect((await refusal('/uncoded', client)).errorCode).toBeNull();
+        expect((await refusal('/plain', client)).errorCode).toBeNull();
+        const form = new FormData();
+        form.append('field', 'value');
+        const upload = await client.postFormData('/coded', form, null).catch((error: unknown) => error as HttpError);
+        expect(upload.errorCode).toBe('STORAGE_QUOTA_FILES_REFUSED');
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -485,7 +522,11 @@ describe('HttpClient (against fake http.Server)', () => {
       ['proves it with another token', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 200],
       ['proves it for another port', (c: string) => desktopTokenProof(TOKEN, 1, c), 200],
       ['gives no proof', async () => null, 200],
-      ['proves it with another token and an error status', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 503],
+      [
+        'proves it with another token and an error status',
+        (c: string, p: number) => desktopTokenProof('pd_other', p, c),
+        503,
+      ],
     ])('sends no token to a server that %s', async (_name, proofOf, status) => {
       const { server, url, requests } = await desktopServer(proofOf, status);
       try {

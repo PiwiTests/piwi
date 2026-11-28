@@ -19,13 +19,14 @@ import { streamMultipart } from '../../../utils/multipart-stream';
 import { resolveMaxUploadBytes } from '../../../utils/upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { requireRouteId } from '../../../utils/project-access';
+import { refuseFilesAtQuota } from '../../../utils/storage-quota';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Upload trace and attachment files for a test case',
     description:
-      'Upload trace files and attachments for a specific test case during an active streaming run, or for a run held finalizing: one uploaded in parts (`/api/test-runs/upload/results`), or a streamed run whose `/finish` waits for its reports. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
+      'Upload trace files and attachments for a specific test case during an active streaming run, or for a run held finalizing: one uploaded in parts (`/api/test-runs/upload/results`), or a streamed run whose `/finish` waits for its reports. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry. Once the stored bytes reach `PIWI_STORAGE_QUOTA_BYTES`, answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED` before any file is stored: the run keeps taking its results.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -97,13 +98,14 @@ export default eventHandler(async (event) => {
   // the whole transfer; the file parts are read back one at a time below and the
   // temp directory is removed in the `finally`. The run and the stream token,
   // which clients send ahead of the files, are checked before any file part
-  // reaches the disk.
+  // reaches the disk, then the storage quota, which refuses every file once reached.
   let testRun: CaseFilesRun | undefined;
   const multipart = await streamMultipart(event, {
     maxTotalBytes: maxUploadBytes,
     maxFields: 16,
     beforeFiles: async (fields) => {
       testRun = await authorizeCaseFilesRun(db, id, fields.get('streamToken'));
+      await refuseFilesAtQuota(db);
     },
   });
   try {
