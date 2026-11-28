@@ -213,10 +213,11 @@ export interface TestRunSubmitPayload {
    */
   deliveryKey?: string;
   /**
-   * The run the reporter streamed before it fell back to this batch delivery, with that run's stream token: the
-   * delivery cancels it while it has not settled, a `finalizing` one too (`cancelReplacedRun`).
+   * The run this batch delivery replaces: the one the reporter streamed before it fell back, with that run's stream
+   * token, which the delivery cancels while it has not settled (a `finalizing` one too) or once it was interrupted; or
+   * the one its global setup registered and that never began, with that run's setup token (`cancelReplacedRun`).
    */
-  replacesRun?: { runId: number; streamToken: string };
+  replacesRun?: { runId: number; streamToken: string } | { runId: number; setupToken: string };
 }
 
 // ── Streaming event payload ───────────────────────────────────────────────────

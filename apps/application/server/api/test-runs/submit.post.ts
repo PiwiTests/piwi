@@ -58,8 +58,12 @@ defineRouteMeta({
               replacesRun: {
                 type: 'object',
                 description:
-                  'The run the reporter streamed before it fell back to this delivery, `{ runId, streamToken }` with that run’s stream token. A run that is not sharded is cancelled while it has not settled, a `finalizing` run too, when the token is its own; otherwise the field is ignored, as it is for a shard.',
-                properties: { runId: { type: 'integer' }, streamToken: { type: 'string' } },
+                  'The run this delivery replaces: the one the reporter streamed before it fell back to it, `{ runId, streamToken }` with that run’s stream token, or the one its global setup registered and that never began, `{ runId, setupToken }` with that run’s setup token. A run that is not sharded is cancelled when the token is its own: named by its stream token while it has not settled (a `finalizing` run too) or once it was interrupted, by its setup token while it is `initializing` or was interrupted in its setup. Otherwise the field is ignored, as it is for a shard.',
+                properties: {
+                  runId: { type: 'integer' },
+                  streamToken: { type: 'string' },
+                  setupToken: { type: 'string' },
+                },
               },
             },
             required: ['projectName', 'status', 'startTime'],
