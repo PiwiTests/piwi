@@ -261,6 +261,7 @@ export const test: TurboTest = base.extend<
   skipStabilityWait: [false, { option: true }],
   earlyInjection: [false, { option: true }],
   fastTraces: [false, { option: true }],
+  fastActions: [false, { option: true }],
 
   // One fixture does everything, so a test pays for one extra fixture whatever the options. The hooks are on for this
   // test only: a worker runs one test at a time, so the setting covers every page of the test, including the ones it
@@ -278,6 +279,7 @@ export const test: TurboTest = base.extend<
       skipStabilityWait,
       earlyInjection,
       fastTraces,
+      fastActions,
       fastStackTraces,
       connectOptions,
       browserName,
@@ -301,7 +303,15 @@ export const test: TurboTest = base.extend<
     const matches = screenshotMatches && !updating;
     const early = earlyInjection && browserName === 'chromium';
     const hooks =
-      fast || matches || !!intervals || failFast || skipStabilityWait || early || fastTraces || (reused && fastReset);
+      fast ||
+      matches ||
+      !!intervals ||
+      failFast ||
+      skipStabilityWait ||
+      early ||
+      fastTraces ||
+      fastActions ||
+      (reused && fastReset);
     // fastStackTraces' server part rides on the other hooks, which need the browser in the worker, and is left out
     // where Playwright shows its internal frames.
     const lightRaces = fastStackTraces && hooks && !internalFramesShown();
@@ -324,6 +334,7 @@ export const test: TurboTest = base.extend<
     state.skipStabilityWait = skipStabilityWait;
     state.earlyInjection = early;
     state.fastTraces = fastTraces;
+    state.fastActions = fastActions;
     state.lightRaces = lightRaces;
     try {
       if (failFast) await context.addInitScript(IDLE_TRACKER);
@@ -406,6 +417,7 @@ export const test: TurboTest = base.extend<
       state.skipStabilityWait = false;
       state.earlyInjection = false;
       state.fastTraces = false;
+      state.fastActions = false;
       state.lightRaces = false;
     }
   },

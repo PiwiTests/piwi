@@ -53,4 +53,9 @@ export interface TurboOptions {
    * the DOM snapshot after each call, and before most, in flight rather than awaiting it.
    */
   fastTraces: boolean;
+  /**
+   * Experimental: an action finds its element in one round trip with the browser in place of three, and on Chromium
+   * a pointer action asks for its click point right behind its scroll.
+   */
+  fastActions: boolean;
 }

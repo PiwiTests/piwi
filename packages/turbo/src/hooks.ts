@@ -57,6 +57,7 @@ export const state = {
   screenshotMatches: false,
   earlyInjection: false,
   fastTraces: false,
+  fastActions: false,
   /** fastStackTraces' server part: an evaluation's race against its context's destruction captures no stack. */
   lightRaces: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
@@ -85,8 +86,13 @@ export const state = {
     skippedScriptBodies: 0,
     deferredSnapshots: 0,
     lightRaces: 0,
+    fastLookups: 0,
+    repeatedLookupReads: 0,
+    deferredPreviews: 0,
+    earlyPoints: 0,
   },
   elementHooked: false,
+  handleHooked: false,
 };
 
 /** What a reused context received since its last reset, as keepStaticCache judges it. */
@@ -1120,7 +1126,244 @@ function hookElementHandle(handle: ServerPage): void {
     }
     return evaluateInUtility.call(this, fn, arg);
   };
+  hookPreviews(handle, proto);
+  hookClickPoint(proto);
   state.elementHooked = true;
+}
+
+/** The element handles whose preview waits for a client to be given the handle. */
+const deferredPreviews = new WeakSet<object>();
+
+/**
+ * fastActions: Playwright asks the page for a preview of every element handle it creates, the element of each action
+ * included. The handles of its utility world are its own: theirs is asked for when a client is given one.
+ */
+function hookPreviews(handle: ServerPage, proto: ServerPage): void {
+  const initialize = proto._initializePreview as (() => Promise<void>) | undefined;
+  const setCallback = Object.getPrototypeOf(proto)?._setPreviewCallback as ((callback: unknown) => void) | undefined;
+  if (
+    typeof initialize !== 'function' ||
+    typeof setCallback !== 'function' ||
+    !String(handle.constructor).includes('this._initializePreview()')
+  )
+    throw new IncompatibleError("Playwright's element handles no longer ask for their preview as they are created");
+  proto._initializePreview = function (this: ServerPage) {
+    if (!state.fastActions || this._context?.world !== 'utility') return initialize.call(this);
+    state.counters.deferredPreviews++;
+    deferredPreviews.add(this);
+    return Promise.resolve();
+  };
+  proto._setPreviewCallback = function (this: ServerPage, callback: unknown) {
+    setCallback.call(this, callback);
+    if (deferredPreviews.delete(this)) initialize.call(this).catch(() => {});
+  };
+}
+
+/** The pointer actions in progress, and the click point each asked for behind its last scroll. */
+const pointerActions = new WeakMap<object, { point?: Promise<unknown> }>();
+
+/**
+ * fastActions, on Chromium: a pointer action scrolls its element into view, waits for the answer, then asks for the
+ * point to click. Both commands go to the same session, which runs them in order: the point is asked for right
+ * behind the scroll, and both answers arrive together.
+ */
+function hookClickPoint(proto: ServerPage): void {
+  const perform = proto._performPointerAction as (...args: unknown[]) => Promise<unknown>;
+  const scroll = proto._scrollRectIntoViewIfNeeded as
+    | ((progress: unknown, rect: unknown) => Promise<unknown>)
+    | undefined;
+  const clickablePoint = proto._clickablePoint as ((progress: unknown) => Promise<unknown>) | undefined;
+  const action = String(perform);
+  const scrolled = action.lastIndexOf('await doScrollIntoView(');
+  if (
+    typeof scroll !== 'function' ||
+    typeof clickablePoint !== 'function' ||
+    !action.includes('return await this._scrollRectIntoViewIfNeeded(') ||
+    scrolled < 0 ||
+    action.indexOf('await this._clickablePoint(progress2)') < scrolled ||
+    !String(scroll).includes('this._page.delegate.scrollRectIntoViewIfNeeded(this, rect)') ||
+    !String(clickablePoint).includes('this._page.delegate.getContentQuads(this)')
+  )
+    throw new IncompatibleError("Playwright's pointer action no longer scrolls, then asks for its click point");
+  proto._performPointerAction = async function (this: ServerPage, ...args: unknown[]) {
+    if (!state.fastActions || !isChromium(this._page ?? {})) return perform.apply(this, args);
+    pointerActions.set(this, {});
+    try {
+      return await perform.apply(this, args);
+    } finally {
+      pointerActions.delete(this);
+    }
+  };
+  proto._scrollRectIntoViewIfNeeded = function (this: ServerPage, progress: unknown, rect: unknown) {
+    const result = scroll.call(this, progress, rect);
+    const pointer = pointerActions.get(this);
+    if (pointer) {
+      // The point of a scroll before this one is that of another position.
+      pointer.point = rect === undefined ? clickablePoint.call(this, progress) : undefined;
+      pointer.point?.catch(() => {});
+    }
+    return result;
+  };
+  proto._clickablePoint = function (this: ServerPage, progress: unknown) {
+    const pointer = pointerActions.get(this);
+    const early = pointer?.point;
+    if (!pointer || !early) return clickablePoint.call(this, progress);
+    pointer.point = undefined;
+    state.counters.earlyPoints++;
+    return early;
+  };
+}
+
+/** What an action's lookup found, beside its element. */
+type Found = { log: string; success: boolean; box?: unknown };
+
+/** The lookups in flight, by token: the reads sent behind each, one for each frame the lookup ran in. */
+const lookupReads = new Map<
+  number,
+  Array<{ injected: ServerPage; read: Promise<{ found?: Found; error?: unknown }> }>
+>();
+let lastLookup = 0;
+
+/** The result of the page function of an action's lookup, as Playwright writes it. */
+const LOOKUP_RESULT = /success: !!\w+, element: \w+, box:/;
+
+/** In the page: what the lookup of `token` kept there, taken out. */
+const takeFound = (injected: { __piwiTurboFound?: Map<number, Found> }, token: number): Found | undefined => {
+  const found = injected.__piwiTurboFound?.get(token);
+  injected.__piwiTurboFound?.delete(token);
+  return found;
+};
+
+/**
+ * In the page: Playwright's own lookup function, whose element is the result, and whose log and box stay in the page
+ * under the lookup's token.
+ */
+const lookupInPage = (text: string) =>
+  `(scope, wrapped) => { const found = (${text})(scope, wrapped.arg); ` +
+  '(scope.injected.__piwiTurboFound ??= new Map()).set(wrapped.piwiTurboLookup, ' +
+  '{ log: found.log, success: found.success, box: found.box }); return found.element; }';
+
+/**
+ * fastActions: an action looks its element up, then reads the lookup's result in two more calls: its log and box,
+ * then its element. The lookup returns the element itself, and what Playwright logs about it is read by a command
+ * sent right behind the lookup, so both answers arrive together.
+ */
+function hookLookup(frame: ServerPage, retryIfNotConnected: unknown): void {
+  const proto = frame.selectors ? Object.getPrototypeOf(frame.selectors) : undefined;
+  const callOnSelectorHandle = proto?.callOnSelectorHandle as
+    | ((target: unknown, pageFunction: unknown, arg: unknown) => Promise<ServerPage>)
+    | undefined;
+  if (typeof callOnSelectorHandle !== 'function' || typeof proto._callOnSelectorInternal !== 'function')
+    throw new IncompatibleError("Playwright's frame selectors have no callOnSelectorHandle/_callOnSelectorInternal");
+  const internal = String(proto._callOnSelectorInternal);
+  const reader = String(retryIfNotConnected);
+  if (
+    !internal.includes('functionText: String(pageFunction), arg: arg2') ||
+    !internal.includes('injected2.eval("(" + params2.functionText + ")")') ||
+    !internal.includes('func({ injected: injected2, elements') ||
+    !internal.includes('}, params2.arg)')
+  )
+    throw new IncompatibleError("Playwright's selector calls no longer pass their function and argument to the page");
+  if (
+    !LOOKUP_RESULT.test(reader) ||
+    !reader.includes('.evaluate((r) => ({ log: r.log, success: r.success, box: r.box }))') ||
+    !reader.includes('.evaluateHandle((r) => r.element)')
+  )
+    throw new IncompatibleError("Playwright's actions no longer read their lookup's log, box and element in two calls");
+  proto.callOnSelectorHandle = async function (this: ServerPage, target: unknown, pageFunction: unknown, arg: unknown) {
+    const text = state.fastActions ? String(pageFunction) : '';
+    if (!LOOKUP_RESULT.test(text)) return callOnSelectorHandle.call(this, target, pageFunction, arg);
+    // The handle class is reached from the result of the first lookup.
+    if (!state.handleHooked) {
+      const resolved = await callOnSelectorHandle.call(this, target, pageFunction, arg);
+      try {
+        if (resolved?.result) hookLookupHandle(resolved.result);
+      } catch (error) {
+        state.error ??= error as Error;
+      }
+      return resolved;
+    }
+    const token = ++lastLookup;
+    const reads: NonNullable<ReturnType<typeof lookupReads.get>> = [];
+    lookupReads.set(token, reads);
+    try {
+      const inPage = { toString: () => lookupInPage(text) };
+      const resolved = await callOnSelectorHandle.call(this, target, inPage, { piwiTurboLookup: token, arg });
+      if (!resolved) return resolved;
+      const element = resolved.result;
+      let taken = false;
+      try {
+        // A lookup through several frames is read in the frame that answered: another may never answer.
+        const answered = reads.filter(({ injected }) => injected._context?.frame === resolved.frame);
+        const found = await foundBy(answered.length ? answered : reads, token);
+        state.counters.fastLookups++;
+        // What Playwright reads from the lookup's result: its log and box, then its element.
+        const result = {
+          evaluate: async () => found,
+          evaluateHandle: async () => {
+            taken = true;
+            return element;
+          },
+          dispose: () => {
+            if (!taken) element.dispose();
+          },
+        };
+        return { ...resolved, result };
+      } catch (error) {
+        element.dispose();
+        if (error instanceof IncompatibleError) state.error ??= error;
+        throw error;
+      }
+    } finally {
+      lookupReads.delete(token);
+    }
+  };
+}
+
+/** What the lookup of `token` found, from the reads sent behind it. */
+async function foundBy(reads: NonNullable<ReturnType<typeof lookupReads.get>>, token: number): Promise<Found> {
+  let failure: unknown;
+  for (const { read } of reads) {
+    const { found, error } = await read;
+    if (found) return found;
+    failure ??= error;
+  }
+  if (failure) throw failure;
+  // A read that ran before its lookup found nothing: it is sent again.
+  state.counters.repeatedLookupReads++;
+  for (const { injected } of reads) {
+    const found = (await injected.evaluate(takeFound, token)) as Found | undefined;
+    if (found) return found;
+  }
+  throw new IncompatibleError("Playwright's action lookup kept nothing in the page for fastActions to read");
+}
+
+/** Sends the read of what a lookup found right behind the lookup, on the injected script's handle. */
+function hookLookupHandle(handle: ServerPage): void {
+  const proto = Object.getPrototypeOf(handle);
+  const evaluateHandle = proto?.evaluateHandle as
+    | ((pageFunction: unknown, arg: unknown) => Promise<unknown>)
+    | undefined;
+  if (
+    typeof evaluateHandle !== 'function' ||
+    typeof proto.evaluate !== 'function' ||
+    typeof proto.dispose !== 'function'
+  )
+    throw new IncompatibleError("Playwright's handles have no evaluate/evaluateHandle/dispose");
+  proto.evaluateHandle = function (this: ServerPage, pageFunction: unknown, arg: unknown) {
+    const result = evaluateHandle.call(this, pageFunction, arg);
+    const token = (arg as { arg?: { piwiTurboLookup?: number } } | undefined)?.arg?.piwiTurboLookup;
+    const reads = token === undefined ? undefined : lookupReads.get(token);
+    if (reads) {
+      const read = (this.evaluate(takeFound, token) as Promise<Found | undefined>).then(
+        (found) => ({ found }),
+        (error: unknown) => ({ error }),
+      );
+      reads.push({ injected: this, read });
+    }
+    return result;
+  };
+  state.handleHooked = true;
 }
 
 function hookFrame(frame: ServerPage): void {
@@ -1156,6 +1399,7 @@ function hookFrame(frame: ServerPage): void {
   if (typeof retryIfNotConnected !== 'function') {
     throw new IncompatibleError("Playwright's frame has no _retryWithProgressIfNotConnected");
   }
+  hookLookup(frame, retryIfNotConnected);
   // The element handle class is reached from the first action's handle.
   proto._retryWithProgressIfNotConnected = function (
     this: ServerPage,
@@ -1175,7 +1419,7 @@ function hookFrame(frame: ServerPage): void {
             hookElementHandle(handle);
           } catch (error) {
             state.error ??= error as Error;
-            if (state.skipStabilityWait) throw error;
+            if (state.skipStabilityWait || state.fastActions) throw error;
           }
         }
         return action(inner, handle, ...rest);

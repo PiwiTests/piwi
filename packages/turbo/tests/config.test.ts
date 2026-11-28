@@ -127,6 +127,7 @@ describe('presets', () => {
       screenshotMatches: true,
       earlyInjection: true,
       fastTraces: true,
+      fastActions: true,
       instantAnimations: true,
     });
     expect(result.use).not.toHaveProperty('keepStaticCache');

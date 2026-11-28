@@ -31,9 +31,8 @@ tell a real gain from noise.
    URLs, so no preset sets them.
 4. **Experimental hooks** wrap Playwright's server inside the test worker: `fastScreenshots`, `retryIntervals`,
    `failFast`, `skipStabilityWait`, `fastReset`, `fastStackTraces`, `screenshotMatches`, `keepStaticCache`,
-   `earlyInjection` and `fastTraces`. They
-   install only on the Playwright versions they were tested with, check the shape of every internal they wrap, and
-   throw instead of falling back.
+   `earlyInjection`, `fastTraces` and `fastActions`. They install only on the Playwright versions they were tested
+   with, check the shape of every internal they wrap, and throw instead of falling back.
 5. **Context reuse is Playwright's own `reuseContext` plus a reset of what it leaves**: offline mode, extra headers,
    permissions, geolocation and Cache Storage. A pair of end-to-end tests per kind of state a test can leave checks the
    next test starts without it, under Playwright's reset and under `fastReset`. Reuse stays in `fast` although it costs

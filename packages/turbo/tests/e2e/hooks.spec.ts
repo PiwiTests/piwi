@@ -509,6 +509,138 @@ test.describe('skip stability wait', () => {
   });
 });
 
+test.describe('fast actions', () => {
+  test.use({ fastActions: true });
+
+  const FORM = `<input placeholder="name"><input type="checkbox" id="c">
+    <button id="b" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">go</button>`;
+
+  /** How many commands the tab's session sends to the browser while `run` runs. */
+  async function commandsDuring(page: Page, run: () => Promise<unknown>): Promise<number> {
+    const connection = (page as unknown as { _connection: { toImpl: (object: unknown) => unknown } })._connection;
+    const impl = connection.toImpl(page) as { delegate: { _mainFrameSession: { _client: { send: unknown } } } };
+    const session = impl.delegate._mainFrameSession._client as { send: (...args: unknown[]) => unknown };
+    const send = session.send;
+    let sent = 0;
+    session.send = function (...args: unknown[]) {
+      sent++;
+      return send.apply(this, args);
+    };
+    try {
+      await run();
+      // The commands an action does not wait for, a handle's release among them.
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    } finally {
+      session.send = send;
+    }
+    return sent;
+  }
+
+  const actions = {
+    fill: (page: Page) => page.getByPlaceholder('name').fill('typed'),
+    click: (page: Page) => page.locator('#b').click(),
+    check: (page: Page) => page.locator('#c').check(),
+    hover: (page: Page) => page.locator('#b').hover(),
+  };
+
+  test('sends fewer commands for the same fill, click, check and hover', async ({ page, browserName }) => {
+    await page.setContent(FORM);
+    // The handle classes are reached from the first lookup and the first element.
+    for (const action of Object.values(actions)) await action(page);
+    await page.locator('#c').uncheck();
+    for (const [name, action] of Object.entries(actions)) {
+      if (name === 'check') await page.locator('#c').uncheck();
+      state.fastActions = false;
+      const stock = await commandsDuring(page, () => action(page));
+      if (name === 'check') await page.locator('#c').uncheck();
+      state.fastActions = true;
+      const { fastLookups, earlyPoints, repeatedLookupReads } = state.counters;
+      const fast = await commandsDuring(page, () => action(page));
+      expect(state.counters.fastLookups, name).toBe(fastLookups + 1);
+      expect(state.counters.repeatedLookupReads, name).toBe(repeatedLookupReads);
+      const pointer = name !== 'fill' && browserName === 'chromium';
+      expect(state.counters.earlyPoints, name).toBe(earlyPoints + (pointer ? 1 : 0));
+      // One command for the lookup and its log in place of three, and no preview of the element.
+      expect(fast, name).toBeLessThanOrEqual(stock - 2);
+    }
+    await expect(page.getByPlaceholder('name')).toHaveValue('typed');
+    await expect(page.locator('#c')).toBeChecked();
+    await expect(page.locator('#b')).toHaveAttribute('data-n', '3');
+  });
+
+  test('fails a click that cannot land with the log stock Playwright gives', async ({ page }) => {
+    await page.setContent(`${FORM}<div id="over" style="position:fixed;inset:0"></div>`);
+    await page.getByPlaceholder('name').fill('warm', { force: true });
+    const logOf = async () => {
+      const error = await page
+        .locator('#b')
+        .click({ timeout: 600 })
+        .catch((caught: Error) => caught);
+      // Up to the first retry: how many follow depends on the time each took.
+      return String(error).split('- retrying click action')[0];
+    };
+    state.fastActions = false;
+    const stock = await logOf();
+    state.fastActions = true;
+    const fast = await logOf();
+    expect(fast).toContain('locator resolved to <button id="b"');
+    expect(fast).toContain('intercepts pointer events');
+    expect(fast).toBe(stock);
+  });
+
+  test('refuses a locator that matches two elements as stock Playwright does', async ({ page }) => {
+    await page.setContent('<button>one</button><button>two</button><input placeholder="name">');
+    await page.getByPlaceholder('name').fill('warm');
+    const violation = () =>
+      page
+        .locator('button')
+        .click({ timeout: 600 })
+        .catch((caught: Error) => String(caught));
+    state.fastActions = false;
+    const stock = await violation();
+    state.fastActions = true;
+    expect(await violation()).toBe(stock);
+    expect(stock).toContain('strict mode violation');
+  });
+
+  test('waits for an element that is not there yet', async ({ page }) => {
+    await page.setContent(`<input placeholder="name"><script>
+      setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<button id="late" onclick="this.dataset.n = 1">late</button>'), 300);
+    </script>`);
+    await page.getByPlaceholder('name').fill('warm');
+    await page.locator('#late').click();
+    await expect(page.locator('#late')).toHaveAttribute('data-n', '1');
+  });
+
+  test('clicks an element it had to scroll to, in the page and in a frame', async ({ page, browserName }) => {
+    const tall = `<div style="height:3000px"></div>
+      <button id="far" onclick="this.dataset.n = Number(this.dataset.n || 0) + 1">far</button>
+      <div style="height:3000px"></div>`;
+    await page.setContent(`<input placeholder="name">${tall}<iframe style="width:300px;height:200px"></iframe>`);
+    await page.locator('iframe').evaluate((frame: HTMLIFrameElement, html) => (frame.srcdoc = html), tall);
+    await page.getByPlaceholder('name').fill('warm');
+    const before = state.counters.earlyPoints;
+    await page.locator('#far').click();
+    await expect(page.locator('#far')).toHaveAttribute('data-n', '1');
+    const inFrame = page.frameLocator('iframe').locator('#far');
+    await inFrame.click();
+    await expect(inFrame).toHaveAttribute('data-n', '1');
+    await page.locator('#far').click({ position: { x: 2, y: 2 } });
+    await expect(page.locator('#far')).toHaveAttribute('data-n', '2');
+    if (browserName === 'chromium') expect(state.counters.earlyPoints).toBe(before + 2);
+  });
+
+  test("leaves the preview of a handle the test holds as stock Playwright's", async ({ page }) => {
+    await page.setContent(FORM);
+    await page.locator('#b').click();
+    const before = state.counters.deferredPreviews;
+    await page.locator('#b').click();
+    expect(state.counters.deferredPreviews).toBeGreaterThan(before);
+    const handle = await page.locator('#b').elementHandle();
+    await expect.poll(() => String(handle)).toContain('JSHandle@<button id="b"');
+  });
+});
+
 type ServerPage = {
   mainFrame(): { _contextData: Map<string, { context: { _injectedScriptPromise?: Promise<unknown> } }> };
 };

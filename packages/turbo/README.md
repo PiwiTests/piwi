@@ -41,7 +41,7 @@ import { test, expect } from '@piwitests/turbo/test';
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `safe` | Nothing a test observes changes. Traces the config records are kept for failures (recorded on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of each test worker.                               |
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests, in place of a new context for each test.                                                                                                           |
-| `max`  | `fast`, plus every experimental hook but `keepStaticCache`: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, Playwright's injected script created while a page loads, and traces that do not request the script bodies they leave out. |
+| `max`  | `fast`, plus every experimental hook but `keepStaticCache`: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, Playwright's injected script created while a page loads, traces that do not request the script bodies they leave out, and actions that take fewer round trips with the browser. |
 
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
@@ -213,6 +213,7 @@ withOptimizations(config, {
     keepStaticCache: true,
     earlyInjection: true,
     fastTraces: true,
+    fastActions: true,
   },
 });
 ```
@@ -286,12 +287,18 @@ withOptimizations(config, {
   action's input is awaited as Playwright does. The trace holds the same calls and snapshots. TodoMVC with a trace of
   every test (`retain-on-failure` without retries) took 12% less time for the script bodies, and 8% less again for the
   snapshots; SVGOMG 6% less for the snapshots.
+- **`fastActions`**: an action finds its element, then asks the page twice more, for what it logs about the element and
+  for the element itself, and the page a third time for a preview of the element that no test reads. The lookup returns
+  the element, and its log is read by a command sent right behind it, so both answers arrive together; Playwright's own
+  element handles get a preview only when a client is given one. On Chromium, a click, hover, check or tap also asks for
+  its point right behind the scroll that brings the element into view. A fill sends 5 commands to the browser in place
+  of 8, and a click 14 in place of 17. What the action does, its log, its errors and its trace are the same.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
 `Page.prototype.expectScreenshot`, `Page.prototype.resetForReuse`, `BrowserContext.prototype.setStorageState` and
-`BrowserContext.prototype.resetForReuse`, a context's `response` events, from the first page the frame class, the
-element handle class, Chromium's CDP session and the trace recorder, from the first document the execution context
-class, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
+`BrowserContext.prototype.resetForReuse`, a context's `response` events, from the first page the frame class, its
+selectors, the handle and element handle classes, Chromium's CDP session and the trace recorder, from the first
+document the execution context class, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
 were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the browser runs
 outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at your own risk. What each lever was
 measured to save is in the
@@ -318,8 +325,8 @@ Several levers follow techniques from [Flashwright](https://github.com/xcodebeas
 that makes them its defaults: faster PNG encoding, less waiting between checks, failure screenshots taken only on
 failure, instant animations, assertions that fail once the page is idle, pointer actions that skip the wait for a
 still element, a reused, reset browser context, a lighter reset of its tab, Playwright's injected script created while
-a page loads, traces that skip the script bodies they leave out, a code cache of Playwright's modules and a worker
-started before the runner needs it. @piwitests/turbo applies them to stock Playwright at runtime instead of forking it. It contains no
+a page loads, traces that skip the script bodies they leave out, actions that reach the browser in fewer round trips,
+a code cache of Playwright's modules and a worker started before the runner needs it. @piwitests/turbo applies them to stock Playwright at runtime instead of forking it. It contains no
 Flashwright or Playwright code; both are Apache-2.0.
 
 @piwitests/turbo is part of [Piwi](https://github.com/PiwiTests/piwi), and neither is affiliated with or endorsed by

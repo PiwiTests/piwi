@@ -129,7 +129,7 @@ surface races that slower runs hid: measure on your own suite before keeping any
 
 ## Experimental hooks
 
-**Experimental.** Ten options reach into Playwright's internals inside each test worker. `max` turns on all but
+**Experimental.** Eleven options reach into Playwright's internals inside each test worker. `max` turns on all but
 `keepStaticCache`; name them under `experimental` to pick some. The [package
 README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-hooks) describes each one and its limits:
 
@@ -137,6 +137,8 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
   assertion whose capture is known to match without decoding the images.
 - `retryIntervals` shortens the waits of Playwright's retry loop, and `skipStabilityWait` stops pointer actions waiting
   for the element to keep still: keep it off for apps that ignore input while animating.
+- `fastActions` cuts the round trips an action makes with the browser: one to find its element in place of three, and
+  on Chromium the click point asked for with the scroll.
 - `failFast` ends a failing assertion once nothing can change the page; keep it off for a test changing the page
   from its Node code while an assertion waits.
 - `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, the tab's
@@ -162,6 +164,7 @@ withOptimizations(config, {
     keepStaticCache: true,
     earlyInjection: true,
     fastTraces: true,
+    fastActions: true,
   },
 });
 ```

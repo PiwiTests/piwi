@@ -107,6 +107,14 @@ export interface Optimizations {
      */
     fastTraces?: boolean;
     /**
+     * Fewer round trips with the browser per action. An action looks its element up, then asks the page twice more
+     * for the lookup's log and for the element: the lookup returns the element, and its log is read by a command sent
+     * right behind it. Playwright's own element handles get no preview from the page until a client is given one. On
+     * Chromium, a pointer action asks for its click point right behind the scroll that brings the element into view.
+     * What an action does, logs and records in a trace is the same.
+     */
+    fastActions?: boolean;
+    /**
      * The test worker's stack traces, which Playwright captures for every API call, look up source maps only for the
      * frames outside Node and `node_modules`. They read the same. With another experimental hook on, Playwright's
      * server also captures no stack as each evaluation in a page starts: the test's errors read the same, and a trace
@@ -208,6 +216,7 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         screenshotMatches: true,
         earlyInjection: true,
         fastTraces: true,
+        fastActions: true,
       },
     };
   }
@@ -258,6 +267,7 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.keepStaticCache) use.keepStaticCache = true;
   if (experimental.earlyInjection) use.earlyInjection = true;
   if (experimental.fastTraces) use.fastTraces = true;
+  if (experimental.fastActions) use.fastActions = true;
   if (options.compileCache) {
     enableCompileCache(options.compileCache === true ? defaultCompileCache() : options.compileCache);
   }
