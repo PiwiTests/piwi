@@ -8812,12 +8812,21 @@ const SCENES = [
   {
     name: 'desktop-editor-run-note',
     description:
-      'Run page in the desktop app while a run that follows an editor and reports to the app waits at a stop: In Visual Studio Code, the worker, its test and its place, which opens in the IDE (desktop shell)',
+      'Run page in the desktop app while an editor follows a run that reports to the app: the run’s header names the editor, then says which worker waits at a stop, its test and its place, which opens in the IDE, also at 390 px; then the same two states in the Local runs tray, for a job the app runs on the editor’s run channel (desktop shell)',
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
     route: '/',
     viewport: { width: 1280, height: 800 },
+    outputs: [
+      'desktop-editor-run-note.png',
+      'desktop-editor-run-note-waits.png',
+      'desktop-editor-run-note-waits-narrow.png',
+      'desktop-editor-run-note-tray.png',
+      'desktop-editor-run-note-tray-waits.png',
+    ],
     async run({ page, base, goto, settle, shoot }) {
+      await playDesktopRunHub(page, () => ({}));
       const post = async (path, data) => {
         const res = await page.request.post(`${base}${path}`, { data });
         if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
@@ -8850,57 +8859,90 @@ const SCENES = [
         // The server observes the editor's run: its stream says where its test waits.
         const root = '/home/dev/code/acme-checkout';
         const uri = `file://${root}/tests/checkout.spec.ts`;
-        const run = {
-          client: 'Visual Studio Code',
-          session: {
-            ref: 'terminal-4242-1700000000000',
-            root,
-            label: 'acme-checkout',
-            command: null,
-            project: 'checkout-web',
-            terminal: true,
-            ended: false,
-            page: { id: started.runId, url: `${base}/test-runs/${started.runId}` },
-            workers: [
-              {
-                worker: 0,
-                parallelIndex: 0,
-                state: 'stopped',
-                pausing: false,
-                intents: [],
-                test: {
-                  id: 't1',
-                  title: ['checkout', 'pays with a saved card'],
-                  uri,
-                  line: 10,
-                  project: 'chromium',
-                  retry: 0,
-                },
-                stop: {
-                  reason: 'breakpoint',
-                  title: "Click getByRole('button', { name: 'Pay now' })",
-                  uri,
-                  line: 17,
-                  character: 4,
-                  locator: "getByRole('button', { name: 'Pay now' })",
-                  bar: false,
-                  since: '1',
-                },
-              },
-            ],
+        const test = {
+          id: 't1',
+          title: ['checkout', 'pays with a saved card'],
+          uri,
+          line: 10,
+          project: 'chromium',
+          retry: 0,
+        };
+        const running = {
+          worker: 0,
+          parallelIndex: 0,
+          state: 'running',
+          pausing: false,
+          intents: [],
+          test,
+          stop: null,
+        };
+        const stopped = {
+          ...running,
+          state: 'stopped',
+          stop: {
+            reason: 'breakpoint',
+            title: "Click getByRole('button', { name: 'Pay now' })",
+            uri,
+            line: 17,
+            character: 4,
+            locator: "getByRole('button', { name: 'Pay now' })",
+            bar: false,
+            since: '1',
           },
         };
+        const editorRun = (session) => ({
+          client: 'Visual Studio Code',
+          session: { root, label: 'acme-checkout', command: null, project: 'checkout-web', ended: false, ...session },
+        });
+        /** The editor's run that follows the terminal's, as it stands with `worker`. */
+        const follows = (worker) =>
+          editorRun({
+            ref: 'terminal-4242-1700000000000',
+            terminal: true,
+            page: { id: started.runId, url: `${base}/test-runs/${started.runId}` },
+            workers: [worker],
+          });
+        let observed = follows(running);
         await page.route('**/api/desktop/events', (route) =>
           route.fulfill({
             contentType: 'text/event-stream',
-            body: `data: ${JSON.stringify({ type: 'snapshot', runs: [] })}\n\ndata: ${JSON.stringify({ type: 'editor-runs', runs: [run] })}\n\n`,
+            body: `data: ${JSON.stringify({ type: 'snapshot', runs: [] })}\n\ndata: ${JSON.stringify({ type: 'editor-runs', runs: [observed] })}\n\n`,
           }),
         );
+        const capture = async (testId, name = '') => {
+          await page.getByTestId(testId).waitFor({ timeout: 60_000 });
+          await settle();
+          await shoot(name, { of: '[data-shot="run-header"]', pad: 8 });
+        };
         await goto(`/test-runs/${started.runId}`);
-        await page.locator('[data-shot="desktop-editor-run-note"]').waitFor({ timeout: 60_000 });
-        await settle();
-        await shoot('', { of: '[data-shot="desktop-editor-run-note"]', pad: 8 });
+        await capture('desktop-editor-run-follows');
+        observed = follows(stopped);
+        await goto(`/test-runs/${started.runId}`);
+        await capture('desktop-editor-run-waits', 'waits');
+        await page.setViewportSize({ width: 390, height: 800 });
+        await capture('desktop-editor-run-waits', 'waits-narrow');
+
+        // A job the app runs in a throwaway checkout on the editor's run channel: the tray names the editor, then
+        // says where the job waits, as the window's stream hears it on its next connection.
+        await page.setViewportSize({ width: 1280, height: 800 });
+        const onChannel = (worker) => editorRun({ ref: 'desktop-41-at-abc1234', workers: [worker] });
+        observed = onChannel(running);
+        await goto('/test-runs/2');
+        await page
+          .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+          .first()
+          .click();
+        const tray = page.getByRole('region', { name: 'Local runs' });
+        const captureTray = async (testId, name) => {
+          await tray.getByTestId(testId).waitFor({ timeout: 60_000 });
+          await settle();
+          await shoot(name, { of: '[aria-label="Local runs"]', pad: 0 });
+        };
+        await captureTray('desktop-editor-run-follows', 'tray');
+        observed = onChannel(stopped);
+        await captureTray('desktop-editor-run-waits', 'tray-waits');
       } finally {
+        await page.unrouteAll();
         await finish();
       }
     },

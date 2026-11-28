@@ -923,6 +923,41 @@ test.describe('Desktop run live view', () => {
     ).toBeVisible();
   });
 
+  test('names the editor that holds a run on its run channel, then says where its test waits, with no Hold failures', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    // The server observes the editor's run of the step, in a throwaway checkout of a commit; each connection of the
+    // window's stream hears it as it stands.
+    const observed = (worker: Record<string, unknown>) => ({
+      type: 'editor-runs',
+      runs: [{ client: 'Visual Studio Code', session: { ...session(worker).session, ref: `${REF}-at-abc1234` } }],
+    });
+    let message = observed(RUNNING);
+    await page.route('**/api/desktop/events', (route) =>
+      route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify(message)}\n\n` }),
+    );
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await rerunFailed(page);
+    await expect(tray(page).getByTestId('desktop-editor-run-follows')).toHaveText(
+      'Visual Studio Code follows this run: a test that stops waits there for you.',
+    );
+    await expect(holdSwitch(page)).toHaveCount(0);
+
+    // Its test stops: the row names the worker, the test, its place and the editor that answers it.
+    message = observed(stopped('s1', { reason: 'breakpoint' }));
+    const waits = tray(page).getByTestId('desktop-editor-run-waits');
+    await expect(waits).toBeVisible({ timeout: 20_000 });
+    await expect(waits.getByRole('term')).toHaveText('Worker 1');
+    await expect(waits.getByRole('definition')).toContainText('checkout › pays waits at');
+    await expect(waits.getByRole('definition')).toContainText('tests/checkout.spec.ts:5');
+    await expect(waits.getByRole('definition')).toContainText('answer it in Visual Studio Code');
+    await expect(tray(page).getByTestId('desktop-editor-run-follows')).toHaveCount(0);
+    await expect(holdSwitch(page)).toHaveCount(0);
+  });
+
   test('watches a running worker’s page, through a stop and between tests, and offers no Watch to an older reporter', async ({
     page,
   }) => {

@@ -58,9 +58,9 @@ the run here**, brings it back. The window stays open whatever page the app show
 its run leaves the tray and with the app; one the reloaded tray shows no run in closes.
 
 A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder
-([A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor)) says where its tests wait,
-**In Visual Studio Code**, read only, with no **Hold failures**: the editor holds them. Its line is marked while one
-waits, **Stop** still ends it, and it ends with its own verdict.
+([A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor)) says where its tests wait and in
+which editor, read only, with no **Hold failures**: the editor holds them. Its line is marked while one waits,
+**Stop** still ends it, and it ends with its own verdict.
 
 ## Stops while you look elsewhere
 

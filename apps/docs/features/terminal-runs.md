@@ -60,8 +60,9 @@ connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) onc
   makes, Assert a region and Mock a request, written in the editor ([Code from a pause](./editor-stop-code)).
 - **Record and Assert** in the test's window, through the editor's recorder, and **Pick a locator**, which goes
   to the editor (its Send to editor pairing), as for a run Piwi starts.
-- **Its stops on the desktop app's page of the run**, for a run that reports to [the app](./desktop): which tests wait
-  for the editor (**In Visual Studio Code**), each place opening in the IDE.
+- **Its stops on the desktop app's page of the run**, for a run that reports to [the app](./desktop): the run's header
+  names the editor (**Visual Studio Code follows this run**), then says which tests wait for it, each place opening in
+  the IDE.
 - **Failures.** A failure goes on, as without Piwi, until you turn the run's
   [**Hold failures**](./watch-a-run#hold-failures) on, in the editor or the Runs window.
 

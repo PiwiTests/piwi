@@ -115,8 +115,8 @@ which nobody attends, only one that knows such runs too.
 - **Its code is to copy.** Assert, Assert a region and Mock a request offer the code with **Copy the code** and write
   nothing: "This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file."
   Record is refused there, and a pick goes to the app's window, to copy.
-- **The app keeps it.** Its Local runs tray says where its tests wait (**In Visual Studio Code**), read only, stops it,
-  and shows its verdict when it ends; the editor offers no Stop.
+- **The app keeps it.** Its Local runs tray says where its tests wait for the editor, read only, stops it, and shows
+  its verdict when it ends; the editor offers no Stop.
 
 ## Limits
 

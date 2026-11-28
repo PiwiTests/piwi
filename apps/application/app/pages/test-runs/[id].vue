@@ -1616,7 +1616,11 @@ const moreMenuItems = computed(() => {
               :stopped="runReadEnded !== null"
               @toggle-status="handleFilterStatus"
               @label-updated="reloadRunAsked"
-            />
+            >
+              <template v-if="isLive && editorRunsHere.length" #notes>
+                <DesktopEditorRunNote :runs="editorRunsHere" />
+              </template>
+            </RunHeader>
             <p
               v-if="continuedRoute"
               class="mt-3 text-sm text-highlighted leading-relaxed max-sm:px-4"
@@ -1631,7 +1635,6 @@ const moreMenuItems = computed(() => {
               >
             </p>
             <DesktopRunHome v-if="isDesktop && isLive && testRun" :run-id="testRun.id" :sessions="desktopSessions" />
-            <DesktopEditorRunNote v-if="isLive && editorRunsHere.length" :runs="editorRunsHere" />
           </template>
 
           <template #tab-tests>

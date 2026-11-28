@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: the runs of an editor of this machine that report to this run's page, or that are a run of the
- * Local runs tray the shell ran on that editor's run channel, as the server observes them (`useDesktopEditorRuns`):
- * each worker that waits at a stop, its test and its place, which opens in the IDE, and
- * the editor that answers it. Read only: the app steers none of an editor's runs, so the page says the run waits rather
+ * Local runs tray the shell ran on that editor's run channel, as the server observes them (`useDesktopEditorRuns`).
+ * A note with no frame of its own, for the run's header and the tray: one line naming the editor while none of its
+ * tests waits, else one row per worker that waits at a stop, its test and its place, which opens in the IDE, and the
+ * editor that answers it. Read only: the app steers none of an editor's runs, so the page says the run waits rather
  * than runs while the editor holds it.
  */
 import type { HubWorker } from '@piwitests/core/run-hub';
@@ -14,7 +15,7 @@ import { desktopRunStop } from '@piwitests/run-ui/run-view';
 
 const props = defineProps<{ runs: DesktopEditorRun[] }>();
 
-/** Each run's workers at a stop, by lane, and the editor that answers them, as a title and inside a sentence. */
+/** Each run's workers at a stop, by lane, and the editor that answers them, leading a sentence and inside one. */
 const stopped = computed(() =>
   props.runs.map((run) => ({
     run,
@@ -33,29 +34,28 @@ const stopped = computed(() =>
 </script>
 
 <template>
-  <SectionCard
-    v-for="{ run, title, editor, workers } in stopped"
-    :key="run.session.ref"
-    :title="`In ${title}`"
-    icon="i-lucide-code-xml"
-    class="mt-4"
-    data-shot="desktop-editor-run-note"
-  >
-    <p v-if="!workers.length" class="text-sm text-highlighted leading-relaxed">
-      {{ title }} follows this run: a test that stops waits there for you.
-    </p>
-    <!-- From lg the page's summary does not scroll: the list scrolls inside, so the tabs below keep their room. -->
-    <dl v-else class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 lg:max-h-[40dvh] lg:overflow-y-auto">
-      <template v-for="{ worker, stop, link, place } in workers" :key="worker.worker">
-        <dt class="text-sm font-semibold text-highlighted">Worker {{ worker.parallelIndex + 1 }}</dt>
-        <dd class="min-w-0 text-sm text-highlighted leading-relaxed">
-          {{ worker.test ? testName(worker.test) : 'A test' }}
-          {{ stop.reason === 'failure' ? 'failed at' : 'waits at' }}
-          <OpenInIdeLink v-if="link" :file-path="link.file" :line="link.line" :root="run.session.root" inline />
-          <span v-else class="font-mono break-all">{{ place }}</span>
-          <span class="ml-1 text-xs text-muted">· answer it in {{ editor }}</span>
-        </dd>
-      </template>
-    </dl>
-  </SectionCard>
+  <div class="space-y-1.5" data-shot="desktop-editor-run-note">
+    <template v-for="{ run, title, editor, workers } in stopped" :key="run.session.ref">
+      <p v-if="!workers.length" class="text-xs text-muted" data-testid="desktop-editor-run-follows">
+        {{ title }} follows this run: a test that stops waits there for you.
+      </p>
+      <!-- From lg the page's summary does not scroll: the rows scroll inside, so the tabs below keep their room. -->
+      <dl
+        v-else
+        class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 lg:max-h-40 lg:overflow-y-auto"
+        data-testid="desktop-editor-run-waits"
+      >
+        <template v-for="{ worker, stop, link, place } in workers" :key="worker.worker">
+          <dt class="text-sm font-semibold text-highlighted">Worker {{ worker.parallelIndex + 1 }}</dt>
+          <dd class="min-w-0 text-sm text-highlighted leading-relaxed">
+            {{ worker.test ? testName(worker.test) : 'A test' }}
+            {{ stop.reason === 'failure' ? 'failed at' : 'waits at' }}
+            <OpenInIdeLink v-if="link" :file-path="link.file" :line="link.line" :root="run.session.root" inline />
+            <span v-else class="font-mono break-all">{{ place }}</span>
+            <span class="ml-1 text-xs text-muted">· answer it in {{ editor }}</span>
+          </dd>
+        </template>
+      </dl>
+    </template>
+  </div>
 </template>

@@ -29,7 +29,8 @@ import { normalizeGitUrl } from '~~/server/utils/scm/git-url';
  * The run page's detail header (the run variant of `DetailHeader`): status,
  * Run #N, the label editor, the kept mark and the marker chip on the first line with the
  * primary action, one facts line with a Details popover for the rest, and one
- * count bar whose segments filter the Tests tab.
+ * count bar whose segments filter the Tests tab. The `notes` slot leads the lines
+ * between the facts and the count bar, for what the page knows of the run while it goes on.
  */
 const props = defineProps<{
   testRun: TestRunDetails;
@@ -847,6 +848,7 @@ function onLabelKeydown(e: KeyboardEvent) {
 
     <template #below>
       <div class="space-y-3 empty:hidden">
+        <slot name="notes" />
         <div
           v-if="environmentWarnings.length"
           class="flex items-start gap-2 text-sm"
