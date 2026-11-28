@@ -294,6 +294,14 @@ take there. A mouse move is answered at the browser's next frame, 16.7 ms, which
   wait on those commands.
 - **A larger young generation** (`--max-semi-space-size=64`) for the runner and its workers: single-test runs came out
   slower.
+- **A split of the shards by duration**, in turbo: Playwright splits a sharded suite by test count, and on Piwi's
+  own suite split in five the shards took 193, 184, 251, 185 and 160 s (2026-11-28, one run of each split). With
+  Playwright's shard weights set from the test time each shard recorded, they took 202, 215, 197, 184 and 183 s; with
+  whole spec files spread by their recorded test time, the longest first, each shard run from a `--test-list` file,
+  184, 193, 193, 182 and 194 s: the slowest 23% shorter. Not built in turbo: the reporter's `balanceShards` splits by
+  the durations the dashboard recorded, keeping together the tests that share a lock, a serial describe or a file that
+  is not fully parallel, and the guide links it. A suite that reports to no dashboard, as Piwi's own E2E job, has no
+  such split.
 
 ## Consequences
 

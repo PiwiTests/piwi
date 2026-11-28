@@ -83,6 +83,10 @@ option you name beside the preset wins over it. On the package's reference suite
 suite, `fast` took 10% off the wall time and the CPU time, and raised peak memory by 36%; `max` measured the same
 there. Its hooks pay on suites dense in short calls: on a suite whose time is the app's, start from `fast`.
 
+A sharded suite is as slow as its slowest shard, and Playwright splits by test count. Piwi's reporter splits by the
+durations the dashboard recorded instead: turn on
+[`balanceShards`](/features/test-selection#balanced-playwright-shards).
+
 ## Sign-in and third-party requests
 
 These need your paths and URLs, so no preset sets them.
