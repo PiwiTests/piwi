@@ -53,6 +53,13 @@ jobs:
         if: ${{ inputs.film }}
         run: sudo apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-jetbrains-mono
 
+      # kokoro-onnx supports Python 3.10 to 3.13, older than the runner's own.
+      - name: Set up Python for Kokoro
+        if: ${{ inputs.film && inputs.voice }}
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.13'
+
       # Kokoro runs in a Python environment of its own, outside the checkout; its model is downloaded once and
       # checked by its SHA-256 (lib/voice.mjs).
       - name: Install Kokoro
