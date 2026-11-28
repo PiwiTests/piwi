@@ -158,6 +158,67 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
+    it('fails every later write at once, unsent, once the dashboard refuses one as read-only, which it says once', async () => {
+      const readOnly = { statusCode: 409, message: 'The dashboard is read-only.', data: { errorCode: 'READ_ONLY' } };
+      const { server, url, requests } = await startServer((req, res) =>
+        req.method === 'GET' ? jsonRes(res, 200, { read: true }) : jsonRes(res, 409, readOnly),
+      );
+      const refusal = async (request: Promise<unknown>): Promise<HttpError> => {
+        try {
+          await request;
+        } catch (error) {
+          return error as HttpError;
+        }
+        throw new Error('the request was not refused');
+      };
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const onReadOnly = vi.fn();
+        client.onReadOnly = onReadOnly;
+        const first = await refusal(client.postJSON('/first', {}, null));
+        expect([first.status, first.errorCode, client.readOnly]).toEqual([409, 'READ_ONLY', true]);
+        const form = new FormData();
+        form.append('field', 'value');
+        for (const later of [
+          client.postJSON('/later', {}, null),
+          client.putJSON('/later', {}, null),
+          client.postFormData('/later', form, null),
+        ]) {
+          expect(await refusal(later)).toBe(first);
+        }
+        expect(await client.getJSON('/read', null)).toEqual({ read: true });
+        expect(await client.readJSON('/read', null)).toEqual({ read: true });
+        expect(requests.map((r) => r.url)).toEqual(['/first', '/read', '/read']);
+        expect(onReadOnly).toHaveBeenCalledOnce();
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('sends no write once told the dashboard is read-only, and says nothing; a 409 without the code changes nothing', async () => {
+      const { server, url, requests } = await startServer((_req, res) =>
+        jsonRes(res, 409, { statusCode: 409, message: 'The run has ended.' }),
+      );
+      try {
+        const told = new HttpClient(url, new Logger(false));
+        told.onReadOnly = vi.fn();
+        told.markReadOnly();
+        const refused = await told.postJSON('/told', {}, null).catch((error: unknown) => error as HttpError);
+        expect([refused.status, refused.errorCode]).toEqual([409, 'READ_ONLY']);
+        expect(told.onReadOnly).not.toHaveBeenCalled();
+
+        const older = new HttpClient(url, new Logger(false));
+        older.onReadOnly = vi.fn();
+        await expect(older.postJSON('/ended', {}, null)).rejects.toThrow('The run has ended.');
+        await expect(older.postJSON('/ended', {}, null)).rejects.toThrow('The run has ended.');
+        expect(older.readOnly).toBe(false);
+        expect(older.onReadOnly).not.toHaveBeenCalled();
+        expect(requests.map((r) => r.url)).toEqual(['/ended', '/ended']);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
     it('reads a character the answer splits across two chunks', async () => {
       const body = Buffer.from(JSON.stringify({ title: 'café ✓' }));
       const cut = body.indexOf(Buffer.from('é')) + 1;

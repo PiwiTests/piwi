@@ -88,6 +88,14 @@ function failureCode(res: Pick<HttpResponse, 'text'>): string | null {
   }
 }
 
+/** The code of the dashboard's refusal of a write while it is read-only: it takes none for now, and reads still go. */
+const READ_ONLY = 'READ_ONLY';
+
+/** Whether the dashboard refused a request as it is read-only (409, `READ_ONLY`). */
+export function refusedAsReadOnly(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409 && error.errorCode === READ_ONLY;
+}
+
 /**
  * The error of an answer with a non-2xx status: it names the status, and the server's word on it when there is one,
  * and carries the dashboard's error code.
@@ -186,6 +194,14 @@ export class HttpClient {
   private readonly inFlight = new Set<http.ClientRequest>();
   /** Set by `close`: every later request fails with this reason. */
   private closedReason: string | null = null;
+  /**
+   * The dashboard's first refusal of a request as read-only (`refusedAsReadOnly`), or `markReadOnly`'s: every later
+   * write (`postJSON`, `putJSON`, `postFormData`) fails with it at once, unsent; a GET and a login still go. Null while
+   * the dashboard takes writes.
+   */
+  private readOnlyRefusal: HttpError | null = null;
+  /** Called once, as the dashboard first refuses a request as read-only; never for `markReadOnly`. */
+  onReadOnly: (() => void) | null = null;
 
   /**
    * @param serverUrl Base URL of the Piwi server (e.g. `http://localhost:3000`).
@@ -243,6 +259,31 @@ export class HttpClient {
   /** Whether `close` was called. */
   get closed(): boolean {
     return this.closedReason !== null;
+  }
+
+  /** Whether the dashboard refused a request as read-only, or `markReadOnly` said it is: no write is sent. */
+  get readOnly(): boolean {
+    return this.readOnlyRefusal !== null;
+  }
+
+  /** The dashboard is read-only, as another client heard: no write is sent, and `onReadOnly` is not called. */
+  markReadOnly(): void {
+    this.readOnlyRefusal ??= new HttpError(409, 'The dashboard is read-only', READ_ONLY);
+  }
+
+  /** Fail a write at once, unsent, once the dashboard is read-only (`readOnly`). */
+  private refuseWriteWhenReadOnly(): void {
+    if (this.readOnlyRefusal) throw this.readOnlyRefusal;
+  }
+
+  /** The error of a failed answer (`failedRequest`): the first read-only refusal is kept, and `onReadOnly` called. */
+  private refusal(res: HttpResponse): HttpError {
+    const error = failedRequest(res);
+    if (!this.readOnlyRefusal && refusedAsReadOnly(error)) {
+      this.readOnlyRefusal = error;
+      this.onReadOnly?.();
+    }
+    return error;
   }
 
   /** Abort every request in flight and fail every later one with `reason`. */
@@ -329,7 +370,7 @@ export class HttpClient {
     const res = await this.request('GET', pathname, { auth, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -347,6 +388,7 @@ export class HttpClient {
     signal?: AbortSignal,
     { upload = false, headers = {} }: { upload?: boolean; headers?: Record<string, string> } = {},
   ): Promise<any> {
+    this.refuseWriteWhenReadOnly();
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
@@ -361,13 +403,14 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }
 
   /** Send a JSON PUT request. Used for the declared-surface manifest upload. An answer that is not JSON fails. */
   async putJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
+    this.refuseWriteWhenReadOnly();
     const body = JSON.stringify(payload);
     const res = await this.request('PUT', pathname, {
       headers: {
@@ -379,7 +422,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -389,11 +432,12 @@ export class HttpClient {
    * `signal` ends the upload.
    */
   async postFormData(pathname: string, form: FormData, auth?: string | null, signal?: AbortSignal): Promise<any> {
+    this.refuseWriteWhenReadOnly();
     const headers = form.getHeaders() as Record<string, string>;
     const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }

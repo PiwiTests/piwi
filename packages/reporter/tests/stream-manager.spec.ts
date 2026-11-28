@@ -12,6 +12,7 @@ import { DesktopNotProvenError, HttpClient, HttpError } from '../src/internal/tr
 import { getSetupFilePath, writeSetupInfo } from '../src/internal/support/setup-file.js';
 import { Logger } from '../src/internal/support/logger.js';
 import { desktopTokenProof } from '@piwitests/core/desktop-proof';
+import { jsonRes, startServer } from './_helpers.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import type { CompleteStreamEvent, StepBeginStreamEvent, StepEndStreamEvent } from '../src/types/wire.js';
 
@@ -412,6 +413,38 @@ describe('StreamManager idle heartbeat', () => {
 
     expect(calls).toEqual(['/api/test-runs/1/heartbeat']);
     expect(sm.runEnded).toBe(true);
+  });
+
+  it('stops for good on a heartbeat refused as read-only, keeping the run it streamed for the recovery copy', async () => {
+    const server = await startServer((_req, res) =>
+      jsonRes(res, 409, { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } }),
+    );
+    try {
+      const client = new HttpClient(server.url, new Logger(false));
+      const sm = new StreamManager(
+        client,
+        new StreamBuffer(projectName),
+        new CrashRecovery(RECOVERY_SERVER, projectName),
+        {} as any,
+        new FileHandler(),
+        makeOptions({ streamingBatchDelay: 10 }),
+      );
+      (sm as any)._enabled = true;
+      (sm as any)._runId = 1;
+      (sm as any)._token = 'tok';
+      (sm as any).heartbeatInterval = 20;
+      (sm as any).lastActivityAt = Date.now() - 1000;
+      (sm as any).scheduleHeartbeat();
+      await vi.waitFor(() => expect(client.readOnly).toBe(true));
+      sm.queueEvent(completeEvent('after'));
+      await wait(60);
+      await sm.drain();
+
+      expect(server.requests.map((r) => r.url)).toEqual(['/api/test-runs/1/heartbeat']);
+      expect([sm.enabled, sm.runEnded, sm.runId, sm.token]).toEqual([false, false, 1, 'tok']);
+    } finally {
+      await server.close();
+    }
   });
 
   it('hands a teammate’s ask on once, and sends the developer’s answer with the next heartbeat until one is answered', async () => {

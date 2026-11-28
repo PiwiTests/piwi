@@ -1235,7 +1235,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
   });
 });
 
-describe("the dashboard's storage quota", () => {
+describe("the dashboard's storage quota and read-only mode", () => {
   let server: FakeServer;
   const projectName = 'piwi-quota-' + process.pid;
   const dirs: string[] = [];
@@ -1497,7 +1497,7 @@ describe("the dashboard's storage quota", () => {
     it('the global setup said so: the reporter sends nothing, replays no saved run and says nothing more', async () => {
       server = await startServer((_req, res) => jsonRes(res, 200, { runId: 1, streamToken: 'tok' }));
       new CrashRecovery(server.url, projectName).save({ projectName, testCases: [] });
-      writeSetupFailure(projectName, 'Request failed with status 409: Refused.', true);
+      writeSetupFailure(projectName, 'Request failed with status 409: Refused.', 'storage-quota');
 
       const ended = await runTwoTests({ streaming: true, reports: [{ type: 'custom', dir: reportDir() }] });
 
@@ -1589,6 +1589,186 @@ describe("the dashboard's storage quota", () => {
     expect(warnings.join('\n')).toContain('Live streaming is unavailable');
     expect(recoveredRun(server, projectName).testCases).toHaveLength(2);
   });
+
+  describe('read-only', () => {
+    const READ_ONLY_LINE =
+      "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected: this run's results are saved on this machine, and a later run sends them once the dashboard is writable again.";
+
+    /** The answers of a dashboard that takes the run: its stream as run 1, its batch as run 21, held for its files. */
+    function takesTheRun(url: string, res: Parameters<typeof jsonRes>[0]): void {
+      if (url === '/api/test-runs/start') jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      else if (url === '/api/test-runs/upload/results') {
+        jsonRes(res, 200, { success: true, runId: 21, projectId: 2, streamToken: 'held' });
+      } else if (url === '/api/test-runs/upload' || url === '/api/test-runs/submit') {
+        jsonRes(res, 200, { success: true, runId: 21, projectId: 2 });
+      } else if (url.startsWith('/api/test-runs/1/') || url.startsWith('/api/test-runs/21/')) jsonRes(res, 200, {});
+      else textRes(res, 404, 'nope');
+    }
+
+    /** A dashboard that takes the run until it is asked `turnsAt`, then refuses that and every later write as read-only. */
+    function readOnlyFrom(turnsAt: string): Promise<FakeServer> {
+      let readOnly = false;
+      return startServer((req, res) => {
+        readOnly ||= req.url === turnsAt;
+        if (readOnly && req.method !== 'GET') refuse(res, 'READ_ONLY');
+        else takesTheRun(req.url, res);
+      });
+    }
+
+    /** Wait until the run said that the dashboard is read-only. */
+    const toldReadOnly = () => vi.waitFor(() => expect(warnings).toContain(READ_ONLY_LINE), { timeout: 5000 });
+
+    for (const { at, streaming, reports, shard } of [
+      { at: '/api/test-runs/start', streaming: true, reports: false, shard: null },
+      { at: '/api/test-runs/upload/results', streaming: false, reports: true, shard: null },
+      { at: '/api/test-runs/upload', streaming: false, reports: true, shard: { current: 1, total: 2 } },
+      { at: '/api/test-runs/submit', streaming: false, reports: false, shard: null },
+    ]) {
+      it(`at ${at}: says so once, sends nothing more and saves the run for a later run, its result unchanged`, async () => {
+        server = await readOnlyFrom(at);
+
+        const ended = await runTwoTests(
+          { streaming, ...(reports ? { reports: [{ type: 'custom', dir: reportDir() }] } : {}) },
+          shard,
+        );
+
+        expect(ended).toBeUndefined();
+        expect(urlsHit(server)).toEqual([at]);
+        expect(warnings).toEqual([READ_ONLY_LINE]);
+        const copy = recoveredRun(server, projectName);
+        expect(copy.testCases).toHaveLength(2);
+        expect(copy.replacesRun).toBeUndefined();
+      });
+    }
+
+    it("on a streamed run's events: streams nothing more, and saves the copy that replaces the streamed run", async () => {
+      server = await readOnlyFrom('/api/test-runs/1/events');
+
+      const ended = await runTwoTests({ streaming: true }, null, toldReadOnly);
+
+      expect(ended).toBeUndefined();
+      expect(urlsHit(server)).toEqual(['/api/test-runs/start', '/api/test-runs/1/events']);
+      expect(warnings).toEqual([READ_ONLY_LINE]);
+      const copy = recoveredRun(server, projectName);
+      expect(copy.replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
+      expect(copy.testCases).toHaveLength(2);
+    });
+
+    it("on a test's files uploaded live: sends no other file, event or /finish, and saves the copy", async () => {
+      server = await readOnlyFrom('/api/test-runs/1/case-files');
+
+      const ended = await runTwoTests({ streaming: true, liveFileUploads: true }, null, toldReadOnly);
+
+      expect(ended).toBeUndefined();
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/start',
+        '/api/test-runs/1/events',
+        '/api/test-runs/1/case-files',
+      ]);
+      expect(warnings).toEqual([READ_ONLY_LINE]);
+      expect(recoveredRun(server, projectName).replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
+    });
+
+    for (const at of ['/api/test-runs/1/case-files', '/api/test-runs/1/finish']) {
+      it(`at a streamed run's ${at.split('/').pop()} as it ends: asks nothing more, and saves the copy`, async () => {
+        server = await readOnlyFrom(at);
+
+        const ended = await runTwoTests({ streaming: true });
+
+        expect(ended).toBeUndefined();
+        expect(runRequests().filter((u) => u === at)).toHaveLength(1);
+        expect(runRequests().slice(-1)).toEqual([at]);
+        expect(runRequests().filter((u) => !u.startsWith('/api/test-runs/1/'))).toEqual(['/api/test-runs/start']);
+        expect(warnings).toEqual([READ_ONLY_LINE]);
+        const copy = recoveredRun(server, projectName);
+        expect(copy.replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
+        expect(copy.testCases).toHaveLength(2);
+      });
+    }
+
+    for (const { at, reports } of [
+      { at: '/api/test-runs/submit', reports: false },
+      { at: '/api/test-runs/upload/results', reports: true },
+    ]) {
+      it(`at ${at} after the stream opened: the ladder stops, and the copy names the streamed run`, async () => {
+        server = await startServer((req, res) => {
+          if (req.url === '/api/test-runs/1/finish') jsonRes(res, 400, { message: 'Invalid body' });
+          else if (req.url === at) refuse(res, 'READ_ONLY');
+          else takesTheRun(req.url, res);
+        });
+
+        const ended = await runTwoTests({
+          streaming: true,
+          ...(reports ? { reports: [{ type: 'custom', dir: reportDir() }] } : {}),
+        });
+
+        expect(ended).toBeUndefined();
+        expect(runRequests().filter((u) => !u.startsWith('/api/test-runs/1/'))).toEqual(['/api/test-runs/start', at]);
+        expect(runRequests().slice(-1)).toEqual([at]);
+        expect(warnings.filter((line) => line === READ_ONLY_LINE)).toHaveLength(1);
+        expect(recoveredRun(server, projectName).replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
+      });
+    }
+
+    it('keeps in the copy the counts of the files the storage quota refused before', async () => {
+      server = await startServer((req, res) => {
+        if (req.url === '/api/test-runs/1/case-files') refuse(res, 'STORAGE_QUOTA_FILES_REFUSED');
+        else if (req.url === '/api/test-runs/1/finish') refuse(res, 'READ_ONLY');
+        else takesTheRun(req.url, res);
+      });
+
+      await runTwoTests({ streaming: true, reports: [{ type: 'custom', dir: reportDir() }] });
+
+      expect(quotaLines()).toHaveLength(1);
+      expect(warnings.filter((line) => line === READ_ONLY_LINE)).toHaveLength(1);
+      expect(recoveredRun(server, projectName).metadata.ingestHealth).toEqual({
+        attachmentsNotKept: 2,
+        reportsNotKept: 1,
+      });
+    });
+
+    it("keeps the saved copy its replay was refused, sends nothing more, and saves this run's copy in its place", async () => {
+      server = await readOnlyFrom('/api/test-runs/submit');
+      new CrashRecovery(server.url, projectName).save({ projectName, label: 'saved', testCases: [] });
+      const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const ended = await runTwoTests({ streaming: true });
+
+      expect(ended).toBeUndefined();
+      expect(urlsHit(server)).toEqual(['/api/test-runs/submit']);
+      expect(warnings).toEqual([READ_ONLY_LINE]);
+      expect(info.mock.calls.map(([line]) => line)).toContain(
+        "[Piwi Dashboard] The dashboard is read-only: the saved test data of an earlier run is not sent, and this run's own copy replaces it on this machine.",
+      );
+      expect(recoveredRun(server, projectName).testCases).toHaveLength(2);
+    });
+
+    it('the global setup said so: the reporter sends nothing, says nothing more and saves the run', async () => {
+      server = await startServer((req, res) => takesTheRun(req.url, res));
+      new CrashRecovery(server.url, projectName).save({ projectName, label: 'saved', testCases: [] });
+      writeSetupFailure(projectName, 'the dashboard is read-only', 'read-only');
+
+      const ended = await runTwoTests({ streaming: true, reports: [{ type: 'custom', dir: reportDir() }] });
+
+      expect(ended).toBeUndefined();
+      expect(urlsHit(server)).toEqual([]);
+      expect(warnings).toEqual([]);
+      expect(recoveredRun(server, projectName).testCases).toHaveLength(2);
+    });
+
+    for (const at of ['/api/test-runs/1/events', '/api/test-runs/1/finish']) {
+      it(`reads an older dashboard's 409 without a code at ${at.split('/').pop()} as before: the run goes as a batch`, async () => {
+        server = await startServer((req, res) => (req.url === at ? refuse(res, null) : takesTheRun(req.url, res)));
+
+        const ended = await runTwoTests({ streaming: true });
+
+        expect(ended).toBeUndefined();
+        expect(runRequests().slice(-1)).toEqual(['/api/test-runs/submit']);
+        expect(warnings).not.toContain(READ_ONLY_LINE);
+        expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+      });
+    }
+  });
 });
 
 describe('RunSubmitter local copies', () => {
@@ -1677,6 +1857,24 @@ describe('RunSubmitter local copies', () => {
     expect(submitted?.runId).toBe(1);
     expect(sm.discardBuffered).toHaveBeenCalledOnce();
     expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+  });
+
+  it('takes a repeat of /finish refused as read-only as the run not finished, and saves the copy that replaces it', async () => {
+    let finishes = 0;
+    server = await startServer((req, res) => {
+      if (req.url !== '/api/test-runs/1/finish') return textRes(res, 404, 'nope');
+      finishes++;
+      // The answer to the first never arrives; the repeat finds the dashboard read-only.
+      if (finishes === 1) return req.raw.socket?.destroy();
+      jsonRes(res, 409, { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } });
+    });
+    const sm = streamSession();
+    const submitted = await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+
+    expect(urlsHit(server)).toEqual(['/api/test-runs/1/finish', '/api/test-runs/1/finish']);
+    expect(submitted).toBeNull();
+    expect(sm.discardBuffered).not.toHaveBeenCalled();
+    expect(recoveredRun(server, projectName).replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
   });
 
   it('falls back to the batch submit once every try at /finish failed, naming the run it streamed', async () => {

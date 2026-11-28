@@ -160,6 +160,30 @@ describe('the crash-recovery file', () => {
     expect(quota.refusesRun).toBe(true);
   });
 
+  it('is kept when the dashboard is read-only, and not sent again while it stays so', async () => {
+    server = await startServer((_req, res) =>
+      jsonRes(res, 409, { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } }),
+    );
+    const recovery = recoveryFor(server.url);
+    recovery.save({ projectName, testCases: [] });
+    const client = new HttpClient(server.url, logger);
+    const quota = new StorageQuota(logger);
+    const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await recovery.tryUpload(client, null, quota);
+      await recovery.tryUpload(client, null, quota);
+      expect(info).toHaveBeenLastCalledWith(
+        "[Piwi Dashboard] The dashboard is read-only: the saved test data of an earlier run is not sent, and this run's own copy replaces it on this machine.",
+      );
+    } finally {
+      info.mockRestore();
+    }
+    expect(server.requests.map((r) => r.url)).toEqual(['/api/test-runs/submit']);
+    expect(recovery.load()).toEqual({ projectName, testCases: [] });
+    expect(client.readOnly).toBe(true);
+    expect(quota.refusesRun).toBe(false);
+  });
+
   it('is kept when the replay fails, and deleted when the dashboard refuses the run itself', async () => {
     let status = 503;
     server = await startServer((_req, res) => textRes(res, status, 'no'));
