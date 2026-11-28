@@ -1216,20 +1216,19 @@ export const HELP_TOPICS = {
   'settings.limits': {
     title: 'Limits',
     text: [
-      'What this instance takes and keeps, each from its environment variable unless **the operator** set it: whoever runs the instance (a person or a deployment script holding its operator token) through the operator API, in place of the variable. The operator can also make the instance read-only.',
+      'What this instance takes and keeps, each from its environment variable, else its default. A value set in place of its variable is marked **Set by the operator**.',
       '',
       '- **Storage quota** — the stored files and results past which files, then new runs, are refused.',
       '- **Largest upload** — one report, one test’s files, or one imported archive.',
       '- **Largest results document** — a run’s results sent as one JSON document.',
-      '- **Runs kept** — the days of runs the nightly cleanup keeps. A retention the operator lowers applies 14 days after it is set.',
+      '- **Runs kept** — the days of runs the nightly cleanup keeps.',
     ].join('\n'),
-    doc: 'operate/production-checklist#optional-and-worth-a-thought',
+    doc: 'operate/storage#storage-management',
     envVars: [
       'PIWI_STORAGE_QUOTA_BYTES',
       'PIWI_IMPORT_MAX_BYTES',
       'PIWI_SUBMIT_MAX_BYTES',
       'PIWI_RETENTION_DAYS',
-      'PIWI_OPERATOR_TOKEN',
     ],
   },
   'account.email': {
