@@ -8,7 +8,7 @@
  * field is optional and absent when nothing happened, so a run ingested whole
  * carries no key.
  */
-import { parseStorageQuotaBytes } from './storage-quota';
+import { heldOperatorLimits, processEnv, storageQuotaSetting } from './operator-limits';
 
 /** How the reporter delivered a run when its first choice failed. */
 export const SUBMIT_FALLBACK_PATHS = ['upload', 'submit', 'recovery'] as const;
@@ -155,9 +155,12 @@ export function addIngestHealth(current: IngestHealth | null, delta: IngestHealt
   return Object.keys(out).length > 0 ? out : null;
 }
 
-/** Whether the instance sets a storage quota (`PIWI_STORAGE_QUOTA_BYTES`), the one that refuses a reporter's files. */
+/**
+ * Whether the instance sets a storage quota (the operator's, or `PIWI_STORAGE_QUOTA_BYTES`), the one that refuses a
+ * reporter's files.
+ */
 function hasStorageQuota(): boolean {
-  return typeof process !== 'undefined' && parseStorageQuotaBytes(process.env?.PIWI_STORAGE_QUOTA_BYTES) !== null;
+  return storageQuotaSetting(heldOperatorLimits(), processEnv()).value !== null;
 }
 
 /**

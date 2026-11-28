@@ -21,6 +21,7 @@ import { findUserByEmail } from '#shared/handlers/users';
 import { accountPictureVersion } from '#shared/user-avatar';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
+import { isReadOnly } from './operator-limits';
 import { bearerToken } from './bearer';
 import { createConcurrencyLimit } from './concurrency-limit';
 import { clientNetwork, rateLimitClientIp } from './rate-limit';
@@ -584,9 +585,10 @@ export async function resolveApiKey(plaintext: string): Promise<ResolvedApiKey |
     return null;
   }
 
-  // Update last used at most once per hour to avoid excessive write load
+  // Update last used at most once per hour to avoid excessive write load, and never while the instance is read-only
   const ONE_HOUR_MS = 60 * 60 * 1000;
-  if (!key.lastUsedAt || new Date().getTime() - key.lastUsedAt.getTime() > ONE_HOUR_MS) {
+  const stale = !key.lastUsedAt || new Date().getTime() - key.lastUsedAt.getTime() > ONE_HOUR_MS;
+  if (stale && !isReadOnly()) {
     await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, key.id));
   }
 

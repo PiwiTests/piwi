@@ -17,7 +17,7 @@
  * and kept for a day: the first shard to ask computes and stores it, every other
  * shard reads it, so a run landing between two shards' start changes nothing.
  */
-import { and, eq, inArray, lt } from 'drizzle-orm';
+import { and, eq, gt, inArray, lt } from 'drizzle-orm';
 import { projects, shardSplits, testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { eligibleExecutionAmong, ineligibleRunsInProject } from '#shared/run-eligibility';
@@ -26,6 +26,7 @@ import { partitionTestsIntoShards, type ShardableTest } from '#shared/selection'
 import { joinSuitePath } from '#shared/utils/suites';
 import { sha256Hex } from '#shared/utils/hash';
 import { apiError } from './api-error';
+import { isReadOnly, refuseWhileReadOnly } from './operator-limits';
 import { parseCommit } from './pass-reuse-route';
 import { storedIdentity, storedTestIdentity } from './storable-values';
 
@@ -216,7 +217,8 @@ export async function computeShardSplit(
 /**
  * The split of a listing: the one stored under its key, else computed and stored, deleting the project's expired
  * splits first. Of two shards that compute it at once, both answer the one stored first. Null for a project that does
- * not exist.
+ * not exist. While the instance is read-only, it answers a split stored and not expired, deletes none, and refuses
+ * (409 `READ_ONLY`) one it would store.
  */
 export async function getShardSplit(
   db: DrizzleDB,
@@ -227,12 +229,15 @@ export async function getShardSplit(
   const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
   if (!project) return null;
   const testsHash = await shardListingHash(request.tests);
-  await db.delete(shardSplits).where(and(eq(shardSplits.projectId, projectId), lt(shardSplits.expiresAt, now)));
+  if (!isReadOnly()) {
+    await db.delete(shardSplits).where(and(eq(shardSplits.projectId, projectId), lt(shardSplits.expiresAt, now)));
+  }
   const key = and(
     eq(shardSplits.projectId, projectId),
     eq(shardSplits.commitSha, request.commit),
     eq(shardSplits.shardTotal, request.shardTotal),
     eq(shardSplits.testsHash, testsHash),
+    gt(shardSplits.expiresAt, now),
   );
   const read = async () => {
     const [row] = await db
@@ -243,6 +248,7 @@ export async function getShardSplit(
   };
   const stored = await read();
   if (stored) return stored;
+  refuseWhileReadOnly();
 
   const split = await computeShardSplit(db, projectId, request);
   await db

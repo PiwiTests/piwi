@@ -47,6 +47,7 @@ const start = (await import('../../server/api/test-runs/start.post')).default as
 const submit = (await import('../../server/api/test-runs/submit.post')).default as unknown as Handler;
 const uploadResults = (await import('../../server/api/test-runs/upload/results.post')).default as unknown as Handler;
 const { settleFinalizingRun } = await import('../../server/utils/finalizing-runs');
+const { streamTokenDigest } = await import('../../server/utils/shard-tokens');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -247,6 +248,43 @@ describe('the batch upload a streamed run fell back to after its /finish', () =>
     await deliver(batchRun(undefined));
 
     expect((await runRow()).status).toBe('finalizing');
+  });
+
+  test('a recovery copy a later run replays replaces the streamed run the stale-run sweep interrupted', async () => {
+    await db.update(schema.testRuns).set({ status: 'interrupted' }).where(eq(schema.testRuns.id, 1));
+
+    await submit({ body: { ...batchRun({ runId: 1, streamToken: 'stream-token' }), instanceId: 'ci-77' } });
+
+    const replaced = await runRow();
+    expect(replaced.status).toBe('cancelled');
+    expect(replaced.streamToken).toBeNull();
+  });
+
+  test.each(['initializing', 'interrupted'])(
+    'a copy naming an %s run its global setup registered, by its setup token, replaces it',
+    async (status) => {
+      await db
+        .update(schema.testRuns)
+        .set({ status, streamToken: streamTokenDigest('setup-token') })
+        .where(eq(schema.testRuns.id, 1));
+
+      await submit({ body: { ...batchRun({ runId: 1, setupToken: 'setup-token' }), instanceId: 'ci-77' } });
+
+      expect((await runRow()).status).toBe('cancelled');
+    },
+  );
+
+  test('a setup token never replaces a run that began, nor another token a run that never did', async () => {
+    await submit({ body: { ...batchRun({ runId: 1, setupToken: 'stream-token' }), instanceId: 'ci-77' } });
+    expect((await runRow()).status).toBe('running');
+
+    await db
+      .update(schema.testRuns)
+      .set({ status: 'interrupted', streamToken: streamTokenDigest('setup-token') })
+      .where(eq(schema.testRuns.id, 1));
+    const another = { ...batchRun({ runId: 1, setupToken: 'another-token' }), instanceId: 'ci-78' };
+    await submit({ body: { ...another, deliveryKey: 'delivery-key-of-the-batch-0002' } });
+    expect((await runRow()).status).toBe('interrupted');
   });
 
   test('a batch never replaces a sharded run, which its other shards share', async () => {

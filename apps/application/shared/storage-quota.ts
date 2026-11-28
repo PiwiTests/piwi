@@ -9,7 +9,7 @@
  */
 
 /** The smallest quota `PIWI_STORAGE_QUOTA_BYTES` sets: 1 MiB. */
-const MIN_STORAGE_QUOTA_BYTES = 1024 * 1024;
+export const MIN_STORAGE_QUOTA_BYTES = 1024 * 1024;
 
 /** The quota a `PIWI_STORAGE_QUOTA_BYTES` value sets: a whole number of bytes, 1 MiB at least; null for any other. */
 export function parseStorageQuotaBytes(raw: string | undefined): number | null {

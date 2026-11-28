@@ -30,9 +30,10 @@ import {
 import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
 import { PIWI_EDITOR_ENV, followHub, runInteractive, type FollowedHub } from '../internal/config/hub.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
-import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
+import { HttpClient, refusedAsReadOnly, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
 import { StorageQuota } from '../internal/submit/storage-quota.js';
+import { sayWhenReadOnly } from '../internal/submit/read-only.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
@@ -85,6 +86,7 @@ import {
 import {
   peekSetupFailure,
   peekSetupInfo,
+  peekSetupReadOnly,
   peekSetupRefusedForQuota,
   readSetupInfo,
   type SetupInfo,
@@ -431,6 +433,8 @@ export class PiwiDashboardReporter {
       undefined,
       usedDesktopToken() ? (this.options.apiKey ?? null) : null,
     );
+    // A refusal as read-only once the dashboard took the run's results says it holds them.
+    sayWhenReadOnly(this.httpClient, logger, () => this.submitter.resultsHeld);
     this.fileHandler = new FileHandler(logger);
     this.storageQuota = new StorageQuota(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger, this.storageQuota);
@@ -484,6 +488,7 @@ export class PiwiDashboardReporter {
    */
   async preprocess(params: { config: FullConfig; suite: Suite; testRun: PreprocessTestRun }): Promise<void> {
     this.metadataCollector.readSuiteModes(params.suite, params.testRun);
+    this.heedSetupReadOnly();
     try {
       await this.editRun(params.config, params.suite, params.testRun);
     } catch (error) {
@@ -520,7 +525,7 @@ export class PiwiDashboardReporter {
         ask = await openDashboardAsk(this.httpClient, this.options, time.signal);
       } catch (error) {
         if (planId !== null) this.runWithoutPlan(planId, errorMessage(error), testRun, shard);
-        else this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
+        else this.sayShardsNotBalanced(error);
         return;
       }
       if (planId !== null && !(await this.skipReusedTests(ask, planId, config, suite, testRun, shard))) return;
@@ -617,7 +622,7 @@ export class PiwiDashboardReporter {
       split = await fetchShardSplit(ask, { commit: checkoutCommit(base), shardTotal: shard.total, tests: listed });
       testRun.skipSharding();
     } catch (error) {
-      this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
+      this.sayShardsNotBalanced(error);
       return;
     }
     const keep = new Set(order.filter((_, index) => split.shards[index] === shard.current));
@@ -626,6 +631,15 @@ export class PiwiDashboardReporter {
     this.logger.info(
       `Shard ${shard.current}/${shard.total} runs ${keep.size} of ${listed.length} tests, as the dashboard balanced them by recorded duration${duration ? ` (about ${roughDuration(duration)})` : ''}.`,
     );
+  }
+
+  /**
+   * Say that Playwright splits the run, the dashboard not having answered how (`error`); nothing once the dashboard is
+   * read-only, which was said already.
+   */
+  private sayShardsNotBalanced(error: unknown): void {
+    if (refusedAsReadOnly(error)) return;
+    this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
   }
 
   /** Playwright reporter hook: called once at the start of the test run */
@@ -687,6 +701,7 @@ export class PiwiDashboardReporter {
     }
     // The global setup said already that the dashboard refused the run for its storage quota: nothing of it is sent.
     if (peekSetupRefusedForQuota(this.options.projectName!)) this.storageQuota.refuseRun(true);
+    this.heedSetupReadOnly();
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
     this.htmlReport = htmlReportFolder(config.reporter, this.testPathBase);
@@ -907,7 +922,8 @@ export class PiwiDashboardReporter {
   private shareLiveView(): void {
     if (this.mergingReports) return;
     const ci = detectCi(process.env);
-    const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
+    // A dashboard that is read-only takes no live view: the run it registered is never begun.
+    const setup = this.streamManager && !this.httpClient.readOnly ? peekSetupInfo(this.options.projectName!) : null;
     // PIWI_SHARE_LIVE shares a run outside CI that no editor or app follows from its start; the workers read it as
     // they open their live view.
     const shareLive = !ci && !process.env[RUN_CHANNEL_ENV] && readBool(process.env[PIWI_SHARE_LIVE_ENV]) === true;
@@ -918,8 +934,8 @@ export class PiwiDashboardReporter {
       if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change; a run the
-      // dashboard refused for its storage quota was told so by the global setup.
-      else if (why !== 'local' && !this.storageQuota.refusesRun) {
+      // dashboard refused for its storage quota, or as it is read-only, was told so by the global setup.
+      else if (why !== 'local' && !this.storageQuota.refusesRun && !this.httpClient.readOnly) {
         const failure = why === 'setup-failed' ? peekSetupFailure(this.options.projectName!) : null;
         this.logger.info(ciLiveViewNote(why, failure));
       }
@@ -941,6 +957,14 @@ export class PiwiDashboardReporter {
         'Live view ready: this run can be shared live from the editor or Piwi Picker. Nothing is sent until it is.',
       );
     }
+  }
+
+  /**
+   * The global setup said already that the dashboard is read-only: the run sends nothing to it, and saves its copy for
+   * a later run, saying only that. Its global setup runs before `preprocess` and `onBegin`, which both heed it.
+   */
+  private heedSetupReadOnly(): void {
+    if (this.enabled && peekSetupReadOnly(this.options.projectName!)) this.httpClient.markReadOnly();
   }
 
   /** Why the run holds no live view key, from what its global setup left (`setup`, its registration, if any). */
@@ -1756,14 +1780,14 @@ export class PiwiDashboardReporter {
         },
         result,
       );
-      // A requested run's token starts the run alone: coverage and manifests are not taken from it.
-      const requested = this.requestedRun.instance !== null;
-      if (submitted && this.coverage && !requested) {
-        await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
-      }
-      if (submitted && this.manifests && !requested) {
-        const branch = resolveScmBranch(process.env) ?? null;
-        await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
+      // A requested run's token starts the run alone: coverage and manifests are not taken from it, nor from a run
+      // the dashboard took before it turned read-only.
+      if (submitted && this.requestedRun.instance === null && !this.httpClient.readOnly) {
+        if (this.coverage) await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
+        if (this.manifests) {
+          const branch = resolveScmBranch(process.env) ?? null;
+          await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
+        }
       }
     } catch (error) {
       // Playwright counts an error thrown by a reporter as a failure of the

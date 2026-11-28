@@ -1,4 +1,5 @@
 import { getDatabase } from '../database';
+import { readOnlyNow } from '../utils/operator-limits';
 import { createReachability, interruptStaleRuns, settleStaleFinalizingRuns } from '../utils/stale-runs';
 
 const CHECK_INTERVAL_MS = 30 * 1000; // check every 30 seconds
@@ -10,6 +11,8 @@ async function cleanupStaleRuns() {
   if (reachableSince === null) return;
   try {
     const db = await getDatabase();
+    // While the instance is read-only, a run that stopped reporting stays as it is.
+    if (await readOnlyNow(db)) return;
     const reaped = await interruptStaleRuns(db, Date.now(), reachableSince);
     if (reaped.length > 0) {
       console.log(`[StaleRunCleanup] Marked ${reaped.length} stale run(s) as interrupted: ${reaped.join(', ')}`);

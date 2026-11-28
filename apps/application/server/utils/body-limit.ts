@@ -1,6 +1,6 @@
 import { getRequestWebStream, type H3Event } from 'h3';
 import { apiError } from './api-error';
-import { resolveMaxSubmitBytes } from './upload-limits';
+import { maxSubmitBytesSetting } from './upload-limits';
 
 /** Largest non-multipart request body the server reads. Uploads are multipart and carry their own limits. */
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
@@ -15,7 +15,7 @@ export const MAX_OPEN_ROUTE_BODY_BYTES = 64 * 1024;
 export const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 
 // The reporter's batch submit, and the results of a run it uploads in parts, carry a whole run as one JSON document:
-// up to `PIWI_SUBMIT_MAX_BYTES` (`resolveMaxSubmitBytes`).
+// up to the operator's limit or `PIWI_SUBMIT_MAX_BYTES` (`maxSubmitBytesSetting`).
 const SUBMIT_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
 
 // The routes that take a small body: those that read it before checking any credential (sign-in, the first
@@ -54,10 +54,11 @@ export function routePath(path: string): string {
 /** The largest body a route reads, and what a larger one answers. */
 function bodyLimitFor(path: string): { maxBytes: number; message: string } {
   if (SUBMIT_PATHS.includes(path)) {
-    const maxBytes = resolveMaxSubmitBytes();
+    const { value: maxBytes, source } = maxSubmitBytesSetting();
+    const setBy = source === 'operator' ? "the instance's operator sets" : 'PIWI_SUBMIT_MAX_BYTES sets';
     return {
       maxBytes,
-      message: `Request body over ${Math.floor(maxBytes / 1024 / 1024)} MB: PIWI_SUBMIT_MAX_BYTES sets the limit on a run's results`,
+      message: `Request body over ${Math.floor(maxBytes / 1024 / 1024)} MB: ${setBy} the limit on a run's results`,
     };
   }
   if (OPEN_ROUTE_PATHS.some((route) => route.test(path))) {
@@ -76,7 +77,7 @@ function bodyLimitFor(path: string): { maxBytes: number; message: string } {
  * Why a request body must be refused before any route reads it, or null. A
  * body has to declare its size, since h3 buffers it whole: a chunked one (no
  * `Content-Length`) gets 411, one over its route's limit gets 413: a run's
- * results sent as JSON take up to `PIWI_SUBMIT_MAX_BYTES`, a route that reads
+ * results sent as JSON take up to the operator's limit or `PIWI_SUBMIT_MAX_BYTES`, a route that reads
  * a body before any credential {@link MAX_OPEN_ROUTE_BODY_BYTES}, a streaming
  * run's batch of events {@link MAX_EVENT_BATCH_BYTES}, any other body
  * {@link MAX_REQUEST_BODY_BYTES}. Routes that check `Content-Length` against a

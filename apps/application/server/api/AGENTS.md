@@ -21,6 +21,13 @@ Rules for the Nitro routes (`server/api/`, `server/routes/`) and the authorizati
   [`app/demo/AGENTS.md`](../../app/demo/AGENTS.md).
 - **A settings route returns whether a secret is set, never its value** (an API key, an SCM token, the SMTP password):
   the AI settings answer "API key presence", the SMTP settings `configured`.
+- **Read-only mode refuses every write under `/api/` and `/oauth/`** (`server/middleware/read-only.ts`,
+  `readOnlyRefuses` in `server/utils/read-only-routes.ts`): a POST that only reads is listed there by method and path,
+  a GET that writes as a side effect skips its write while `isReadOnly()` (or refuses when the write is its purpose),
+  and a scheduled task, a plugin or a startup pass that writes asks `readOnlyNow` first (`tests/unit/read-only.test.ts`).
+- **A limit the operator can set is read through its one helper**, never from its `PIWI_*` variable:
+  `storageQuotaBytes`, `resolveMaxUploadBytes`, `resolveMaxSubmitBytes`, `retentionDays`, `isReadOnly`, which take the
+  operator's value first (`shared/operator-limits.ts`, `tests/unit/operator-limits.test.ts`).
 - On the desktop app, every `/api` and `/mcp` request also needs the desktop token
   (`server/middleware/desktop-guard.ts`); its open routes: [`apps/desktop/AGENTS.md`](../../../desktop/AGENTS.md).
 

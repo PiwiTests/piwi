@@ -75,8 +75,9 @@ How a run is identified:
   `resolveShardInfo` (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A
   run with no shard identity starts non-sharded and cancels every run of its instance id still initializing or
   running, never a finalizing one, which holds all its results (`tests/unit/finalizing-runs.test.ts`). A batch
-  delivery also cancels the run its reporter streamed, a finalizing one too, when it names it with that run's stream
-  token (`replacesRun`, `cancelReplacedRun`), which `/finish` leaves on a run it holds for its reports.
+  delivery also cancels the run its reporter streamed, a finalizing or interrupted one too, when it names it with that
+  run's stream token, which `/finish` leaves on a run it holds for its reports, and a run its global setup registered
+  that never began, named with its setup token (`replacesRun`, `cancelReplacedRun`).
 
 How the server merges shards:
 

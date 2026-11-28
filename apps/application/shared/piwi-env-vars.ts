@@ -539,7 +539,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_OPERATOR_TOKEN: {
     description:
-      "A token that opens the operator routes to whoever runs the instance without an account in it, such as a hosting provider or a deployment script: GET /api/operator/usage (the instance's usage and what it is doing now, in counts only), /api/operator/notice (the banner signed-in users see) and POST /api/operator/admin-invite (an administrator account for an address, whose one-time link goes to that address only). Sent as a Bearer token; never accepted as a session or an API key. Unset, the operator routes answer 404.",
+      "A token that opens the operator routes to whoever runs the instance without an account in it, such as a hosting provider or a deployment script: GET /api/operator/usage (the instance's usage and what it is doing now, in counts only), /api/operator/notice (the banner signed-in users see), /api/operator/limits (the storage quota, the largest upload and results document and the retention, each in place of its variable, and read-only mode) and POST /api/operator/admin-invite (an administrator account for an address, whose one-time link goes to that address only). Sent as a Bearer token; never accepted as a session or an API key. Unset, the operator routes answer 404.",
     category: 'auth',
     secret: true,
     example: 'a 64-char random hex string',

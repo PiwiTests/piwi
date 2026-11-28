@@ -2,6 +2,7 @@ import { and, count, desc, gte, inArray, isNotNull, lte, max, sql } from 'drizzl
 import type { DrizzleDB } from '#shared/handlers/db';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { files, projects, testRuns, users } from '../database/schema';
+import { instanceLimits, loadOperatorLimits } from './operator-limits';
 import { storageQuotaState, storageUsedBytes } from './storage-quota';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,6 +51,15 @@ export interface OperatorUsage {
    * reads as a version, since a reporter names its own.
    */
   reporterVersions: { version: string; runs: number; lastRunAt: Date }[];
+  /** The limits that apply now (`GET /api/operator/limits` says where each comes from). */
+  limits: {
+    storageQuotaBytes: number | null;
+    importMaxBytes: number;
+    submitMaxBytes: number;
+    retentionDays: number | null;
+  };
+  /** Whether the instance is read-only. */
+  readOnly: boolean;
 }
 
 /** The usage figures, and what is in progress now from the counts this process keeps. */
@@ -59,6 +69,8 @@ export async function getOperatorUsage(
   now = new Date(),
 ): Promise<OperatorUsage> {
   const since = (days: number) => new Date(now.getTime() - days * DAY_MS);
+  await loadOperatorLimits({ db, fresh: true });
+  const limits = instanceLimits(now);
   // The windows read `start_time`, which an index serves.
   const [inProgress, projectCount, userCount, runCounts, last24, last30, fileCounts, stored, versions] =
     await Promise.all([
@@ -112,6 +124,13 @@ export async function getOperatorUsage(
       .filter((row) => VERSION.test(row.version ?? ''))
       .slice(0, REPORTER_VERSIONS_MAX)
       .map((row) => ({ version: row.version!, runs: Number(row.runs), lastRunAt: row.lastRunAt! })),
+    limits: {
+      storageQuotaBytes: limits.storageQuotaBytes.value,
+      importMaxBytes: limits.importMaxBytes.value,
+      submitMaxBytes: limits.submitMaxBytes.value,
+      retentionDays: limits.retentionDays.value,
+    },
+    readOnly: limits.readOnly.value,
   };
 }
 

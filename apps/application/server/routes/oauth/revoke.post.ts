@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['MCP OAuth'],
     summary: 'Revoke an MCP connection',
     description:
-      'Token revocation (RFC 7009), form-encoded: `token` (an access or refresh token) and the client’s credentials. Ends the connection the token belongs to, and deletes the API key that represents it. Answers 200 with an empty body, also for an unknown token. Rate-limited per client address; 404 when authentication is off.',
+      'Token revocation (RFC 7009), form-encoded: `token` (an access or refresh token) and the client’s credentials. Ends the connection the token belongs to, and deletes the API key that represents it. Answers 200 with an empty body, also for an unknown token. Rate-limited per client address; 409 with `errorCode` `READ_ONLY` while the instance is read-only; 404 when authentication is off.',
     security: [],
   },
 });

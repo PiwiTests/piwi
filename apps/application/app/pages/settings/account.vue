@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { PROFILE_PICTURE_ACCEPT, PROFILE_PICTURE_MAX_BYTES, PROFILE_PICTURE_TOO_HEAVY } from '#shared/profile-picture';
+import { READ_ONLY_MESSAGE } from '#shared/operator-limits';
 import type { ApiResponse } from '~~/types/api';
 const toast = useToast();
 const route = useRoute();
@@ -125,6 +126,7 @@ const LINK_ERRORS: Record<string, string> = {
   'invalid-state': 'Connecting failed (invalid state). Please try again.',
   'access-denied': 'Authorization was cancelled.',
   'oauth-failed': 'Connecting the provider failed.',
+  'read-only': READ_ONLY_MESSAGE,
 };
 
 onMounted(() => {

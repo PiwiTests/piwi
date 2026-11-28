@@ -8,7 +8,7 @@ import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { isLiveViewKey } from '@piwitests/core/live-view';
-import { writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
+import { markSetupReadOnly, writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
 import { answeredRunUrl } from '../internal/support/run-url.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode, runnerArgv } from '../internal/support/run-mode.js';
@@ -22,6 +22,7 @@ import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { relayRunLog } from '../internal/support/run-log.js';
 import { announceLiveRun } from '../internal/support/ci-output.js';
 import { StorageQuota, quotaRefusesRun } from '../internal/submit/storage-quota.js';
+import { sayWhenReadOnly } from '../internal/submit/read-only.js';
 
 /** Whether this process relays its workers' lines to the run's log already. */
 let relaying = false;
@@ -117,6 +118,9 @@ export function createGlobalSetup(
     // own, so with streaming off nothing is registered: no run waits for a stream that never comes.
     const registers = opts.streaming !== false;
     let registered = false;
+    // A read-only dashboard is said here once a run when the reporter's stream hears of it through the setup file;
+    // with streaming off, the reporter says it as it meets it.
+    if (registers) sayWhenReadOnly(httpClient, logger);
 
     try {
       const auth = await httpClient.resolveAuth(opts);
@@ -186,12 +190,16 @@ export function createGlobalSetup(
       // A dashboard that refuses the run for its storage quota is said here once: the reporter sends nothing of it.
       const quotaRefused = registers && !registered && quotaRefusesRun(error);
       if (quotaRefused) new StorageQuota(logger).refuseRun();
-      else logger.warn(`Could not register global setup: ${errorMessage(error)}`);
+      else if (!httpClient.readOnly) logger.warn(`Could not register global setup: ${errorMessage(error)}`);
       // The reporter says why the run has no live view: the instance did not take its registration.
-      if (registers && !registered && opts.projectName) {
-        writeSetupFailure(opts.projectName, errorMessage(error), quotaRefused);
+      if (registers && !registered && opts.projectName && !httpClient.readOnly) {
+        writeSetupFailure(opts.projectName, errorMessage(error), quotaRefused ? 'storage-quota' : null);
       }
     }
+    // The dashboard is read-only, as the global setup said: the reporter sends nothing, saying only that it saved the
+    // run's copy. A run registered already is never begun, and keeps its registration, which that copy names as the
+    // run it replaces.
+    if (registers && httpClient.readOnly && opts.projectName) markSetupReadOnly(opts.projectName);
 
     if (userSetup) return userSetup(config);
   };

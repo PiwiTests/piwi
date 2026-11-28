@@ -3,7 +3,7 @@ import { TAKES_ASKS_FIELD, parseLiveAsk, type LiveAsk, type LiveAskAnswer } from
 import { errorMessage } from '../support/errors.js';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { DesktopNotProvenError, HttpError, runTokenHeaders } from '../transport/http-client.js';
+import { DesktopNotProvenError, HttpError, refusedAsReadOnly, runTokenHeaders } from '../transport/http-client.js';
 import type { StreamBuffer } from './stream-buffer.js';
 import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
@@ -172,6 +172,15 @@ export class StreamManager {
   get token(): string | null {
     return this._token;
   }
+  /**
+   * The run the global setup registered while no stream began it: its id and setup token, which a batch delivery of
+   * the run names as the run it replaces. Null once a stream opened, without a registration, and once the dashboard no
+   * longer begins it.
+   */
+  get registeredRun(): { runId: number; setupToken: string } | null {
+    if (this._runId !== null || !this.setupInfo) return null;
+    return { runId: this.setupInfo.runId, setupToken: this.setupInfo.setupToken };
+  }
   /** Resolved auth string (API key or session cookie) used in stream requests */
   get auth(): string | null {
     return this._auth;
@@ -265,10 +274,10 @@ export class StreamManager {
   // Open the stream, asking again after a failure a later try may not meet (no answer, a server error, a timeout or
   // a rate limit) until the run ends. A refusal that stays (another client error) gives it up at once, and so does
   // a dashboard that refused the run for its storage quota, as the global setup heard, or as the replay of a saved run
-  // heard for a run the global setup did not register.
+  // heard for a run the global setup did not register, and a dashboard that is read-only, as any request heard.
   private async _doStart(run: RunStart): Promise<void> {
     this.setupInfo = readSetupInfo(this.options.projectName!);
-    if (this.storageQuota.refusesRun) {
+    if (this.storageQuota.refusesRun || this.httpClient.readOnly) {
       this.giveUpStart(null);
       return;
     }
@@ -285,7 +294,7 @@ export class StreamManager {
             const quota = this.setupInfo ? undefined : this.storageQuota;
             await this.recovery.tryUpload(this.httpClient, this._auth, quota);
           }
-          if (this.storageQuota.refusesRun) {
+          if (this.storageQuota.refusesRun || this.httpClient.readOnly) {
             this.giveUpStart(null);
             return;
           }
@@ -322,7 +331,7 @@ export class StreamManager {
   /**
    * Ask the dashboard for the run's stream: `/begin` the run the global setup registered, else `/start` one. A run
    * the dashboard no longer begins (409: it was cancelled, e.g. by a crash-recovery submit) is set aside for a fresh
-   * one.
+   * one; a dashboard that is read-only starts none.
    */
   private async openRun(run: RunStart): Promise<{ runId?: number; streamToken?: string; runUrl?: unknown } | null> {
     const shardIndex = run.shardInfo?.current;
@@ -351,7 +360,7 @@ export class StreamManager {
         );
       } catch (error) {
         // A requested run's `/setup` spent its request token, so no `/start` follows it.
-        if (!(error instanceof HttpError && error.status === 409) || requestedRunTarget()) throw error;
+        if (!isStatus(error, 409) || refusedAsReadOnly(error) || requestedRunTarget()) throw error;
         this.logger.debug(`Setup info expired, creating fresh run...`);
         this.setupInfo = null;
       }
@@ -405,10 +414,13 @@ export class StreamManager {
   }
 
   // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run, unless
-  // the dashboard refused the run for its storage quota: that is said once a run, and nothing of the run is sent.
+  // the dashboard refused the run for its storage quota, or is read-only: either is said once a run, by the quota or
+  // as the dashboard first answered so, and nothing more is sent.
   private giveUpStart(error: unknown): void {
     const requested = requestedRunTarget();
-    if (quotaRefusesRun(error) || this.storageQuota.refusesRun) {
+    if (this.httpClient.readOnly) {
+      this.logger.debug('Live streaming does not start: the dashboard is read-only.');
+    } else if (quotaRefusesRun(error) || this.storageQuota.refusesRun) {
       this.storageQuota.refuseRun();
     } else if (requested) {
       // A requested run starts with its request token alone and has no batch upload to fall back to.
@@ -463,10 +475,11 @@ export class StreamManager {
   /**
    * Queue a test-case event, held until the stream opens. Triggers an immediate flush when the batch size is
    * reached, otherwise schedules a timer-based flush. A step event is dropped while nobody watches the run
-   * (`liveOnly`), and every event once the dashboard ended it or the stream will never open.
+   * (`liveOnly`), and every event once the dashboard ended it, the stream will never open, or the dashboard is
+   * read-only.
    */
   queueEvent(event: StreamEvent): void {
-    if (this.ended || this.startGivenUp) return;
+    if (this.ended || this.startGivenUp || this.httpClient.readOnly) return;
     if (this.watched === false && liveOnly(event)) return;
     this.pendingEvents.enqueue(event);
 
@@ -483,7 +496,7 @@ export class StreamManager {
    * `queueEvent` drops them.
    */
   queueEventsNow(events: StreamEvent[]): void {
-    if (this.ended || this.startGivenUp) return;
+    if (this.ended || this.startGivenUp || this.httpClient.readOnly) return;
     for (const event of events) {
       if (this.watched === false && liveOnly(event)) continue;
       this.pendingEvents.enqueue(event);
@@ -509,7 +522,8 @@ export class StreamManager {
   // Post the events in order, in requests of at most `MAX_EVENT_REQUEST_BYTES`.
   // A request the server refuses as too large (413) is split in half and resent;
   // a single event it still refuses leaves the live stream. A request it refuses
-  // as the run is no longer running (409) ends the stream (`endRun`). A request
+  // as read-only stops the stream (`stopForReadOnly`), and one it refuses as the
+  // run is no longer running (another 409) ends it (`endRun`). A request
   // it refuses with another client error (except 408 and 429), or one still
   // failing `EVENT_FAILURE_GRACE_MS` after its first failure, is set aside so the
   // later ones flow. On any other failure the unsent events go back to the head
@@ -538,6 +552,10 @@ export class StreamManager {
         this.headFailingSince = null;
         this.lastActivityAt = Date.now();
       } catch (error) {
+        if (refusedAsReadOnly(error)) {
+          this.stopForReadOnly();
+          return false;
+        }
         if (endsRun(error)) {
           this.endRun(error);
           return false;
@@ -743,6 +761,10 @@ export class StreamManager {
       this.askAnswerTaken(carried);
       this.lastActivityAt = Date.now();
     } catch (error) {
+      if (refusedAsReadOnly(error)) {
+        this.stopForReadOnly();
+        return;
+      }
       if (endsRun(error)) {
         this.endRun(error);
         return;
@@ -764,6 +786,21 @@ export class StreamManager {
         `same run label starts: give each parallel job its own runLabel. The results are sent in one batch at the end.`,
     );
     this.ended = true;
+    this.stopStreaming();
+  }
+
+  /**
+   * The dashboard is read-only, as one of the run's requests heard, which said so once: nothing more is streamed, and
+   * the run's queued and buffered events are dropped. The run keeps its id and token, which the recovery copy the
+   * submitter saves names as the streamed run it replaces.
+   */
+  private stopForReadOnly(): void {
+    this.logger.debug(`Live run #${this._runId} streams nothing more: the dashboard is read-only.`);
+    this.stopStreaming();
+  }
+
+  /** Send nothing more: no heartbeat, no retry and no flush, and the queued and buffered events dropped. */
+  private stopStreaming(): void {
     this._enabled = false;
     this.stopHeartbeat();
     this.clearRetryTimer();
@@ -794,7 +831,8 @@ export class StreamManager {
 
   /**
    * Drain all pending and buffered events before the run finishes, once the stream opened or was given up
-   * (`settleStart`). Retries up to 10 times with exponential back-off, until the HTTP client is closed.
+   * (`settleStart`). Retries up to 10 times with exponential back-off, until the HTTP client is closed; nothing goes
+   * once the dashboard is read-only.
    */
   async drain(): Promise<void> {
     try {
@@ -809,6 +847,7 @@ export class StreamManager {
     this.stopHeartbeat();
     this.clearRetryTimer();
     await this.settleStart();
+    if (this._enabled && this.httpClient.readOnly) this.stopForReadOnly();
     if (!this._enabled) {
       this.pendingEvents.clear();
       this.flushPromises = [];

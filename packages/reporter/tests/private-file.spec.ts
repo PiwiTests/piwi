@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
-import { recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { CrashRecovery, recoveryFiles } from '../src/internal/streaming/crash-recovery.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import { getSetupFilePath, writeSetupInfo } from '../src/internal/support/setup-file.js';
 import {
@@ -298,7 +298,8 @@ describe('the private temp folder', () => {
       ].sort(),
     );
     expect(path.dirname(getSetupFilePath(projectName))).toBe(folder);
-    expect(path.dirname(recoveryFilePath('http://a.example', projectName))).toBe(folder);
+    new CrashRecovery('http://a.example', projectName).save({ projectName, testCases: [] });
+    expect(recoveryFiles('http://a.example', projectName).map((file) => path.dirname(file))).toEqual([folder]);
     expect(buffer.load().map((event) => event.title)).toEqual(['kept']);
     expect(loadAriaSampleSet(projectName)).toEqual(new Set(['a']));
   });

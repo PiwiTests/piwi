@@ -4,6 +4,7 @@ import { notificationChannels, users } from '../../database/schema';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { channelConfigFor } from '../../utils/channels';
 import { canEncryptSecrets } from '../../utils/crypto';
+import { isReadOnly } from '../../utils/operator-limits';
 import { isAdministrator } from '#shared/permissions';
 
 defineRouteMeta({
@@ -32,8 +33,8 @@ export default eventHandler(async (event) => {
     .from(notificationChannels)
     .where(or(isNull(notificationChannels.userId), eq(notificationChannels.userId, user.id)));
 
-  // Auto-create a personal_email channel for users who have an account email but no channel yet
-  if (dbUser?.email) {
+  // Auto-create a personal_email channel for users who have an account email but no channel yet, unless read-only
+  if (dbUser?.email && !isReadOnly()) {
     const hasPersonal = rows.some((c) => c.type === 'personal_email' && c.userId === user.id);
     if (!hasPersonal) {
       const [created] = await db

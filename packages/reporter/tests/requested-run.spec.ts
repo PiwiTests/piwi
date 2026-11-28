@@ -16,6 +16,7 @@ import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-submitter.js';
+import { sayWhenReadOnly } from '../src/internal/submit/read-only.js';
 import { Uploader, uploadCaseFilesInTurn } from '../src/internal/submit/uploader.js';
 import { HttpClient, HttpError } from '../src/internal/transport/http-client.js';
 import { getSetupFilePath, writeSetupInfo } from '../src/internal/support/setup-file.js';
@@ -321,6 +322,7 @@ describe('a requested run talking to the instance that asked for it', () => {
   function submitter(url: string, session: Record<string, unknown>) {
     const logger = new Logger(false);
     const http = new HttpClient(url, logger);
+    sayWhenReadOnly(http, logger);
     const recovery = new CrashRecovery(url, projectName, logger);
     const tryUpload = vi.spyOn(recovery, 'tryUpload');
     const save = vi.spyOn(recovery, 'save');
@@ -355,6 +357,19 @@ describe('a requested run talking to the instance that asked for it', () => {
     expect(tryUpload).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
     expect(warnings.some((line) => line.includes('did not take it'))).toBe(true);
+  });
+
+  it('says once that the instance is read-only at its /finish, and keeps no copy', async () => {
+    server = await startServer((_req, res) =>
+      jsonRes(res, 409, { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } }),
+    );
+    const { made, save } = submitter(server.url, {});
+    expect(await made.submit(collectedRun(server.url), { status: 'passed' } as any)).toBe(null);
+    expect(urlsHit(server)).toEqual(['/api/test-runs/1/finish']);
+    expect(save).not.toHaveBeenCalled();
+    expect(warnings).toEqual([
+      "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected, and nothing of this run is sent.",
+    ]);
   });
 
   it('finishes with what reached the instance when results were lost, never the batch upload', async () => {

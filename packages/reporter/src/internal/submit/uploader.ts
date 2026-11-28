@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import FormData from 'form-data';
 import type { HttpClient } from '../transport/http-client.js';
-import { HttpError, deliveredRunId } from '../transport/http-client.js';
+import { HttpError, deliveredRunId, refusedAsReadOnly } from '../transport/http-client.js';
 import type { FileHandler, UploadableAttachment } from '../files/file-handler.js';
 import type { ArchiveFile } from '../files/compression.js';
 import { errorMessage } from '../support/errors.js';
@@ -70,10 +70,11 @@ export interface RunPayload {
    */
   deliveryKey?: string;
   /**
-   * The run this reporter streamed before it fell back to the batch delivery, with its stream token: the dashboard
-   * cancels it while it has not settled. Not for a shard, whose run the other shards share.
+   * The run this reporter streamed before it fell back to the batch delivery, with its stream token, or the run the
+   * global setup registered that no stream began, with its setup token: the dashboard cancels it while it has not
+   * settled. Not for a shard, whose run the other shards share.
    */
-  replacesRun?: { runId: number; streamToken: string };
+  replacesRun?: { runId: number; streamToken: string } | { runId: number; setupToken: string };
 }
 
 /** Options controlling which reports to upload */
@@ -228,8 +229,8 @@ export class Uploader {
    * upload limit, say) leaves out that one alone. Any such upload settles a run the dashboard holds `finalizing`
    * until its files are in, and so does the one carrying no report that follows when none went through. Once the
    * storage quota refuses the run's files, the reports left are counted and not sent, and the upload carrying no
-   * report goes with the counts of everything it left out (`StorageQuota.notKept`). Never throws: the dashboard
-   * settles a run no upload settled ten minutes after its last file.
+   * report goes with the counts of everything it left out (`StorageQuota.notKept`). Once the dashboard is read-only,
+   * nothing more goes. Never throws: the dashboard settles a run no upload settled ten minutes after its last file.
    */
   async uploadReportsAndSettle(
     projectName: string,
@@ -240,7 +241,7 @@ export class Uploader {
   ): Promise<void> {
     let settled = false;
     for (const report of reports) {
-      if (this.httpClient.closed) return;
+      if (this.httpClient.closed || this.httpClient.readOnly) return;
       if (this.storageQuota.refusesFiles) {
         this.storageQuota.leaveOutReports([report]);
         continue;
@@ -249,11 +250,12 @@ export class Uploader {
         await this.uploadReportsForStreamingRun(projectName, runId, [report], startTime, auth);
         settled = true;
       } catch (error) {
+        if (refusedAsReadOnly(error)) return;
         this.logger.warn(`Could not upload the ${report.type} report of run #${runId}: ${errorMessage(error)}`);
       }
     }
     const notKept = this.storageQuota.notKept();
-    if ((settled && !notKept) || this.httpClient.closed) return;
+    if ((settled && !notKept) || this.httpClient.closed || this.httpClient.readOnly) return;
     try {
       await this.uploadReportsForStreamingRun(projectName, runId, [], startTime, auth, notKept);
     } catch (error) {
@@ -588,8 +590,9 @@ function isTooLarge(error: unknown): boolean {
  * (`Uploader.uploadCaseFiles`), skipping those `skip` names, and calling `uploaded` for each test whose files went.
  * A test whose files fail is logged and the next one goes; the uploads stop after
  * `MAX_UPLOAD_CONNECTION_FAILURES` of them in a row got no answer at all, once the dashboard answers that the run
- * takes no more files (409: it ended), and once `signal` is aborted. Once the storage quota refuses the run's files,
- * each test left is counted and not sent (`Uploader.uploadCaseFiles`), with no line of its own.
+ * takes no more files (409: it ended) or that it is read-only, said once a run as it first answered so, and once
+ * `signal` is aborted. Once the storage quota refuses the run's files, each test left is counted and not sent
+ * (`Uploader.uploadCaseFiles`), with no line of its own.
  */
 export async function uploadCaseFilesInTurn(
   uploader: Pick<Uploader, 'uploadCaseFiles'>,
@@ -627,6 +630,7 @@ export async function uploadCaseFilesInTurn(
       if (sent) uploaded?.(tc);
       connectionFailures = 0;
     } catch (error) {
+      if (refusedAsReadOnly(error)) return;
       if (error instanceof HttpError && error.status === 409) {
         logger.warn(
           `Run #${run.runId} takes no more files (${errorMessage(error)}): skipping those of the remaining tests.`,

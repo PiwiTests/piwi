@@ -1,12 +1,14 @@
 import { getDatabase } from '../../database';
 import { refreshDueCatalogs } from '../../utils/integrations/test-management/catalog-refresh';
+import { readOnlyNow } from '../../utils/operator-limits';
 
 let running = false;
 
-export default defineTask({
+export default defineTask<unknown>({
   meta: {
     name: 'integrations:test-management-catalog',
-    description: 'Read the test case catalog of each bound test management project that was not read in a day',
+    description:
+      'Read the test case catalog of each bound test management project that was not read in a day. Skipped while the instance is read-only',
   },
   async run() {
     // A read of a large project can outlast an hour at the default request rate: never start a second one beside it.
@@ -14,6 +16,7 @@ export default defineTask({
     running = true;
     try {
       const db = await getDatabase();
+      if (await readOnlyNow(db)) return { result: { skipped: 'read-only' } };
       const { refreshed, failed, skipped } = await refreshDueCatalogs(db);
       if (refreshed > 0 || failed > 0) {
         console.info(

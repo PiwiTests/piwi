@@ -279,6 +279,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     permission: 'storage:manage',
     fields: [
       { id: 'storage.backend', label: 'Storage backend', help: 'settings.storage-backend', envOnly: true },
+      { id: 'storage.limits', label: 'Limits', help: 'settings.limits', envOnly: true },
       { id: 'storage.stats', label: 'Storage analysis', help: 'settings.storage-stats' },
       { id: 'storage.cleanup', label: 'Cleanup old test runs', help: 'settings.cleanup' },
     ],

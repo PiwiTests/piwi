@@ -6,7 +6,9 @@
  * Generalized from the per-field lock first used in the AI context-limits grid.
  *
  * Pass `envVars` to name the variable(s); omit them only when the field is
- * read-only for a non-env reason (rare — prefer naming the var).
+ * read-only for a non-env reason (rare — prefer naming the var). With
+ * `setBy="operator"`, the value is the operator's (`/api/operator/limits`),
+ * set in place of those variables, and the tooltip says so.
  */
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { getEnvVarMeta } from '#shared/piwi-env-vars';
@@ -17,8 +19,10 @@ const props = withDefaults(
     envVars?: PiwiEnvVarName[];
     /** Icon size preset. Default 'sm' (3.5). */
     size?: 'xs' | 'sm' | 'md';
+    /** Who set the value: its environment variable(s), or the operator in their place. */
+    setBy?: 'environment' | 'operator';
   }>(),
-  { size: 'sm' },
+  { size: 'sm', setBy: 'environment' },
 );
 
 const sizeClass = computed(() => {
@@ -33,6 +37,10 @@ const sizeClass = computed(() => {
 });
 
 const tooltip = computed(() => {
+  if (props.setBy === 'operator') {
+    const names = props.envVars?.length ? `, in place of ${props.envVars.join(', ')}` : '';
+    return `Set by the operator: whoever runs this instance set it through its operator API${names}`;
+  }
   if (!props.envVars?.length) return 'Managed by environment variable';
   const lines = props.envVars.map((v) => {
     const desc = getEnvVarMeta(v).description;

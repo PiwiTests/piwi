@@ -1,6 +1,7 @@
 import { and, count, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { heldOperatorLimits, retentionDaysSetting } from '#shared/operator-limits';
 import { getDialect } from '../database';
 import type { DbClient } from '../database';
 import {
@@ -299,6 +300,15 @@ async function deleteRunSlice(
   }
 
   return caseIds.length;
+}
+
+/**
+ * The days of runs the nightly sweep keeps at `now`, null or 0 keeping every run: the operator's
+ * (`/api/operator/limits`), else `PIWI_RETENTION_DAYS`. While a retention the operator lowered waits its 14 days, the
+ * days kept before it.
+ */
+export function retentionDays(now = new Date()): number | null {
+  return retentionDaysSetting(heldOperatorLimits(), process.env, now).value;
 }
 
 /**

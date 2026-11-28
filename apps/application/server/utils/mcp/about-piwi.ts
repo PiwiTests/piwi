@@ -65,6 +65,7 @@ import { dropNulls } from './json';
 import { serveableTools } from './served';
 import type { McpContext } from './tools';
 import { dashboardVersion } from '../app-version';
+import { retentionDays } from '../retention';
 
 // ── Bundled material ──────────────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ interface AdminFacts {
 }
 
 export async function adminFacts(db: DbClient): Promise<AdminFacts> {
-  const days = Number(process.env.PIWI_RETENTION_DAYS);
+  const days = Number(retentionDays());
   return {
     storage: process.env.PIWI_STORAGE_TYPE === 's3' ? 'S3-compatible bucket' : 'local disk',
     retention:

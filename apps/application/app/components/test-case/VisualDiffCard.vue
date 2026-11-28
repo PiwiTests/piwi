@@ -23,7 +23,7 @@ const props = defineProps<{
 }>();
 
 interface VisualDiffResponse {
-  status: 'ok' | 'no-screenshot' | 'no-baseline' | 'not-found' | 'error';
+  status: 'ok' | 'no-screenshot' | 'no-baseline' | 'not-found' | 'error' | 'read-only';
   diff?: {
     path: string;
     changedPixels: number;

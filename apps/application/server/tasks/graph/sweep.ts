@@ -18,6 +18,7 @@ import { pruneSupersededReports } from '../../utils/coverage-totals';
 import { refreshOpenApiSurface } from '../../utils/openapi-surface';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { projectSourceReader } from '../../utils/source-at-blob';
+import { readOnlyNow } from '../../utils/operator-limits';
 
 /**
  * Resolve and cache the default branch for projects that lack one, off the
@@ -56,14 +57,15 @@ async function backfillDefaultBranches(db: Awaited<ReturnType<typeof getDatabase
   return rebuilt;
 }
 
-export default defineTask({
+export default defineTask<unknown>({
   meta: {
     name: 'graph:sweep',
     description:
-      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach, test coverage and coverage reports) older than 30 days, a branch’s coverage reports to the newest commit’s of each suite, the default branch’s to the newest commit and one commit a day for 90 days (a commit’s totals stay, final), and canonical nodes unseen for 30 complete default-branch runs that no live gap but a surface-drift one is about. Backfill unknown default branches, read each project’s OpenAPI document again, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
+      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach, test coverage and coverage reports) older than 30 days, a branch’s coverage reports to the newest commit’s of each suite, the default branch’s to the newest commit and one commit a day for 90 days (a commit’s totals stay, final), and canonical nodes unseen for 30 complete default-branch runs that no live gap but a surface-drift one is about. Backfill unknown default branches, read each project’s OpenAPI document again, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS. Skipped while the instance is read-only',
   },
   async run() {
     const db = await getDatabase();
+    if (await readOnlyNow(db)) return { result: { skipped: 'read-only' } };
     const result: Record<string, number> = {};
 
     const changesEdgesPruned = await pruneChangesEdges(db);

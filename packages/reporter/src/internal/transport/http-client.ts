@@ -6,6 +6,7 @@ import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests
 import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
+import { READ_ONLY_CODE, refusalCode } from './refusal-code.js';
 
 export { FormData };
 
@@ -74,18 +75,9 @@ export function failureDetail(res: Pick<HttpResponse, 'text' | 'headers'>): stri
   return line.length > FAILURE_DETAIL_MAX ? `${line.slice(0, FAILURE_DETAIL_MAX - 1)}…` : line;
 }
 
-/**
- * The code the dashboard names a failed request with: the `data.errorCode` of its JSON body, as every refusal of its
- * own carries one (`{ statusCode, message, data: { errorCode } }`). Null for any other body.
- */
-function failureCode(res: Pick<HttpResponse, 'text'>): string | null {
-  try {
-    const body = JSON.parse(res.text) as { data?: { errorCode?: unknown } | null } | null;
-    const code = body?.data?.errorCode;
-    return typeof code === 'string' && code !== '' ? code : null;
-  } catch {
-    return null;
-  }
+/** Whether the dashboard refused a request as it is read-only (409, `READ_ONLY_CODE`). */
+export function refusedAsReadOnly(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409 && error.errorCode === READ_ONLY_CODE;
 }
 
 /**
@@ -97,7 +89,7 @@ function failedRequest(res: HttpResponse): HttpError {
   return new HttpError(
     res.status,
     `Request failed with status ${res.status}${detail ? `: ${detail}` : ''}`,
-    failureCode(res),
+    refusalCode(res.text),
   );
 }
 
@@ -186,6 +178,14 @@ export class HttpClient {
   private readonly inFlight = new Set<http.ClientRequest>();
   /** Set by `close`: every later request fails with this reason. */
   private closedReason: string | null = null;
+  /**
+   * The dashboard's first refusal of a request as read-only (`refusedAsReadOnly`), or `markReadOnly`'s: every later
+   * write (`postJSON`, `putJSON`, `postFormData`) fails with it at once, unsent; a GET and a login still go. Null while
+   * the dashboard takes writes.
+   */
+  private readOnlyRefusal: HttpError | null = null;
+  /** Called once, as the dashboard first refuses a request as read-only; never for `markReadOnly`. */
+  onReadOnly: (() => void) | null = null;
 
   /**
    * @param serverUrl Base URL of the Piwi server (e.g. `http://localhost:3000`).
@@ -243,6 +243,31 @@ export class HttpClient {
   /** Whether `close` was called. */
   get closed(): boolean {
     return this.closedReason !== null;
+  }
+
+  /** Whether the dashboard refused a request as read-only, or `markReadOnly` said it is: no write is sent. */
+  get readOnly(): boolean {
+    return this.readOnlyRefusal !== null;
+  }
+
+  /** The dashboard is read-only, as another client heard: no write is sent, and `onReadOnly` is not called. */
+  markReadOnly(): void {
+    this.readOnlyRefusal ??= new HttpError(409, 'The dashboard is read-only', READ_ONLY_CODE);
+  }
+
+  /** Fail a write at once, unsent, once the dashboard is read-only (`readOnly`). */
+  private refuseWriteWhenReadOnly(): void {
+    if (this.readOnlyRefusal) throw this.readOnlyRefusal;
+  }
+
+  /** The error of a failed answer (`failedRequest`): the first read-only refusal is kept, and `onReadOnly` called. */
+  private refusal(res: HttpResponse): HttpError {
+    const error = failedRequest(res);
+    if (!this.readOnlyRefusal && refusedAsReadOnly(error)) {
+      this.readOnlyRefusal = error;
+      this.onReadOnly?.();
+    }
+    return error;
   }
 
   /** Abort every request in flight and fail every later one with `reason`. */
@@ -329,7 +354,7 @@ export class HttpClient {
     const res = await this.request('GET', pathname, { auth, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -347,6 +372,7 @@ export class HttpClient {
     signal?: AbortSignal,
     { upload = false, headers = {} }: { upload?: boolean; headers?: Record<string, string> } = {},
   ): Promise<any> {
+    this.refuseWriteWhenReadOnly();
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
@@ -361,13 +387,14 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }
 
   /** Send a JSON PUT request. Used for the declared-surface manifest upload. An answer that is not JSON fails. */
   async putJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
+    this.refuseWriteWhenReadOnly();
     const body = JSON.stringify(payload);
     const res = await this.request('PUT', pathname, {
       headers: {
@@ -379,7 +406,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -389,11 +416,12 @@ export class HttpClient {
    * `signal` ends the upload.
    */
   async postFormData(pathname: string, form: FormData, auth?: string | null, signal?: AbortSignal): Promise<any> {
+    this.refuseWriteWhenReadOnly();
     const headers = form.getHeaders() as Record<string, string>;
     const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw failedRequest(res);
+      throw this.refusal(res);
     }
     return parseAnswer(pathname, res);
   }

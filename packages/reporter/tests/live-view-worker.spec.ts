@@ -65,6 +65,8 @@ let streamUrls: string[];
 let streamStatus = 200;
 /** Whether a worker's new stream closes the one it held, as the instance's relay does. */
 let replaceStreams = false;
+/** What the instance answers a post with: null takes it, else the body of its 409. */
+let postRefusal: Record<string, unknown> | null = null;
 
 beforeEach(async () => {
   posts = [];
@@ -72,6 +74,7 @@ beforeEach(async () => {
   streamUrls = [];
   streamStatus = 200;
   replaceStreams = false;
+  postRefusal = null;
   server = await startServer((req, res) => {
     if (!req.url.startsWith(`/api/test-runs/${RUN}/live-view`)) return jsonRes(res, 404, {});
     if (req.method === 'GET' && streamStatus !== 200) return jsonRes(res, streamStatus, {});
@@ -84,6 +87,7 @@ beforeEach(async () => {
       streams.push(res);
       return;
     }
+    if (postRefusal) return jsonRes(res, 409, postRefusal);
     const message = readWorkerToInstance(JSON.parse(req.body));
     if (typeof message !== 'string') posts.push(message);
     jsonRes(res, 200, { success: true });
@@ -535,6 +539,26 @@ describe("a CI run's live view, as the instance stops answering and answers agai
     expect(gets()).toBe(26);
     expect(logLines()).toEqual([]);
   }, 30_000);
+
+  it('gives up for good as the instance refuses a post as read-only, saying so once and posting nothing more', async () => {
+    await openInCi();
+    postRefusal = { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } };
+    sayViewers(1);
+    await until(() => logLines().length === 1);
+    expect(logLines()).toEqual(['Worker 2: live view lost: the instance is read-only. It stays off for this worker.']);
+    expect(liveViewState()).toMatchObject({
+      can: false,
+      on: false,
+      why: 'Sharing stopped: the instance is read-only, so it takes no live view for now.',
+    });
+    const posted = server.requests.filter((request) => request.method === 'POST').length;
+    expect(posted).toBe(1);
+    liveViewTestBegan('pays', () => null);
+    await liveViewTestEnded('failed');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(server.requests.filter((request) => request.method === 'POST')).toHaveLength(posted);
+    expect(gets()).toBe(1);
+  });
 
   it('gives up for good a run the instance no longer holds live, saying so once', async () => {
     await openInCi();
