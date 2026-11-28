@@ -524,7 +524,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SETUP_TOKEN: {
     description:
-      "A token the first-admin form asks for (`setupToken` in `POST /api/auth/setup`), so only whoever can read the server's settings creates the first administrator. The one-click deploy templates generate it. Unset, the first visitor to an instance with no administrator can create one.",
+      "A token the first-admin form asks for (`setupToken` in `POST /api/auth/setup`), so only whoever can read the server's settings creates the first administrator. A link to `/login#setup=<token>` fills it in. The one-click deploy templates generate it. Unset, the first visitor to an instance with no administrator can create one.",
     category: 'auth',
     secret: true,
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },

@@ -82,11 +82,14 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // ---------------------------------------------------------------------------
 
   test('first-admin setup form creates the admin from the browser', async ({ page }) => {
-    await page.goto(`${AUTH_SERVER_URL}/login`);
+    // Opened from a setup link: the page takes the token out of the address. This server asks for none.
+    await page.goto(`${AUTH_SERVER_URL}/login#setup=from-a-setup-link`);
     await expect(page.getByRole('heading', { name: 'Create the first admin account' })).toBeVisible();
+    expect(new URL(page.url()).hash).toBe('');
 
     await page.getByRole('textbox', { name: 'Username*' }).fill('admin');
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Administrator');
+    await page.getByRole('textbox', { name: 'Email*' }).fill('admin@example.com');
     await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('adminpassword123');
     await page.getByRole('textbox', { name: 'Confirm password*' }).fill('adminpassword123');
     await page.getByRole('button', { name: 'Create admin account' }).click();
@@ -94,6 +97,9 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // Setup logs the new admin in and lands on the dashboard.
     await expect(page.getByText('Admin account created', { exact: true })).toBeVisible();
     await page.waitForURL(`${AUTH_SERVER_URL}/`);
+    // The token stays out of the history the navigation wrote.
+    await page.goBack();
+    await expect(page).toHaveURL(`${AUTH_SERVER_URL}/login`);
   });
 
   test('setup endpoint should reject a second call once users exist', async ({ request }) => {
