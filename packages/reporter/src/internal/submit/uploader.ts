@@ -70,10 +70,11 @@ export interface RunPayload {
    */
   deliveryKey?: string;
   /**
-   * The run this reporter streamed before it fell back to the batch delivery, with its stream token: the dashboard
-   * cancels it while it has not settled. Not for a shard, whose run the other shards share.
+   * The run this reporter streamed before it fell back to the batch delivery, with its stream token, or the run the
+   * global setup registered that no stream began, with its setup token: the dashboard cancels it while it has not
+   * settled. Not for a shard, whose run the other shards share.
    */
-  replacesRun?: { runId: number; streamToken: string };
+  replacesRun?: { runId: number; streamToken: string } | { runId: number; setupToken: string };
 }
 
 /** Options controlling which reports to upload */

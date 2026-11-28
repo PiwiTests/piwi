@@ -30,7 +30,7 @@ import {
 import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
 import { PIWI_EDITOR_ENV, followHub, runInteractive, type FollowedHub } from '../internal/config/hub.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
-import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
+import { HttpClient, refusedAsReadOnly, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
 import { StorageQuota } from '../internal/submit/storage-quota.js';
 import { sayWhenReadOnly } from '../internal/submit/read-only.js';
@@ -433,7 +433,8 @@ export class PiwiDashboardReporter {
       undefined,
       usedDesktopToken() ? (this.options.apiKey ?? null) : null,
     );
-    sayWhenReadOnly(this.httpClient, logger);
+    // A refusal as read-only once the dashboard took the run's results says it holds them.
+    sayWhenReadOnly(this.httpClient, logger, () => this.submitter.resultsHeld);
     this.fileHandler = new FileHandler(logger);
     this.storageQuota = new StorageQuota(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger, this.storageQuota);
@@ -524,7 +525,7 @@ export class PiwiDashboardReporter {
         ask = await openDashboardAsk(this.httpClient, this.options, time.signal);
       } catch (error) {
         if (planId !== null) this.runWithoutPlan(planId, errorMessage(error), testRun, shard);
-        else this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
+        else this.sayShardsNotBalanced(error);
         return;
       }
       if (planId !== null && !(await this.skipReusedTests(ask, planId, config, suite, testRun, shard))) return;
@@ -621,7 +622,7 @@ export class PiwiDashboardReporter {
       split = await fetchShardSplit(ask, { commit: checkoutCommit(base), shardTotal: shard.total, tests: listed });
       testRun.skipSharding();
     } catch (error) {
-      this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
+      this.sayShardsNotBalanced(error);
       return;
     }
     const keep = new Set(order.filter((_, index) => split.shards[index] === shard.current));
@@ -630,6 +631,15 @@ export class PiwiDashboardReporter {
     this.logger.info(
       `Shard ${shard.current}/${shard.total} runs ${keep.size} of ${listed.length} tests, as the dashboard balanced them by recorded duration${duration ? ` (about ${roughDuration(duration)})` : ''}.`,
     );
+  }
+
+  /**
+   * Say that Playwright splits the run, the dashboard not having answered how (`error`); nothing once the dashboard is
+   * read-only, which was said already.
+   */
+  private sayShardsNotBalanced(error: unknown): void {
+    if (refusedAsReadOnly(error)) return;
+    this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
   }
 
   /** Playwright reporter hook: called once at the start of the test run */
@@ -912,7 +922,8 @@ export class PiwiDashboardReporter {
   private shareLiveView(): void {
     if (this.mergingReports) return;
     const ci = detectCi(process.env);
-    const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
+    // A dashboard that is read-only takes no live view: the run it registered is never begun.
+    const setup = this.streamManager && !this.httpClient.readOnly ? peekSetupInfo(this.options.projectName!) : null;
     // PIWI_SHARE_LIVE shares a run outside CI that no editor or app follows from its start; the workers read it as
     // they open their live view.
     const shareLive = !ci && !process.env[RUN_CHANNEL_ENV] && readBool(process.env[PIWI_SHARE_LIVE_ENV]) === true;
@@ -949,8 +960,8 @@ export class PiwiDashboardReporter {
   }
 
   /**
-   * The global setup said already that the dashboard is read-only: the run sends nothing to it, saves its copy for a
-   * later run, and says nothing more. Its global setup runs before `preprocess` and `onBegin`, which both heed it.
+   * The global setup said already that the dashboard is read-only: the run sends nothing to it, and saves its copy for
+   * a later run, saying only that. Its global setup runs before `preprocess` and `onBegin`, which both heed it.
    */
   private heedSetupReadOnly(): void {
     if (this.enabled && peekSetupReadOnly(this.options.projectName!)) this.httpClient.markReadOnly();

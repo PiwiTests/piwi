@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { getSetupFilePath } from '../src/internal/support/setup-file.js';
-import { recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { recoveryFiles } from '../src/internal/streaming/crash-recovery.js';
 import {
   startServer,
   jsonRes,
@@ -40,7 +40,7 @@ describe('a run whose instance is down as it starts', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     if (server) {
-      fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });
+      for (const file of recoveryFiles(server.url, projectName)) fs.rmSync(file, { force: true });
       await server.close();
     }
     server = undefined;

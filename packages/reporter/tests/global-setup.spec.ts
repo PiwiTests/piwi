@@ -65,6 +65,9 @@ function jsonRes(res: http.ServerResponse, status: number, body: unknown): void 
 
 const PIWI_REPORTER_ENTRY: [string, Record<string, unknown>] = ['@piwitests/reporter', {}];
 
+const READ_ONLY_LINE =
+  "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected.";
+
 /** Delete a project's setup file if the test didn't consume it via readSetupInfo. */
 function cleanupSetupFile(projectName: string): void {
   const p = getSetupFilePath(projectName);
@@ -448,14 +451,53 @@ describe('createGlobalSetup', () => {
 
       expect(userSetupCalled).toBe(true);
       expect(requests.map((r) => r.url)).toEqual(['/api/test-runs/setup']);
-      expect(warn.mock.calls.map(([line]) => line)).toEqual([
-        "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected: this run's results are saved on this machine, and a later run sends them once the dashboard is writable again.",
-      ]);
+      expect(warn.mock.calls.map(([line]) => line)).toEqual([READ_ONLY_LINE]);
       expect(peekSetupReadOnly('global-setup-read-only')).toBe(true);
       expect(peekSetupRefusedForQuota('global-setup-read-only')).toBe(false);
       expect(readSetupInfo('global-setup-read-only')).toBeNull();
     } finally {
       warn.mockRestore();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('keeps the run it registered beside the mark when the dashboard turns read-only after /setup', async () => {
+    const projectName = 'global-setup-read-only-later';
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/setup') return jsonRes(res, 200, { runId: 44, setupToken: 'tok-44' });
+      if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 9, name: projectName }] });
+      if (req.method === 'PUT') {
+        return jsonRes(res, 409, { statusCode: 409, message: 'Read-only.', data: { errorCode: 'READ_ONLY' } });
+      }
+      return jsonRes(res, 200, {});
+    });
+    cleanupNames.push(projectName);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-read-only-manifest-'));
+    fs.writeFileSync(
+      path.join(dir, 'piwi.manifest.json'),
+      JSON.stringify({ routes: [{ method: 'GET', pattern: '/' }] }),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName, sampleAriaOnPass: false });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY], configFile: path.join(dir, 'playwright.config.ts') });
+
+      expect(requests.map((r) => r.url)).toEqual([
+        '/api/test-runs/setup',
+        '/api/projects/menu',
+        '/api/projects/9/surface/manifest',
+      ]);
+      expect(warn.mock.calls.map(([line]) => line)).toEqual([READ_ONLY_LINE]);
+      expect(
+        info.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('/test-runs/44')),
+      ).toHaveLength(1);
+      expect(peekSetupReadOnly(projectName)).toBe(true);
+      expect(readSetupInfo(projectName)).toMatchObject({ runId: 44, setupToken: 'tok-44', projectName });
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
+      fs.rmSync(dir, { recursive: true, force: true });
       await new Promise<void>((r) => server.close(() => r()));
     }
   });

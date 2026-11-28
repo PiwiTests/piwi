@@ -4,7 +4,7 @@ import * as http from 'node:http';
 import * as path from 'node:path';
 import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
-import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { CrashRecovery, recoveryFiles } from '../src/internal/streaming/crash-recovery.js';
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
@@ -36,7 +36,7 @@ function cleanup(): void {
       }
     }
   }
-  fs.rmSync(recoveryFilePath(RECOVERY_SERVER, projectName), { force: true });
+  for (const file of recoveryFiles(RECOVERY_SERVER, projectName)) fs.rmSync(file, { force: true });
 }
 
 function makeOptions(overrides: Partial<PiwiDashboardOptions> = {}): PiwiDashboardOptions {
@@ -1403,7 +1403,7 @@ describe("StreamManager with the desktop app's token", () => {
       await sm.drain();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      fs.rmSync(recoveryFilePath(url, projectName), { force: true });
+      for (const file of recoveryFiles(url, projectName)) fs.rmSync(file, { force: true });
     }
   }, 15_000);
 });

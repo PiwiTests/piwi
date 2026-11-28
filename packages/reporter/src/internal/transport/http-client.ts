@@ -6,6 +6,7 @@ import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests
 import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
+import { READ_ONLY_CODE, refusalCode } from './refusal-code.js';
 
 export { FormData };
 
@@ -74,26 +75,9 @@ export function failureDetail(res: Pick<HttpResponse, 'text' | 'headers'>): stri
   return line.length > FAILURE_DETAIL_MAX ? `${line.slice(0, FAILURE_DETAIL_MAX - 1)}…` : line;
 }
 
-/**
- * The code the dashboard names a failed request with: the `data.errorCode` of its JSON body, as every refusal of its
- * own carries one (`{ statusCode, message, data: { errorCode } }`). Null for any other body.
- */
-function failureCode(res: Pick<HttpResponse, 'text'>): string | null {
-  try {
-    const body = JSON.parse(res.text) as { data?: { errorCode?: unknown } | null } | null;
-    const code = body?.data?.errorCode;
-    return typeof code === 'string' && code !== '' ? code : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The code of the dashboard's refusal of a write while it is read-only: it takes none for now, and reads still go. */
-const READ_ONLY = 'READ_ONLY';
-
-/** Whether the dashboard refused a request as it is read-only (409, `READ_ONLY`). */
+/** Whether the dashboard refused a request as it is read-only (409, `READ_ONLY_CODE`). */
 export function refusedAsReadOnly(error: unknown): boolean {
-  return error instanceof HttpError && error.status === 409 && error.errorCode === READ_ONLY;
+  return error instanceof HttpError && error.status === 409 && error.errorCode === READ_ONLY_CODE;
 }
 
 /**
@@ -105,7 +89,7 @@ function failedRequest(res: HttpResponse): HttpError {
   return new HttpError(
     res.status,
     `Request failed with status ${res.status}${detail ? `: ${detail}` : ''}`,
-    failureCode(res),
+    refusalCode(res.text),
   );
 }
 
@@ -268,7 +252,7 @@ export class HttpClient {
 
   /** The dashboard is read-only, as another client heard: no write is sent, and `onReadOnly` is not called. */
   markReadOnly(): void {
-    this.readOnlyRefusal ??= new HttpError(409, 'The dashboard is read-only', READ_ONLY);
+    this.readOnlyRefusal ??= new HttpError(409, 'The dashboard is read-only', READ_ONLY_CODE);
   }
 
   /** Fail a write at once, unsent, once the dashboard is read-only (`readOnly`). */

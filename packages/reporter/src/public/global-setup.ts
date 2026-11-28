@@ -8,7 +8,7 @@ import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { isLiveViewKey } from '@piwitests/core/live-view';
-import { writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
+import { markSetupReadOnly, writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
 import { answeredRunUrl } from '../internal/support/run-url.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode, runnerArgv } from '../internal/support/run-mode.js';
@@ -196,11 +196,10 @@ export function createGlobalSetup(
         writeSetupFailure(opts.projectName, errorMessage(error), quotaRefused ? 'storage-quota' : null);
       }
     }
-    // The dashboard is read-only, as the global setup said: the reporter sends nothing and says nothing more, and a
-    // run registered already is never begun.
-    if (registers && httpClient.readOnly && opts.projectName) {
-      writeSetupFailure(opts.projectName, 'the dashboard is read-only', 'read-only');
-    }
+    // The dashboard is read-only, as the global setup said: the reporter sends nothing, saying only that it saved the
+    // run's copy. A run registered already is never begun, and keeps its registration, which that copy names as the
+    // run it replaces.
+    if (registers && httpClient.readOnly && opts.projectName) markSetupReadOnly(opts.projectName);
 
     if (userSetup) return userSetup(config);
   };
