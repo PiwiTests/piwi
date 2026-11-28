@@ -73,6 +73,23 @@ export function writeSetupFailure(
 }
 
 /**
+ * Write in this process's setup file that the dashboard is read-only, which the global setup said: beside the run it
+ * registered, when it did, which the run's recovery copy names as the run it replaces, else as why it registered none.
+ * Never throws.
+ */
+export function markSetupReadOnly(projectName: string): void {
+  const failed = 'the dashboard is read-only';
+  const registered = peekSetupInfo(projectName);
+  if (!registered) return writeSetupFailure(projectName, failed, 'read-only');
+  const marked: SetupInfo & SetupFailure = { ...registered, failed, readOnly: true };
+  try {
+    writePrivateFile(getSetupFilePath(projectName), JSON.stringify(marked));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * This process's setup file for the given project, left in place: a registration or a failure. `null` when there is
  * none, and when it is not a regular file this user owns that no one else may write (`readPrivateFile`), which one
  * warning names.

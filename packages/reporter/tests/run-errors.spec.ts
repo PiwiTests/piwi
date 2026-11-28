@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { runErrorOf } from '../src/internal/collect/run-errors.js';
-import { recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { recoveryFiles } from '../src/internal/streaming/crash-recovery.js';
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import {
@@ -102,7 +102,7 @@ describe('the errors of a run outside its tests', () => {
         fs.rmSync(path.join(privateTempDir(), f), { force: true });
       }
     }
-    if (server) fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });
+    if (server) for (const file of recoveryFiles(server.url, projectName)) fs.rmSync(file, { force: true });
   }
 
   beforeEach(async () => {

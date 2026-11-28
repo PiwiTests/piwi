@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { MAX_TEST_OUTPUT_CHARS } from '@piwitests/core/test-output';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { testOutputOf } from '../src/internal/collect/test-output.js';
-import { recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { recoveryFiles } from '../src/internal/streaming/crash-recovery.js';
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import {
@@ -67,7 +67,7 @@ describe("an attempt's output on the wire", () => {
         fs.rmSync(path.join(privateTempDir(), f), { force: true });
       }
     }
-    if (server) fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });
+    if (server) for (const file of recoveryFiles(server.url, projectName)) fs.rmSync(file, { force: true });
   }
 
   beforeEach(async () => {

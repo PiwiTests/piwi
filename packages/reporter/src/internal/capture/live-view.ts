@@ -40,6 +40,7 @@ import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
+import { READ_ONLY_CODE, refusalCode } from '../transport/refusal-code.js';
 import { followCallLog } from './live-call-log.js';
 import { LiveByteBudget, LiveInspect } from './live-inspect.js';
 import { lanePageNow, onLanePage, subscribeLane, type LaneSubscription } from './lane-feed.js';
@@ -91,9 +92,9 @@ import type { PageFrame } from './page-view.js';
  * CI run, every 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost and once that
  * it is back (`printRunLine`); outside CI, it is given up until a person shares the run again. A key the instance does
  * not take now (401), or a project with the live view off (404), skips the quick retries: an instance started again,
- * or the setting turned on again, takes the key back. A key refused (403), or a run no longer live (410), gives it up
- * at once, for the worker's life. The key is out of the worker's environment from the connection's opening to its
- * close (`hideKey`).
+ * or the setting turned on again, takes the key back. A key refused (403), a run no longer live (410), or a post
+ * refused as the instance is read-only (409, `READ_ONLY`), gives it up at once, for the worker's life. The key is out
+ * of the worker's environment from the connection's opening to its close (`hideKey`).
  *
  * In a run something may pause (`mayPause`), or outside CI, the call log comes from Playwright's in-process
  * instrumentation (`live-call-log.ts`'s `listener`), which moves no stop, in place of the call stream. Beside the
@@ -161,6 +162,11 @@ const GIVE_UP = new Set([403, 410]);
 const NOT_NOW = new Set([401, 404]);
 /** The answers that say the run's live view is not there now: the project's live view off, the run not live. */
 const GONE_NOW = new Set([404, 409]);
+/** The most characters of a refused post's answer read for the code it names (`refusalCode`). */
+const MAX_REFUSAL_TEXT = 4096;
+/** Why the instance takes no live view while it is read-only, as a person reads it, and as the run's log says it. */
+const READ_ONLY_REFUSAL = 'Sharing stopped: the instance is read-only, so it takes no live view for now.';
+const READ_ONLY_CAUSE = 'the instance is read-only';
 
 const TOO_HEAVY =
   `This page is too heavy for the live view: each image of it is over ${MAX_LIVE_FRAME / 1024} KB, ` +
@@ -771,11 +777,14 @@ function retry(own: Link, notNow: boolean): void {
   later(own, SLOW_RETRY_MS + Math.random() * SLOW_RETRY_JITTER_MS);
 }
 
-/** The run's log says once that the worker's view is lost, why, and what follows (`next`), until it is back. */
-function goDark(own: Link, next: string): void {
+/**
+ * The run's log says once that the worker's view is lost, why (`cause`, by default what the instance last answered),
+ * and what follows (`next`), until it is back.
+ */
+function goDark(own: Link, next: string, cause: string = lostCause(own.answered)): void {
   if (own.dark) return;
   own.dark = true;
-  printRunLine(own.runLog, `${workerName(own.id)}: live view lost: ${lostCause(own.answered)}. ${next}`);
+  printRunLine(own.runLog, `${workerName(own.id)}: live view lost: ${cause}. ${next}`);
 }
 
 function stopBackTimer(own: Link): void {
@@ -818,13 +827,16 @@ function lostCause(status: number | null): string {
   }
 }
 
-/** The instance refused the key for good (`status`): nothing more is tried for the worker's life; the run says why. */
-function refuse(own: Link, status: number): void {
+/**
+ * The instance refused the key for good (`status`), or a post as it is read-only (`readOnly`): nothing more is tried
+ * for the worker's life; the run says why.
+ */
+function refuse(own: Link, status: number, readOnly = false): void {
   if (own.refused !== null) return;
   if (own === link) letWaitGo(PAUSE_DROPPED.left);
-  own.refused = liveShareRefusal(status);
+  own.refused = readOnly ? READ_ONLY_REFUSAL : liveShareRefusal(status);
   own.answered = status;
-  if (own.ci) goDark(own, 'It stays off for this worker.');
+  if (own.ci) goDark(own, 'It stays off for this worker.', readOnly ? READ_ONLY_CAUSE : undefined);
   own.viewers = 0;
   own.stream?.destroy();
   own.agent.destroy();
@@ -1435,16 +1447,18 @@ function send(own: Link, message: WorkerToInstance): Promise<number | null> {
 
 /**
  * Post a body of the media type `type` to the run's endpoint, with a key the instance takes; resolves with the
- * answer's status, or null when none came. Never throws.
+ * answer's status, or null when none came. A refusal as the instance is read-only (409 naming `READ_ONLY`) gives the
+ * connection up as a refused key does. Never throws.
  */
 function sendBody(own: Link, body: string | Uint8Array, type: string): Promise<number | null> {
   if (own.ended || own.refused !== null) return Promise.resolve(null);
   return new Promise<number | null>((resolve) => {
     let settled = false;
-    const settle = (status: number | null): void => {
+    const settle = (status: number | null, readOnly = false): void => {
       if (settled) return;
       settled = true;
-      if (status !== null && GIVE_UP.has(status)) refuse(own, status);
+      if (readOnly && status !== null) refuse(own, status, true);
+      else if (status !== null && GIVE_UP.has(status)) refuse(own, status);
       // The stream opens again, and hears from the instance whether it takes the key.
       else if (status !== null && NOT_NOW.has(status)) own.stream?.destroy();
       resolve(status);
@@ -1463,8 +1477,15 @@ function sendBody(own: Link, body: string | Uint8Array, type: string): Promise<n
     request.on('error', () => settle(null));
     request.on('close', () => settle(null));
     request.on('response', (response) => {
-      response.resume();
-      response.on('end', () => settle(response.statusCode ?? null));
+      const status = response.statusCode ?? null;
+      let text = '';
+      if (status === 409) {
+        response.setEncoding('utf8');
+        response.on('data', (chunk: string) => {
+          if (text.length < MAX_REFUSAL_TEXT) text += chunk;
+        });
+      } else response.resume();
+      response.on('end', () => settle(status, status === 409 && refusalCode(text) === READ_ONLY_CODE));
       response.on('error', () => settle(null));
     });
     request.end(body);

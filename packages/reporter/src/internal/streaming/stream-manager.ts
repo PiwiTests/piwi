@@ -172,6 +172,15 @@ export class StreamManager {
   get token(): string | null {
     return this._token;
   }
+  /**
+   * The run the global setup registered while no stream began it: its id and setup token, which a batch delivery of
+   * the run names as the run it replaces. Null once a stream opened, without a registration, and once the dashboard no
+   * longer begins it.
+   */
+  get registeredRun(): { runId: number; setupToken: string } | null {
+    if (this._runId !== null || !this.setupInfo) return null;
+    return { runId: this.setupInfo.runId, setupToken: this.setupInfo.setupToken };
+  }
   /** Resolved auth string (API key or session cookie) used in stream requests */
   get auth(): string | null {
     return this._auth;

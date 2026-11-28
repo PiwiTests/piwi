@@ -57,6 +57,12 @@ node -e "fetch('http://localhost:3000/api/operator/limits',{method:'PUT',headers
 
 Send `{"readOnly":false}` once the copy is done.
 
+A reporter that meets a read-only instance stops sending, says so once, and leaves the tests and their exit code as
+they were. A run the instance holds no results of is saved on the reporter's machine, one file a run, at most 20 runs
+and 100 MB per project, the oldest dropped first; the next run sends them, oldest first, once the instance takes
+writes again. A CI runner thrown away after its job keeps nothing. A run whose results the instance already took
+keeps them there, without the traces, videos, screenshots or report it had not sent yet.
+
 ## Restoring
 
 Restoring is also how you roll back an upgrade: [Upgrading → Downgrading is not supported](./upgrading#downgrading-is-not-supported) gives the steps.

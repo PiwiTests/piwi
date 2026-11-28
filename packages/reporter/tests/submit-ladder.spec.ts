@@ -7,11 +7,11 @@ import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-subm
 import { HttpClient } from '../src/internal/transport/http-client.js';
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { Uploader } from '../src/internal/submit/uploader.js';
-import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { CrashRecovery, recoveryFiles } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { Logger } from '../src/internal/support/logger.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
-import { writeSetupFailure, writeSetupInfo } from '../src/internal/support/setup-file.js';
+import { markSetupReadOnly, writeSetupFailure, writeSetupInfo } from '../src/internal/support/setup-file.js';
 import {
   startServer,
   jsonRes,
@@ -45,12 +45,18 @@ function cleanupProjectArtifacts(projectName: string, server?: FakeServer): void
       }
     }
   }
-  if (server) fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });
+  if (server) for (const file of recoveryFiles(server.url, projectName)) fs.rmSync(file, { force: true });
 }
 
-/** The run the recovery file of `server` holds. */
+/** The runs the recovery files of `server` hold, oldest first. */
+function recoveredRuns(server: FakeServer, projectName: string): any[] {
+  return recoveryFiles(server.url, projectName).map((file) => JSON.parse(fs.readFileSync(file, 'utf8')).payload);
+}
+
+/** The run the latest recovery file of `server` holds. */
 function recoveredRun(server: FakeServer, projectName: string): any {
-  return JSON.parse(fs.readFileSync(recoveryFilePath(server.url, projectName), 'utf8')).payload;
+  const runs = recoveredRuns(server, projectName);
+  return runs[runs.length - 1];
 }
 
 async function runOneTest(reporter: PiwiDashboardReporter, title: string, status = 'passed'): Promise<void> {
@@ -96,7 +102,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     });
     await reporter.onEnd({ status: 'failed' } as any);
     expect(urlsHit(server)).toEqual([]);
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+    expect(recoveryFiles(server.url, projectName)).toEqual([]);
   });
 
   it('streaming success path: /start → /events → /finish', async () => {
@@ -806,11 +812,8 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
     });
     await runOneTest(failing, 'lost-run-test');
-    expect(
-      fs.existsSync(recoveryFilePath(server.url, projectName)),
-      'expected a recovery file after the failed run',
-    ).toBe(true);
-    const mode = fs.statSync(recoveryFilePath(server.url, projectName)).mode & 0o777;
+    expect(recoveryFiles(server.url, projectName), 'expected a recovery file after the failed run').toHaveLength(1);
+    const mode = fs.statSync(recoveryFiles(server.url, projectName)[0]!).mode & 0o777;
     if (process.platform !== 'win32') expect(mode, 'readable by its owner only').toBe(0o600);
 
     up = true;
@@ -832,9 +835,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // A run delivered by its usual rung names no fallback.
     expect(second.metadata.ingestHealth).toBeUndefined();
     expect(titles, `submits: ${titles.join(', ')}`).toContain('second-run-test');
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'recovery file is cleared after the retry').toBe(
-      false,
-    );
+    expect(recoveryFiles(server.url, projectName), 'recovery file is cleared after the retry').toEqual([]);
   });
 
   it('buffer overflow drops results → skips /finish and re-sends the full run via /submit', async () => {
@@ -1069,7 +1070,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     await reporter.onEnd({ status: 'failed' } as any);
 
     expect(finishes).toBe(1);
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+    expect(recoveryFiles(server.url, projectName)).toEqual([]);
     server.server.closeAllConnections();
   });
 
@@ -1118,7 +1119,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
 
     expect(urlsHit(server)).toContain('/api/traces/check');
     expect(finishes).toBe(1);
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+    expect(recoveryFiles(server.url, projectName)).toEqual([]);
     server.server.closeAllConnections();
   });
 
@@ -1138,7 +1139,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     await runOneTest(reporter, 'unbounded-test');
 
     expect(urlsHit(server)).toContain('/api/test-runs/submit');
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+    expect(recoveryFiles(server.url, projectName)).toEqual([]);
   });
 
   it('a 401 with no credential stops the ladder and saves a recovery copy, leaving the run result alone', async () => {
@@ -1204,10 +1205,10 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
         `[Piwi Dashboard] serverUrl "piwi.example.com" is not a URL: give the dashboard's whole address, such as https://piwi.example.com. Nothing is sent to the dashboard.`,
       );
-      expect(fs.existsSync(recoveryFilePath('piwi.example.com', projectName))).toBe(false);
+      expect(recoveryFiles('piwi.example.com', projectName)).toEqual([]);
     } finally {
       warn.mockRestore();
-      fs.rmSync(recoveryFilePath('piwi.example.com', projectName), { force: true });
+      for (const file of recoveryFiles('piwi.example.com', projectName)) fs.rmSync(file, { force: true });
     }
   });
 
@@ -1352,7 +1353,7 @@ describe("the dashboard's storage quota and read-only mode", () => {
       expect(settle).toContain('"ingestHealth":{"attachmentsNotKept":2,"reportsNotKept":1}');
       expect(quotaLines()).toHaveLength(1);
       expect(warnings).toHaveLength(1);
-      expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+      expect(recoveryFiles(server.url, projectName)).toEqual([]);
     });
 
     it('a streamed run counts what it left out in its /finish, which settles it with no report to wait for', async () => {
@@ -1490,7 +1491,7 @@ describe("the dashboard's storage quota and read-only mode", () => {
         expect(ended).toBeUndefined();
         expect(urlsHit(server)).toEqual([refused]);
         expect(warnings).toEqual([RUN_REFUSED_LINE]);
-        expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+        expect(recoveryFiles(server.url, projectName)).toEqual([]);
       });
     }
 
@@ -1592,7 +1593,25 @@ describe("the dashboard's storage quota and read-only mode", () => {
 
   describe('read-only', () => {
     const READ_ONLY_LINE =
-      "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected: this run's results are saved on this machine, and a later run sends them once the dashboard is writable again.";
+      "[Piwi Dashboard] The dashboard is read-only, so it takes no results for now. The tests and the run's exit code are not affected.";
+    const RESULTS_HELD_LINE =
+      "[Piwi Dashboard] The dashboard is read-only, so it takes nothing more for now: it holds this run's results, and what was left to send of the run (traces, videos, screenshots, reports or coverage) was not sent. The tests and the run's exit code are not affected.";
+    const COPY_SAVED_LINE =
+      "[Piwi Dashboard] This run's results are saved on this machine: a later run sends them once the dashboard is writable again.";
+    let infos: string[];
+
+    beforeEach(() => {
+      infos = [];
+      vi.spyOn(console, 'log').mockImplementation((line: unknown) => void infos.push(String(line)));
+    });
+
+    /** Save the copy of an earlier run, written `secondsAgo` seconds ago. */
+    function saveEarlierRun(label: string, secondsAgo: number): void {
+      const before = new Set(recoveryFiles(server.url, projectName));
+      new CrashRecovery(server.url, projectName).save({ projectName, deliveryKey: label, label, testCases: [] });
+      const at = new Date(Date.now() - secondsAgo * 1000);
+      for (const file of recoveryFiles(server.url, projectName)) if (!before.has(file)) fs.utimesSync(file, at, at);
+    }
 
     /** The answers of a dashboard that takes the run: its stream as run 1, its batch as run 21, held for its files. */
     function takesTheRun(url: string, res: Parameters<typeof jsonRes>[0]): void {
@@ -1635,11 +1654,78 @@ describe("the dashboard's storage quota and read-only mode", () => {
         expect(ended).toBeUndefined();
         expect(urlsHit(server)).toEqual([at]);
         expect(warnings).toEqual([READ_ONLY_LINE]);
+        expect(infos).toContain(COPY_SAVED_LINE);
         const copy = recoveredRun(server, projectName);
         expect(copy.testCases).toHaveLength(2);
         expect(copy.replacesRun).toBeUndefined();
       });
     }
+
+    for (const { at, streaming, reports } of [
+      { at: '/api/test-runs/upload', streaming: true, reports: true },
+      { at: '/api/test-runs/21/case-files', streaming: false, reports: true },
+    ]) {
+      it(`at ${at} once the dashboard took the run's results: says it holds them, and saves no copy`, async () => {
+        server = await readOnlyFrom(at);
+
+        const ended = await runTwoTests({
+          streaming,
+          ...(reports ? { reports: [{ type: 'custom', dir: reportDir() }] } : {}),
+        });
+
+        expect(ended).toBeUndefined();
+        expect(runRequests().filter((u) => u === at)).toHaveLength(1);
+        expect(runRequests().slice(-1)).toEqual([at]);
+        expect(warnings).toEqual([RESULTS_HELD_LINE]);
+        expect(infos).not.toContain(COPY_SAVED_LINE);
+        expect(recoveryFiles(server.url, projectName)).toEqual([]);
+      });
+    }
+
+    it('names the run the global setup registered, with its setup token, when the global setup said so', async () => {
+      server = await startServer((req, res) => takesTheRun(req.url, res));
+      writeSetupInfo({ runId: 7, setupToken: 'setup', projectName });
+      markSetupReadOnly(projectName);
+
+      const ended = await runTwoTests({ streaming: true });
+
+      expect(ended).toBeUndefined();
+      expect(urlsHit(server)).toEqual([]);
+      expect(warnings).toEqual([]);
+      expect(infos).toContain(COPY_SAVED_LINE);
+      expect(recoveredRun(server, projectName).replacesRun).toEqual({ runId: 7, setupToken: 'setup' });
+    });
+
+    it('names the run the global setup registered, with its setup token, when its /begin is refused so', async () => {
+      server = await readOnlyFrom('/api/test-runs/7/begin');
+      writeSetupInfo({ runId: 7, setupToken: 'setup', projectName });
+
+      const ended = await runTwoTests({ streaming: true });
+
+      expect(ended).toBeUndefined();
+      expect(urlsHit(server)).toEqual(['/api/test-runs/7/begin']);
+      expect(warnings).toEqual([READ_ONLY_LINE]);
+      const copy = recoveredRun(server, projectName);
+      expect(copy.replacesRun).toEqual({ runId: 7, setupToken: 'setup' });
+      expect(copy.testCases).toHaveLength(2);
+    });
+
+    it("saves a shard's copy naming no run to replace, its stream open or its run registered", async () => {
+      const shard = { current: 1, total: 2 };
+      server = await readOnlyFrom('/api/test-runs/1/finish');
+      await runTwoTests({ streaming: true }, shard);
+      expect(runRequests().slice(-1)).toEqual(['/api/test-runs/1/finish']);
+      const streamed = recoveredRun(server, projectName);
+      expect(streamed.shardIndex).toBe(1);
+      expect(streamed.replacesRun).toBeUndefined();
+
+      writeSetupInfo({ runId: 7, setupToken: 'setup', projectName });
+      markSetupReadOnly(projectName);
+      await runTwoTests({ streaming: true }, shard);
+      const registered = recoveredRuns(server, projectName);
+      expect(registered).toHaveLength(2);
+      expect(registered.map((copy) => copy.replacesRun)).toEqual([undefined, undefined]);
+    });
 
     it("on a streamed run's events: streams nothing more, and saves the copy that replaces the streamed run", async () => {
       server = await readOnlyFrom('/api/test-runs/1/events');
@@ -1727,25 +1813,56 @@ describe("the dashboard's storage quota and read-only mode", () => {
       });
     });
 
-    it("keeps the saved copy its replay was refused, sends nothing more, and saves this run's copy in its place", async () => {
+    it('keeps every saved copy its replay was refused, and saves this run’s copy beside them', async () => {
       server = await readOnlyFrom('/api/test-runs/submit');
-      new CrashRecovery(server.url, projectName).save({ projectName, label: 'saved', testCases: [] });
-      const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+      saveEarlierRun('first', 20);
+      saveEarlierRun('second', 10);
 
       const ended = await runTwoTests({ streaming: true });
 
       expect(ended).toBeUndefined();
       expect(urlsHit(server)).toEqual(['/api/test-runs/submit']);
+      expect(JSON.parse(server.requests[0]!.body).label).toBe('first');
       expect(warnings).toEqual([READ_ONLY_LINE]);
-      expect(info.mock.calls.map(([line]) => line)).toContain(
-        "[Piwi Dashboard] The dashboard is read-only: the saved test data of an earlier run is not sent, and this run's own copy replaces it on this machine.",
+      expect(infos).toContain(
+        '[Piwi Dashboard] The dashboard is read-only: the saved test data of earlier runs is not sent, and stays on this machine for a later run.',
       );
-      expect(recoveredRun(server, projectName).testCases).toHaveLength(2);
+      expect(infos).toContain(COPY_SAVED_LINE);
+      const copies = recoveredRuns(server, projectName);
+      expect(copies.map((copy) => copy.label)).toEqual(['first', 'second', null]);
+      expect(copies[2].testCases).toHaveLength(2);
     });
 
-    it('the global setup said so: the reporter sends nothing, says nothing more and saves the run', async () => {
+    it('keeps the copy of each run while it stays read-only, and replays them all once it is writable again', async () => {
+      let readOnly = true;
+      server = await startServer((req, res) => {
+        if (readOnly && req.method !== 'GET') refuse(res, 'READ_ONLY');
+        else takesTheRun(req.url, res);
+      });
+
+      await runTwoTests({ streaming: false });
+      await runTwoTests({ streaming: false });
+      expect(recoveredRuns(server, projectName)).toHaveLength(2);
+      const keys = recoveredRuns(server, projectName).map((copy) => copy.deliveryKey);
+      expect(new Set(keys).size).toBe(2);
+
+      readOnly = false;
+      const before = server.requests.length;
+      await runTwoTests({ streaming: false });
+      const sent = server.requests.slice(before).map((request) => JSON.parse(request.body));
+      expect(
+        sent
+          .map((body) => body.deliveryKey)
+          .slice(0, 2)
+          .sort(),
+      ).toEqual([...keys].sort());
+      expect(sent).toHaveLength(3);
+      expect(recoveryFiles(server.url, projectName)).toEqual([]);
+    });
+
+    it('the global setup said so: the reporter sends nothing, says only that it saved the run, beside the copy kept', async () => {
       server = await startServer((req, res) => takesTheRun(req.url, res));
-      new CrashRecovery(server.url, projectName).save({ projectName, label: 'saved', testCases: [] });
+      saveEarlierRun('saved', 10);
       writeSetupFailure(projectName, 'the dashboard is read-only', 'read-only');
 
       const ended = await runTwoTests({ streaming: true, reports: [{ type: 'custom', dir: reportDir() }] });
@@ -1753,8 +1870,38 @@ describe("the dashboard's storage quota and read-only mode", () => {
       expect(ended).toBeUndefined();
       expect(urlsHit(server)).toEqual([]);
       expect(warnings).toEqual([]);
-      expect(recoveredRun(server, projectName).testCases).toHaveLength(2);
+      expect(infos).toContain(COPY_SAVED_LINE);
+      const copies = recoveredRuns(server, projectName);
+      expect(copies.map((copy) => copy.label)).toEqual(['saved', null]);
+      expect(copies[1].testCases).toHaveLength(2);
     });
+
+    for (const told of [false, true]) {
+      it(`says nothing more of a shard split refused as read-only${told ? ', as the global setup said' : ''}`, async () => {
+        server = await startServer((req, res) => {
+          if (req.url === '/api/projects/menu') jsonRes(res, 200, { items: [{ id: 7, name: projectName }] });
+          else if (req.method !== 'GET') refuse(res, 'READ_ONLY');
+          else textRes(res, 404, 'nope');
+        });
+        if (told) writeSetupFailure(projectName, 'the dashboard is read-only', 'read-only');
+        const reporter = new PiwiDashboardReporter({ serverUrl: server.url, projectName, balanceShards: true });
+        const project = { ...fakeSuite(), title: 'chromium', suites: [], tests: [] as any[] };
+        const tests = ['pays', 'ships'].map((title) => fakeTestCase({ title, parent: project }));
+        project.tests = tests;
+        project.allTests = () => tests;
+        const root = { ...fakeSuite(), suites: [project], tests: [], allTests: () => tests };
+        const skipSharding = vi.fn();
+        const config = { ...fakeConfig({ shard: { current: 1, total: 2 } }), argv: ['node', 'playwright', 'test'] };
+
+        await reporter.preprocess({ config, suite: root, testRun: { skipSharding, exclude: vi.fn() } as any });
+
+        expect(urlsHit(server)).toEqual(
+          told ? ['/api/projects/menu'] : ['/api/projects/menu', '/api/projects/7/shard-split'],
+        );
+        expect(skipSharding).not.toHaveBeenCalled();
+        expect(warnings).toEqual(told ? [] : [READ_ONLY_LINE]);
+      });
+    }
 
     for (const at of ['/api/test-runs/1/events', '/api/test-runs/1/finish']) {
       it(`reads an older dashboard's 409 without a code at ${at.split('/').pop()} as before: the run goes as a batch`, async () => {
@@ -1765,7 +1912,7 @@ describe("the dashboard's storage quota and read-only mode", () => {
         expect(ended).toBeUndefined();
         expect(runRequests().slice(-1)).toEqual(['/api/test-runs/submit']);
         expect(warnings).not.toContain(READ_ONLY_LINE);
-        expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+        expect(recoveryFiles(server.url, projectName)).toEqual([]);
       });
     }
   });
@@ -1856,7 +2003,7 @@ describe('RunSubmitter local copies', () => {
     expect(urlsHit(server)).toEqual(['/api/test-runs/1/finish', '/api/test-runs/1/finish']);
     expect(submitted?.runId).toBe(1);
     expect(sm.discardBuffered).toHaveBeenCalledOnce();
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+    expect(recoveryFiles(server.url, projectName)).toEqual([]);
   });
 
   it('takes a repeat of /finish refused as read-only as the run not finished, and saves the copy that replaces it', async () => {
@@ -1966,7 +2113,7 @@ describe('RunSubmitter local copies', () => {
     const sm = streamSession();
     await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
     expect(sm.discardBuffered).not.toHaveBeenCalled();
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(true);
+    expect(recoveryFiles(server.url, projectName)).toHaveLength(1);
   });
 });
 

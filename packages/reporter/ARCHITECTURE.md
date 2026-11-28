@@ -60,7 +60,7 @@ What the package does to a user's run, process by process.
   Actions the unprefixed `::notice` lines naming the run's page as it starts and as it lands (`ci-output.ts`); outside
   CI, in a terminal other than a dumb one, the run's page as an OSC 8 link and its progress as OSC 9;4, cleared as the
   run or its process ends (`internal/support/terminal.ts`, `PIWI_TERMINAL_PROGRESS`).
-  On Windows the private files (the setup file, the stream buffer, the recovery file, the
+  On Windows the private files (the setup file, the stream buffer, the recovery files, the
   workers' resource census, the run's log, the ARIA sample set) live in `%LOCALAPPDATA%\piwi\tmp` instead
   (`privateTempDir`), a folder of this user's alone, whatever account runs the tests; a
   recovery file an older reporter left in `os.tmpdir()` is moved there on the next run.
@@ -546,7 +546,8 @@ What the package does to a user's run, process by process.
   stops, saying what the instance last answered, until the run is shared again. A 401 (an
   instance started again that does not take the key) or a 404 (the project's live view
   off) skips the quick retries: the instance may take the key back. A 403 or 410 gives the
-  key up at once, for the worker's life, the run channel hearing why. A stream replaced by
+  key up at once, for the worker's life, the run channel hearing why, and so does a post
+  refused as the instance is read-only (409 naming `READ_ONLY`, `refusal-code.ts`). A stream replaced by
   another (shared again at once) or closed for good is done with: nothing is tried again
   for it.
 - The same fixture takes `PIWI_LIVE_VIEW` out of the worker's `process.env` until its
@@ -898,9 +899,15 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
    large go on to rung 3,
 3. **plain JSON `/submit`**: last resort; an answer that is a repeat of a run held from its results, with a token,
    sends the files and reports as in parts too,
-4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
-   dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
-   invalid).
+4. **crash recovery**: on total failure, persist the payload to disk for a later run
+   (`internal/streaming/crash-recovery.ts`): one owner-only file per run, named by the dashboard and project's key and
+   the run's delivery key, so two runs of a project on one machine never write one file. A dashboard and project keep
+   at most 20 runs and 100 MB of copies: past either, the oldest go, with a warning naming how many runs were dropped.
+   The copies are replayed to their dashboard only, oldest first and one at a time, each deleted once the dashboard
+   took its run (or refused it as invalid); the first other failure (read-only, the storage quota, a sign-in refused,
+   no answer) keeps it and the copies after it for a later run. The single file an older reporter kept per dashboard
+   and project is replayed with them, as the oldest. Two runs that replay one copy at once send it under one delivery
+   key, which the dashboard stores once.
 
 The stream itself opens in the background from `onBegin` (`StreamManager.start`): `/begin`
 for the run the global setup registered (a 409 sets it aside for a `/start`), else `/start`.
@@ -921,8 +928,11 @@ A 401 with no credential configured, or a failed login, stops the ladder at once
 the run goes to crash recovery. Nothing in the ladder throws out of `onEnd`, since Playwright counts a reporter's
 error as a failure of the run. Every rung carries one `deliveryKey` per run, so a dashboard that stored a slow
 upload stores the `/submit` that follows it, or the recovery copy, once. A batch rung that follows a stream names the
-streamed run with its token (`replacesRun`, never for a shard), and the dashboard cancels that run while it has not
-settled, one a `/finish` whose answer was lost holds `finalizing` too, so the run's results land in one run.
+streamed run with its token (`replacesRun: { runId, streamToken }`), and one whose run the global setup registered
+but no stream began names that run with its setup token (`{ runId, setupToken }`, `StreamManager.registeredRun`): the
+dashboard cancels the run named while it has not settled, one a `/finish` whose answer was lost holds `finalizing` too,
+so the run's results land in one run. A shard names none, since the other shards share its run: a shard's copy
+replayed later lands as a run of its own beside the sharded run.
 
 A requested run takes rung 1 alone: its request token starts one streamed run, so it has no `/start` after a
 `/begin` 409, no batch upload, no recovery copy and no replay of a saved run, and it finishes with what reached the
@@ -946,8 +956,8 @@ neither changing the run's exit code:
   report and settles the run (`uploadReportsAndSettle`). The dashboard counts the files it skipped itself.
 - **`STORAGE_QUOTA_EXCEEDED`** to a request that creates a run (`/setup`, `/start`, `/upload/results`, `/upload`,
   `/submit`, the replay of a saved run): the dashboard refuses new runs. The stream gives up, the ladder stops with
-  no other rung and no recovery copy, a saved run's copy is kept, and a refusal the global setup heard is written to
-  the setup file, so the reporter sends nothing and says nothing more. Two refusals leave the run alone: the replay's
+  no other rung and no recovery copy, the saved runs' copies are kept, and a refusal the global setup heard is
+  written to the setup file, so the reporter sends nothing and says nothing more. Two refusals leave the run alone: the replay's
   of a run the global setup registered, which still `/begin`s, and a batch rung's after the run's stream opened,
   where the dashboard keeps what streamed: the ladder stops, said in a line of its own, with the recovery copy saved,
   which a later run sends to replace the streamed run (`replacesRun`).
@@ -958,10 +968,14 @@ route. The run's `HttpClient` keeps the first such answer, and every later write
 run (`internal/submit/read-only.ts`, `sayWhenReadOnly`), by the global setup, which writes it to the setup file for the
 reporter (`peekSetupReadOnly`, heeded in `preprocess` and `onBegin`), or by the reporter, and never changes the exit
 code. Then the stream stops for good (no event, heartbeat or file, `stopForReadOnly`, the run keeping its id and
-token), the ladder stops with no other rung, and the recovery copy is saved: it names a streamed run it replaces
-(`replacesRun`) and keeps the storage quota's counts. A replay of a saved run refused so leaves its file, which the
-run's own copy then replaces (one file a dashboard and project). A run the dashboard took before (a `/finish`
-answered, results held) keeps no copy, nor does a requested run.
+token), the ladder stops with no other rung, and the recovery copy is saved, said in a line of its own once written
+(`READ_ONLY_COPY_SAVED`): it names the run it replaces (`replacesRun`, the streamed run, else the one the global setup
+registered) and keeps the storage quota's counts. The global setup that hears it after `/setup` registered the run
+keeps that registration beside the mark (`markSetupReadOnly`). A replay of saved runs refused so keeps them all
+beside the run's own copy. A run the dashboard took before (a `/finish` answered, results held) keeps no copy, and
+the warning then says the dashboard holds its results and what was left to send was not (`RunSubmitter.resultsHeld`);
+a requested run keeps no copy either. A run that hears it says nothing more of it: no live view key goes to the
+workers, and a shard split refused so leaves Playwright to split the run without a line.
 
 A 409 without one of these codes (an older dashboard) keeps the meaning it has above.
 
@@ -1027,9 +1041,10 @@ src/
                report (the step results init and skills print)
   internal/
     submit/     run-submitter, uploader, serializer, storage-quota (the dashboard's
-                storage quota as it answered the run), read-only (the line said
-                once a run as the dashboard refuses a write as read-only)
-    transport/  http-client (+ HttpError), backend-request
+                storage quota as it answered the run), read-only (the lines said
+                as the dashboard refuses a write as read-only and as the copy is saved)
+    transport/  http-client (+ HttpError), backend-request, refusal-code (the code a
+                dashboard's refusal names, read by the workers' live view too)
     streaming/  stream-manager, stream-buffer, bounded-queue, crash-recovery,
                 live-resources (a watched run's CPU, memory and open pages,
                 posted as it runs)
