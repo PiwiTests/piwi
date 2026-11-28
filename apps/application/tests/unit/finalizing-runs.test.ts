@@ -19,7 +19,7 @@ vi.mock('../../server/utils/auth', () => ({
   isAuthEnabled: () => false,
 }));
 vi.mock('../../server/storage', () => ({ getStorage: () => ({ mkdir: async () => {}, writeFile: async () => {} }) }));
-vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceBlob: vi.fn(), findTraceBlob: vi.fn() }));
+vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceFileAt: vi.fn(), findTraceBlob: vi.fn() }));
 vi.mock('../../server/utils/trace-fallback-evidence', () => ({ deriveTraceEvidence: vi.fn() }));
 const runFinalizeSideEffects = vi.fn(async (_db: unknown, _id: number, _run: unknown) => {});
 vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSideEffects }));

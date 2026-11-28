@@ -22,6 +22,10 @@ vi.mock('../../server/storage', () => ({
       writes.push(path);
       storageFiles.set(path, Buffer.from(data));
     },
+    async writeFileFrom(path: string, source: string) {
+      writes.push(path);
+      storageFiles.set(path, await (await import('node:fs/promises')).readFile(source));
+    },
     async readFile(path: string) {
       if (failingReads.has(path)) throw new Error(`503 Slow Down: ${path}`);
       const bytes = storageFiles.get(path);
@@ -47,7 +51,7 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => holder.db }))
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { upsertTraceBlob, backfillTraceBlobStoredSizes, backfillTraceBlobResources } =
+const { upsertTraceBlob, upsertTraceFileAt, backfillTraceBlobStoredSizes, backfillTraceBlobResources } =
   await import('../../server/utils/trace-blobs');
 const { reconstructTraceZip } = await import('../../server/utils/trace-reconstruct');
 const { getTraceFrameFromBlob, getTraceFramesFromBlob, getTraceSnapshotResourceFromBlob } =
@@ -137,6 +141,68 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await close();
+});
+
+describe('upsertTraceFileAt stores a trace from its file', () => {
+  let dir: string;
+  let count = 0;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'piwi-trace-file-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  const onDisk = (bytes: Buffer) => {
+    const path = join(dir, `${++count}.zip`);
+    writeFileSync(path, bytes);
+    return path;
+  };
+  const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+  test('stores the slim ZIP, the manifest and the pool a buffer stores, under the hash of its bytes', async () => {
+    const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
+    const blob = await upsertTraceFileAt(1, onDisk(trace));
+    expect(blob.path).toBe(`project-1/blobs/${sha256(trace)}.zip`);
+    const fromFile = new Map(storageFiles);
+
+    storageFiles.clear();
+    await db.delete(schema.traceBlobResources);
+    await db.delete(schema.traceResources);
+    await db.delete(schema.traceBlobs);
+    await ingestTrace(trace);
+    expect(fromFile).toEqual(storageFiles);
+
+    const [row] = await db.select().from(schema.traceBlobs);
+    expect(row!.size).toBe(trace.length);
+  });
+
+  test('refuses a hash that is not its bytes, before anything is written', async () => {
+    const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
+    const path = onDisk(trace);
+    await expect(upsertTraceFileAt(1, path, 'f'.repeat(64))).rejects.toMatchObject({ statusCode: 400 });
+    expect(writes).toHaveLength(0);
+    await expect(upsertTraceFileAt(1, path, sha256(trace).toUpperCase())).resolves.toMatchObject({
+      path: `project-1/blobs/${sha256(trace)}.zip`,
+    });
+  });
+
+  test('stores a file that is not a ZIP as it is, and refuses one over the ZIP limits', async () => {
+    const notZip = Buffer.from('not a zip, but stored all the same');
+    const blob = await upsertTraceFileAt(1, onDisk(notZip));
+    expect(storageFiles.get(blob.path)).toEqual(notZip);
+    const [row] = await db.select().from(schema.traceBlobs);
+    expect(row).toMatchObject({ size: notZip.length, storedSize: notZip.length });
+
+    writes.length = 0;
+    const trace = buildTrace({ c1Before: png(4), c1After: png(5), c2Before: png(6) });
+    const eocd = trace.length - 22;
+    const entries = trace.readUInt16LE(eocd + 10);
+    let pos = trace.readUInt32LE(eocd + 16);
+    for (let i = 0; i < entries; i++) {
+      trace.writeUInt32LE(0, pos + 42);
+      pos += 46 + trace.readUInt16LE(pos + 28) + trace.readUInt16LE(pos + 30) + trace.readUInt16LE(pos + 32);
+    }
+    await expect(upsertTraceFileAt(1, onDisk(trace))).rejects.toThrow(ZipLimitError);
+    expect(writes).toHaveLength(0);
+  });
 });
 
 describe('upsertTraceBlob pools screenshots and screencast frames', () => {

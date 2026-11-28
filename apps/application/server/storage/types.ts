@@ -14,6 +14,14 @@ export interface StorageAdapter {
   writeFile(path: string, data: Buffer): Promise<void>;
 
   /**
+   * Write a file to storage from a file on this server's disk, never holding it whole in memory
+   * @param path - Relative path where the file should be stored
+   * @param sourcePath - Absolute path of the file to store, which stays where it is
+   * @returns Promise that resolves when the file is written
+   */
+  writeFileFrom(path: string, sourcePath: string): Promise<void>;
+
+  /**
    * Read a file from storage
    * @param path - Relative path of the file to read
    * @returns Promise that resolves with the file content as Buffer

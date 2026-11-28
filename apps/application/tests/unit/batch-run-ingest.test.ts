@@ -21,6 +21,8 @@ vi.mock('../../server/storage', () => ({
   getStorage: () => ({
     mkdir: async () => {},
     writeFile: async (path: string, data: Buffer) => void state.stored.set(path, data),
+    writeFileFrom: async (path: string, source: string) =>
+      void state.stored.set(path, await (await import('node:fs/promises')).readFile(source)),
     deleteFile: async (path: string) => void state.stored.delete(path),
     deleteDirectory: async (path: string) => {
       for (const key of [...state.stored.keys()]) if (key.startsWith(`${path}/`)) state.stored.delete(key);

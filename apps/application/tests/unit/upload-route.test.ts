@@ -28,12 +28,16 @@ vi.mock('../../server/storage', () => ({
       if (path.endsWith('unwritable.js')) throw new Error(`503 Slow Down: ${path}`);
       state.written.set(path, data);
     },
+    writeFileFrom: async (path: string, source: string) => {
+      if (path.endsWith('unwritable.js')) throw new Error(`503 Slow Down: ${path}`);
+      state.written.set(path, await (await import('node:fs/promises')).readFile(source));
+    },
     deleteDirectory: async (path: string) => {
       for (const key of [...state.written.keys()]) if (key.startsWith(`${path}/`)) state.written.delete(key);
     },
   }),
 }));
-vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceBlob: vi.fn(), findTraceBlob: vi.fn() }));
+vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceFileAt: vi.fn(), findTraceBlob: vi.fn() }));
 vi.mock('../../server/utils/trace-fallback-evidence', () => ({ deriveTraceEvidence: vi.fn() }));
 vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSideEffects: vi.fn(async () => {}) }));
 

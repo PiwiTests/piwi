@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { forEachLimited, uploadDirectory } from '../../server/utils/storage-helpers';
@@ -52,11 +52,11 @@ describe('uploadDirectory', () => {
     let inFlight = 0;
     let peak = 0;
     const storage = {
-      async writeFile(path: string, data: Buffer) {
+      async writeFileFrom(path: string, source: string) {
         inFlight++;
         peak = Math.max(peak, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 2));
-        written.set(path, data.length);
+        written.set(path, statSync(source).size);
         inFlight--;
       },
     } as unknown as StorageAdapter;

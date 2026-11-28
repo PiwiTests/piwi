@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'fs/promises';
+import { readdir, stat } from 'fs/promises';
 import { join, posix, relative, sep } from 'path';
 import type { StorageAdapter } from '../storage/types';
 
@@ -46,9 +46,9 @@ export async function uploadDirectory(
 
   let total = 0;
   await forEachLimited(files, UPLOAD_CONCURRENCY, async (localPath) => {
-    const content = await readFile(localPath);
-    await storage.writeFile(posix.join(storagePrefix, ...relative(localDir, localPath).split(sep)), content);
-    total += content.length;
+    const { size } = await stat(localPath);
+    await storage.writeFileFrom(posix.join(storagePrefix, ...relative(localDir, localPath).split(sep)), localPath);
+    total += size;
   });
   return total;
 }

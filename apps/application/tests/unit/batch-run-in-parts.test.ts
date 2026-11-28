@@ -22,6 +22,8 @@ vi.mock('../../server/storage', () => ({
   getStorage: () => ({
     mkdir: async () => {},
     writeFile: async (path: string, data: Buffer) => void state.written.set(path, data),
+    writeFileFrom: async (path: string, source: string) =>
+      void state.written.set(path, await (await import('node:fs/promises')).readFile(source)),
   }),
 }));
 vi.mock('../../server/utils/trace-fallback-evidence', () => ({ deriveTraceEvidence: vi.fn() }));

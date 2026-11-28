@@ -1,7 +1,19 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
-import { buildZip, decompressEntry, parseZip, parseZipDirectory, ZipLimitError } from '../../server/utils/trace-zip';
+import {
+  buildZip,
+  decompressEntry,
+  decompressFileEntry,
+  openZipFile,
+  parseZip,
+  parseZipDirectory,
+  readZipDirectory,
+  ZipLimitError,
+} from '../../server/utils/trace-zip';
 import { parseZipSync } from '../utils/zip';
 
 describe('buildZip / parseZipSync round-trip', () => {
@@ -191,5 +203,152 @@ describe('ZIP limits', () => {
     expect(meta!.method).toBe(8);
     await expect(decompressEntry(zip, meta!)).resolves.toHaveLength(64 * 1024);
     await expect(decompressEntry(zip, { ...meta!, uncompressedSize: 1024 })).rejects.toThrow();
+  });
+});
+
+describe('a ZIP read from a file, by position', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'piwi-zip-file-'));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  let count = 0;
+  /** The archive in a file of its own, opened for reading by position. */
+  async function onDisk(zip: Buffer) {
+    const path = join(dir, `${++count}.zip`);
+    writeFileSync(path, zip);
+    return openZipFile(path);
+  }
+
+  test('reads the directory and every entry as the in-memory reader does', async () => {
+    const entries = [
+      { name: 'trace.trace', data: Buffer.from('{"type":"context"}\n'.repeat(500)) },
+      { name: 'resources/abc.bin', data: randomBytes(70_000) },
+      { name: 'empty.txt', data: Buffer.alloc(0) },
+    ];
+    for (const compress of [false, true]) {
+      const zip = buildZip(entries, { compress });
+      const file = await onDisk(zip);
+      try {
+        const metas = await readZipDirectory(file);
+        expect(metas).toEqual(parseZipDirectory(zip));
+        for (const meta of metas) {
+          expect((await decompressFileEntry(file, meta)).equals(await decompressEntry(zip, meta))).toBe(true);
+        }
+      } finally {
+        await file.close();
+      }
+    }
+  });
+
+  test('refuses what the in-memory reader refuses', async () => {
+    const budget = buildZip([
+      { name: 'a.trace', data: Buffer.alloc(600, 0x61) },
+      { name: 'b.trace', data: Buffer.alloc(600, 0x62) },
+    ]);
+    const cases: [Buffer, { maxInflatedBytes?: number }, unknown][] = [
+      [sharedBytesZip(3, Buffer.alloc(1024, 0x61)), {}, ZipLimitError],
+      [budget, { maxInflatedBytes: 1000 }, ZipLimitError],
+      [Buffer.from('definitely not a zip'), {}, /EOCD not found/],
+      [buildZip([{ name: 'a.txt', data: Buffer.from('hello world') }]).subarray(0, 20), {}, /EOCD not found/],
+    ];
+    for (const [zip, options, refusal] of cases) {
+      expect(() => parseZipDirectory(zip, options)).toThrow(refusal as never);
+      const file = await onDisk(zip);
+      await expect(readZipDirectory(file, options)).rejects.toThrow(refusal as never);
+      await file.close();
+    }
+  });
+
+  test('never reads an entry past the file, nor a central directory over 16 MiB', async () => {
+    const zip = buildZip([{ name: 'a.txt', data: Buffer.from('AAAA') }]);
+    const file = await onDisk(zip);
+    const [meta] = await readZipDirectory(file);
+    await expect(decompressFileEntry(file, { ...meta!, compressedSize: 0xfffffff0 })).rejects.toThrow(/Truncated/);
+    await file.close();
+
+    // An end-of-directory record that says the directory starts at the file's first byte, 17 MiB before it.
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(1, 10);
+    const large = await onDisk(Buffer.concat([Buffer.alloc(17 * 1024 * 1024), eocd]));
+    await expect(readZipDirectory(large)).rejects.toThrow(/central directory too large/);
+    await large.close();
+  });
+});
+
+describe('the checks both readers make as they read', () => {
+  test('refuses an entry over the budget before reading a broken record after it', async () => {
+    const zip = buildZip([
+      { name: 'a.trace', data: Buffer.alloc(600, 0x61) },
+      { name: 'b.trace', data: Buffer.alloc(600, 0x62) },
+    ]);
+    // Break the second central-directory record's signature.
+    const eocd = zip.length - 22;
+    const first = zip.readUInt32LE(eocd + 16);
+    zip.writeUInt32LE(0, first + 46 + zip.readUInt16LE(first + 28));
+    expect(() => parseZipDirectory(zip, { maxInflatedBytes: 500 })).toThrow(ZipLimitError);
+    expect(() => parseZipDirectory(zip)).toThrow(/Invalid CD entry signature/);
+    const dir = mkdtempSync(join(tmpdir(), 'piwi-zip-order-'));
+    try {
+      writeFileSync(join(dir, 'a.zip'), zip);
+      const file = await openZipFile(join(dir, 'a.zip'));
+      await expect(readZipDirectory(file, { maxInflatedBytes: 500 })).rejects.toThrow(ZipLimitError);
+      await file.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('never reads more deflated bytes than the size an entry declares allows', async () => {
+    // One byte declared, 300 KiB of deflated data claimed for it.
+    const zip = buildZip([{ name: 'a.trace', data: randomBytes(300 * 1024) }], { compress: true });
+    const [stored] = parseZipDirectory(zip);
+    const meta = { ...stored!, method: 8, uncompressedSize: 1 };
+    await expect(decompressEntry(zip, meta)).rejects.toThrow(/larger than its declared size allows/);
+    const dir = mkdtempSync(join(tmpdir(), 'piwi-zip-bound-'));
+    try {
+      writeFileSync(join(dir, 'a.zip'), zip);
+      const file = await openZipFile(join(dir, 'a.zip'));
+      await expect(decompressFileEntry(file, meta)).rejects.toThrow(/larger than its declared size allows/);
+      await file.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    // Incompressible data deflates to a little more than its size, which is allowed.
+    const incompressible = randomBytes(200_000);
+    const deflated = deflateRawSync(incompressible);
+    expect(deflated.length).toBeGreaterThan(incompressible.length);
+    const one = buildZip([{ name: 'b.bin', data: incompressible }]);
+    const [entry] = parseZipDirectory(one);
+    const spliced = Buffer.concat([
+      one.subarray(0, entry!.dataStart),
+      deflated,
+      one.subarray(entry!.dataStart + entry!.compressedSize),
+    ]);
+    // Rewrite the central directory as a deflated entry of that size.
+    const cd = spliced.readUInt32LE(spliced.length - 22 + 16) + (deflated.length - entry!.compressedSize);
+    spliced.writeUInt32LE(cd, spliced.length - 22 + 16);
+    spliced.writeUInt16LE(8, cd + 10);
+    spliced.writeUInt32LE(deflated.length, cd + 20);
+    const [rewritten] = parseZipDirectory(spliced);
+    expect((await decompressEntry(spliced, rewritten!)).equals(incompressible)).toBe(true);
+  });
+
+  test('reads thousands of small entries from a file, each as it is, also at once', async () => {
+    const entries = Array.from({ length: 5000 }, (_, i) => ({ name: `screencast/${i}.jpeg`, data: randomBytes(64) }));
+    const zip = buildZip(entries);
+    const dir = mkdtempSync(join(tmpdir(), 'piwi-zip-ahead-'));
+    try {
+      writeFileSync(join(dir, 'a.zip'), zip);
+      const file = await openZipFile(join(dir, 'a.zip'));
+      const metas = await readZipDirectory(file);
+      const read = await Promise.all(metas.map((meta) => decompressFileEntry(file, meta)));
+      expect(read.map((data) => data.toString('hex'))).toEqual(entries.map((e) => e.data.toString('hex')));
+      await file.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

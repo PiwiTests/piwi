@@ -304,6 +304,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
       { text: 'Reporter options', link: '/reference/reporter-options' },
       { text: 'Coverage cost', link: '/reference/coverage-cost' },
+      { text: 'S3 permissions', link: '/reference/s3-permissions' },
     ],
   },
   {

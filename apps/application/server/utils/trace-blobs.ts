@@ -5,8 +5,17 @@ import { eq, and, inArray, gt, isNull } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { StorageAdapter } from '../storage/types';
 import { createHash } from 'node:crypto';
-import { parseZipDirectory, decompressEntry, buildZip, ZipLimitError } from './trace-zip';
-import type { ZipEntry, ZipEntryMeta } from './trace-zip';
+import { createReadStream } from 'node:fs';
+import {
+  parseZipDirectory,
+  decompressEntry,
+  decompressFileEntry,
+  buildZip,
+  openZipFile,
+  readZipDirectory,
+  ZipLimitError,
+} from './trace-zip';
+import type { ZipEntry, ZipEntryMeta, ZipFile } from './trace-zip';
 import { safeStorageSegment } from './sanitize-filename';
 import { compressResource } from './resource-compression';
 import {
@@ -162,26 +171,90 @@ export async function upsertTraceBlob(
   hash: string,
   data: Buffer,
 ): Promise<{ id: number; path: string; size: number }> {
-  if (sha256(data) !== hash.toLowerCase()) {
-    throw apiError({ statusCode: 400, message: 'The trace does not match its SHA-256 hash' });
-  }
-  return upsertHashedTraceBlob(projectId, hash, data);
+  if (sha256(data) !== hash.toLowerCase()) throw traceHashMismatch();
+  return upsertHashedTraceBlob(projectId, hash, bufferTrace(data));
 }
 
-/** Store a trace under the SHA-256 of its bytes, as {@link upsertTraceBlob} does. */
-export function upsertTraceFile(projectId: number, data: Buffer): Promise<{ id: number; path: string; size: number }> {
-  return upsertHashedTraceBlob(projectId, sha256(data), data);
+/**
+ * {@link upsertTraceBlob} for a trace in a file of this server's disk (an upload streamed to a temp file), never held
+ * whole in memory: it is hashed as a stream, its ZIP read by position, and stored as is from the file. Without `hash`,
+ * the trace is stored under the SHA-256 of its bytes.
+ */
+export async function upsertTraceFileAt(
+  projectId: number,
+  path: string,
+  hash?: string,
+): Promise<{ id: number; path: string; size: number }> {
+  const own = await sha256File(path);
+  if (hash !== undefined && own.hash !== hash.toLowerCase()) throw traceHashMismatch();
+  const trace = fileTrace(path, own.size);
+  try {
+    return await upsertHashedTraceBlob(projectId, own.hash, trace);
+  } finally {
+    await trace.close();
+  }
 }
+
+const traceHashMismatch = () => apiError({ statusCode: 400, message: 'The trace does not match its SHA-256 hash' });
 
 function sha256(data: Buffer): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
-/** The work of {@link upsertTraceBlob} once `hash` is known to be the SHA-256 of `data`. */
+async function sha256File(path: string): Promise<{ hash: string; size: number }> {
+  const hash = createHash('sha256');
+  let size = 0;
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk as Buffer);
+    size += (chunk as Buffer).length;
+  }
+  return { hash: hash.digest('hex'), size };
+}
+
+/** A failure to read the trace's file, which a corrupt entry is not: it is never skipped as one. */
+const isReadFailure = (error: unknown) => typeof (error as { syscall?: unknown } | null)?.syscall === 'string';
+
+/** A trace being stored: its size, its ZIP read entry by entry, and a way to store its bytes as they are. */
+interface TraceSource {
+  size: number;
+  directory(): Promise<ZipEntryMeta[]>;
+  entry(meta: ZipEntryMeta): Promise<Buffer>;
+  storeAsIs(storage: StorageAdapter, path: string): Promise<void>;
+}
+
+function bufferTrace(data: Buffer): TraceSource {
+  return {
+    size: data.length,
+    directory: async () => parseZipDirectory(data),
+    entry: (meta) => decompressEntry(data, meta),
+    storeAsIs: (storage, path) => storage.writeFile(path, data),
+  };
+}
+
+/** A trace in a file of `size` bytes, opened for reading by position only once its ZIP is asked for. */
+function fileTrace(path: string, size: number): TraceSource & { close(): Promise<void> } {
+  let opened: Promise<ZipFile> | null = null;
+  const file = () => (opened ??= openZipFile(path));
+  return {
+    size,
+    directory: async () => readZipDirectory(await file()),
+    entry: async (meta) => decompressFileEntry(await file(), meta),
+    storeAsIs: (storage, target) => storage.writeFileFrom(target, path),
+    close: async () => {
+      if (opened)
+        await opened.then(
+          (zip) => zip.close(),
+          () => {},
+        );
+    },
+  };
+}
+
+/** The work of {@link upsertTraceBlob} once `hash` is known to be the SHA-256 of the trace's bytes. */
 async function upsertHashedTraceBlob(
   projectId: number,
   hash: string,
-  data: Buffer,
+  trace: TraceSource,
 ): Promise<{ id: number; path: string; size: number }> {
   const db = await getDatabase();
 
@@ -195,7 +268,7 @@ async function upsertHashedTraceBlob(
     return { id: existing[0].id, path: existing[0].path, size: existing[0].size };
   }
 
-  return withTracePoolIngest(projectId, () => storeTraceBlob(db, projectId, hash, data));
+  return withTracePoolIngest(projectId, () => storeTraceBlob(db, projectId, hash, trace));
 }
 
 /** The writing half of {@link upsertTraceBlob}, run inside the project's pool guard. */
@@ -203,21 +276,22 @@ async function storeTraceBlob(
   db: DbClient,
   projectId: number,
   hash: string,
-  data: Buffer,
+  trace: TraceSource,
 ): Promise<{ id: number; path: string; size: number }> {
   const storage = getStorage();
   const blobPath = `project-${projectId}/blobs/${hash}.zip`;
 
   await storage.mkdir(`project-${projectId}/blobs`);
 
-  let dataToStore = data;
+  // The slim ZIP stored in place of the trace; null stores the trace as it is.
+  let slim: Buffer | null = null;
   // The manifest written next to the slim ZIP; its every pool name gets a join-table link.
   let manifest: TraceBlobManifest = { resources: [], pooledEntries: {} };
   let manifestJson: Buffer | null = null;
 
   try {
     // 1. Read central directory only — zero decompression at this stage
-    const directory = parseZipDirectory(data);
+    const directory = await trace.directory();
     // Resource entry names come from the untrusted ZIP central directory.
     // Reduce each to a single safe path segment so a crafted name such as
     // `resources/../../evil` can never be written outside the project prefix,
@@ -253,7 +327,7 @@ async function storeTraceBlob(
           pooledResources.add(name);
           continue;
         }
-        const resource = await decompressEntry(data, meta);
+        const resource = await trace.entry(meta);
         if (!isContentAddressedResource(name, resource)) {
           inlineEntries.push({ name: meta.name, data: resource });
           continue;
@@ -287,8 +361,9 @@ async function storeTraceBlob(
       for (const meta of pooledMetas) {
         let entryData: Buffer;
         try {
-          entryData = await decompressEntry(data, meta);
-        } catch {
+          entryData = await trace.entry(meta);
+        } catch (error) {
+          if (isReadFailure(error)) throw error;
           continue; // Skip corrupt entries, as the slim ZIP does
         }
         const poolName = pooledTraceEntryName(meta.name, entryData);
@@ -305,8 +380,9 @@ async function storeTraceBlob(
       let eventEntries: ZipEntry[] = inlineEntries;
       for (const meta of eventMetas) {
         try {
-          eventEntries.push({ name: meta.name, data: await decompressEntry(data, meta) });
-        } catch {
+          eventEntries.push({ name: meta.name, data: await trace.entry(meta) });
+        } catch (error) {
+          if (isReadFailure(error)) throw error;
           // Skip corrupt entries
         }
       }
@@ -319,10 +395,10 @@ async function storeTraceBlob(
       // 5. The manifest
       manifest = { resources: resourceNames, pooledEntries };
       manifestJson = Buffer.from(JSON.stringify(manifest), 'utf8');
-      dataToStore = slimZip;
+      slim = slimZip;
       await storage.writeFile(traceManifestPath(blobPath), manifestJson);
 
-      const savedBytes = data.length - slimZip.length;
+      const savedBytes = trace.size - slimZip.length;
       console.log(
         `[TraceBlob] ${resourceNames.length} resources and ${Object.keys(pooledEntries).length} screenshots` +
           ` and screencast frames pooled for project ${projectId} (${written} new),` +
@@ -333,12 +409,13 @@ async function storeTraceBlob(
     if (err instanceof ZipLimitError) throw err;
     // Malformed or unsupported ZIP — store as-is, deduplication skipped
     console.warn(`[TraceBlob] Could not extract resources from trace: ${err}`);
-    dataToStore = data;
+    slim = null;
     manifest = { resources: [], pooledEntries: {} };
     manifestJson = null;
   }
 
-  await storage.writeFile(blobPath, dataToStore);
+  if (slim) await storage.writeFile(blobPath, slim);
+  else await trace.storeAsIs(storage, blobPath);
 
   await db
     .insert(traceBlobs)
@@ -346,8 +423,8 @@ async function storeTraceBlob(
       projectId,
       hash,
       path: blobPath,
-      size: data.length, // the uploaded trace's size, which is what users download
-      storedSize: dataToStore.length + (manifestJson?.length ?? 0),
+      size: trace.size, // the uploaded trace's size, which is what users download
+      storedSize: (slim?.length ?? trace.size) + (manifestJson?.length ?? 0),
     })
     .onConflictDoNothing();
 

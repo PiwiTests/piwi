@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { getDatabase, type DbClient } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
 import { eq, and, desc, isNull } from 'drizzle-orm';
@@ -6,7 +5,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, matchesStreamToken, readShardTokensFromMeta } from '../../../utils/shard-tokens';
-import { upsertTraceBlob, upsertTraceFile, findTraceBlob } from '../../../utils/trace-blobs';
+import { upsertTraceFileAt, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../../utils/ingest-health';
 import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
@@ -290,12 +289,7 @@ async function handleCaseFiles(
     try {
       let blob: { id: number; path: string; size: number } | null;
       if (traceStreamed) {
-        // Read the streamed trace into memory only now, for the one call that
-        // parses it; the buffer is released as soon as the blob is stored.
-        const data = await readFile(traceStreamed.path);
-        blob = traceHash
-          ? await upsertTraceBlob(testRun.projectId, traceHash, data)
-          : await upsertTraceFile(testRun.projectId, data);
+        blob = await upsertTraceFileAt(testRun.projectId, traceStreamed.path, traceHash);
       } else {
         // Reporter said this blob already exists on the server — look it up
         blob = await findTraceBlob(testRun.projectId, traceHash!);
@@ -347,7 +341,7 @@ async function handleCaseFiles(
       if (existingPaths.has(storagePath)) continue;
 
       try {
-        await storage.writeFile(storagePath, await readFile(fileEntry.path));
+        await storage.writeFileFrom(storagePath, fileEntry.path);
         await db.insert(files).values({
           testRunsCaseId: runCase.id,
           testRunId: id,
