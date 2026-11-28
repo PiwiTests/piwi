@@ -10,7 +10,9 @@ import {
   type InstanceLimits,
   type StoredOperatorLimits,
 } from '#shared/operator-limits';
-import { getDatabase } from '../database';
+import { sql, type SQL } from 'drizzle-orm';
+import { getDatabase, getDialect } from '../database';
+import { appSettings } from '../database/schema';
 import { apiError } from './api-error';
 import { getAppSetting, setAppSetting } from './app-settings';
 
@@ -62,12 +64,46 @@ export async function loadOperatorLimits(
   return reading;
 }
 
-/** Stores the operator's limits and holds them at once. */
-export async function writeOperatorLimits(db: DrizzleDB, limits: StoredOperatorLimits): Promise<void> {
-  await setAppSetting(db, LIMITS_KEY, limits);
+/** Holds limits this process just stored, ahead of any read that started before. */
+function holdWritten(limits: StoredOperatorLimits): void {
   writes++;
   holdOperatorLimits(limits);
   readAt = Date.now();
+}
+
+/** Stores the operator's limits and holds them at once. */
+export async function writeOperatorLimits(db: DrizzleDB, limits: StoredOperatorLimits): Promise<void> {
+  await setAppSetting(db, LIMITS_KEY, limits);
+  holdWritten(limits);
+}
+
+/**
+ * Reads the stored limits, applies `change` and stores the result in one transaction, then holds it. On PostgreSQL the
+ * row is locked before it is read, so changes made at once apply one after the other and each keeps the fields the
+ * others set; on SQLite the transaction holds the write lock from its start. Answers the limits stored.
+ */
+export async function updateOperatorLimits(
+  db: DrizzleDB,
+  change: (stored: StoredOperatorLimits) => StoredOperatorLimits,
+): Promise<StoredOperatorLimits> {
+  const next = await db.transaction(async (tx) => {
+    const client = tx as unknown as DrizzleDB;
+    if (getDialect() === 'postgres') {
+      await client
+        .insert(appSettings)
+        .values({ key: LIMITS_KEY, value: {}, updatedAt: new Date() })
+        .onConflictDoNothing();
+      // The client is typed as SQLite's; on PostgreSQL its transaction runs raw SQL with `execute`.
+      await (tx as unknown as { execute(query: SQL): Promise<unknown> }).execute(
+        sql`SELECT ${appSettings.key} FROM ${appSettings} WHERE ${appSettings.key} = ${LIMITS_KEY} FOR UPDATE`,
+      );
+    }
+    const limits = change(readStoredOperatorLimits(await getAppSetting<unknown>(client, LIMITS_KEY)));
+    await setAppSetting(client, LIMITS_KEY, limits);
+    return limits;
+  });
+  holdWritten(next);
+  return next;
 }
 
 /** Every limit as it applies now, from the held operator's limits and the environment. */

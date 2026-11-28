@@ -26,7 +26,13 @@ import {
 import { reportedNotKept } from '#shared/ingest-health';
 import { apiError } from '../../server/utils/api-error';
 import * as schema from '../../server/database/schema.sqlite';
-import { openTempDb, type TempDb } from './temp-db';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import { configureSqliteConnections, sqliteClientConfig } from '../../server/database/sqlite-connections';
+import { migrateToLatest, openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 
@@ -239,6 +245,20 @@ describe('a lowered retention', () => {
     });
   });
 
+  test('sent again, or raised but still lower than the sweep keeps, keeps its wait and when it ends', () => {
+    const waiting = applyOperatorLimits({ retentionDays: 90 }, { retentionDays: 30 }, {}, NOW);
+    expect(applyOperatorLimits(waiting, { retentionDays: 30 }, {}, later(5))).toEqual(waiting);
+    expect(applyOperatorLimits(waiting, { retentionDays: 60 }, {}, later(5))).toEqual({
+      retentionDays: 60,
+      retentionKept: waiting.retentionKept,
+    });
+    const env = { PIWI_RETENTION_DAYS: '20' };
+    const fromEnv = applyOperatorLimits({ retentionDays: 90 }, { retentionDays: 10 }, env, NOW);
+    expect(applyOperatorLimits(fromEnv, { retentionDays: null }, env, later(5)).retentionKept).toEqual(
+      fromEnv.retentionKept,
+    );
+  });
+
   test('leaves the wait alone when another limit changes, and drops one that ended', () => {
     const waiting = applyOperatorLimits({ retentionDays: 90 }, { retentionDays: 30 }, {}, NOW);
     expect(applyOperatorLimits(waiting, { readOnly: true }, {}, later(1)).retentionKept).toEqual(waiting.retentionKept);
@@ -360,6 +380,35 @@ describe('GET and PUT /api/operator/limits', () => {
     const waits = Date.parse(answer.limits.retentionDays.pending.appliesAt) - Date.now();
     expect(Math.abs(waits - 14 * DAY_MS)).toBeLessThan(60_000);
     expect(retentionDays()).toBe(30);
+  });
+
+  test('keep each field of changes sent at once', async () => {
+    // A client set up as the server's, whose writes wait for the transaction open beside them.
+    const dir = mkdtempSync(join(tmpdir(), 'piwi-operator-limits-'));
+    const client = createClient(sqliteClientConfig(`file:${join(dir, 'piwi.db')}`));
+    try {
+      await configureSqliteConnections(client);
+      const server = drizzle(client, { schema });
+      await migrateToLatest(server);
+      state.db = server;
+      await Promise.all([
+        putLimits(request(bearer, { storageQuotaBytes: 8 * MIB })),
+        putLimits(request(bearer, { importMaxBytes: 2 * MIB })),
+        putLimits(request(bearer, { readOnly: true })),
+      ]);
+      const [row] = await server.select().from(schema.appSettings).where(eq(schema.appSettings.key, 'operator_limits'));
+      expect(row?.value).toEqual({ storageQuotaBytes: 8 * MIB, importMaxBytes: 2 * MIB, readOnly: true });
+    } finally {
+      client.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('keep a lowered retention’s wait when the same retention is sent again', async () => {
+    vi.stubEnv('PIWI_RETENTION_DAYS', '30');
+    const first = await putLimits(request(bearer, { retentionDays: 7 }));
+    const again = await putLimits(request(bearer, { retentionDays: 7 }));
+    expect(again.limits.retentionDays.pending.appliesAt).toBe(first.limits.retentionDays.pending.appliesAt);
   });
 
   test('read the limits a second process wrote once the held ones are older than the TTL', async () => {

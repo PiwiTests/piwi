@@ -215,7 +215,9 @@ function keptSpan(days: number | null): number {
  * The stored limits once `input` is applied at `now`: a number or boolean sets a limit, `null` clears it. A retention
  * that keeps fewer days than the sweep keeps now, the environment's included once cleared to it, waits
  * `RETENTION_LOWERING_WAIT_DAYS`, the sweep keeping its days until then; one that keeps as many or more applies at once
- * and ends any wait. A wait that ended is dropped.
+ * and ends any wait. While a lowered retention waits, a retention that keeps as many days as it or more, but fewer than
+ * the sweep keeps, keeps that wait and its end; only one that keeps still fewer days waits again from `now`. A wait
+ * that ended is dropped.
  */
 export function applyOperatorLimits(
   stored: StoredOperatorLimits,
@@ -236,8 +238,13 @@ export function applyOperatorLimits(
     delete next.retentionKept;
     const after = retentionTarget(next, env);
     if (keptSpan(after.value) < keptSpan(before.value)) {
-      const until = new Date(now.getTime() + RETENTION_LOWERING_WAIT_DAYS * DAY_MS).toISOString();
-      next.retentionKept = { days: before.value, source: before.source, until };
+      const pending = before.pending;
+      if (pending && stored.retentionKept && keptSpan(after.value) >= keptSpan(pending.value)) {
+        next.retentionKept = stored.retentionKept;
+      } else {
+        const until = new Date(now.getTime() + RETENTION_LOWERING_WAIT_DAYS * DAY_MS).toISOString();
+        next.retentionKept = { days: before.value, source: before.source, until };
+      }
     }
   } else if (next.retentionKept && Date.parse(next.retentionKept.until) <= now.getTime()) {
     delete next.retentionKept;
