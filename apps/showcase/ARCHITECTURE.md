@@ -132,7 +132,8 @@ The assertions a check skips, each only once it saw the bug's state. None does: 
   while the master shows it.
 
 Each beat is held (`hooks.ended`) until its lines have been read, one after another from its start, each for its length
-at 15 characters a second plus 0.4 s (`lineMs`), and its last action has shown for `SETTLE_MS` (1.2 s). These holds are
+at 15 characters a second plus 0.4 s (`lineMs`), or with `--voice` its reading's length plus 0.4 s (`spokenMs`), and
+its last action has shown for `SETTLE_MS` (1.2 s). These holds are
 the take's, never a beat's: a beat still waits on state. `finish` stops the capture (ffmpeg's `q`, once its encoder has
 written up to the stop's time: `q` drops the grabbed frames still waiting) and writes the take log; a beat that fails
 ends the take as in check mode, the master and the log kept beside the evidence. The take tells the frames the capture
@@ -156,7 +157,18 @@ an error, or a master holding fewer than 95 % of the frames of the time since it
 | `gestures` | the gestures' log (`t`, `act`, `beat`, `kind`, `window`, `box`, `point`, and the `key`, `text`, `title`, or a note's `what` and an agent's `call`)                                                                                     |
 | `raises`   | `{ t, up, window }`: the layer raised (`dashboard` or `tiles`) and the window it was raised for                                                                                                                                        |
 | `presence` | `{ t, window, open }`: the test's browser's window coming up or going                                                                                                                                                                  |
+| `voice`    | with `--voice`: the voice's `name`, the folder of its readings (`dir`, in the take's results) and each line's reading by its text (`readings`: `file`, `ms`)                                                                           |
 | `outcomes` | each beat's outcome, as `outcomes.json`                                                                                                                                                                                                |
+
+### The voice
+
+`--voice` (`lib/voice.mjs`) has the voice read every line of the story before the take, lines first: Piper, a local
+neural voice run as a program of its own (`SHOWCASE_PIPER`, else `piper` on the PATH; `pip install piper-tts`), with
+`en_US-ljspeech-high`, trained on the LJ Speech recordings (public domain), from the piper-voices repository (MIT) at a
+fixed revision (`VOICE`), downloaded once into `~/.cache/piwi-showcase/voices` (`SHOWCASE_VOICE_CACHE`) and checked by
+its SHA-256. Each reading is a WAV in `results/voice/`, named by a hash of the voice and the line, its length read from
+its header (`wavMs`); a beat holds for those lengths. The whole story's 31 lines read in about a minute on four cores,
+113 s spoken against the 110 s their reading time estimates.
 
 ## The cut
 
@@ -215,8 +227,10 @@ which ffmpeg makes the outputs; the subtitles are the stage's plates (PNG with t
 
 | Output (in `cut/`)                                   | What it is                                                                                                     |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in                                         |
-| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34)                                                                                         |
+| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in, its voice in AAC when voiced           |
+| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34), its voice in Opus                                                                      |
+| `piwi-showcase-voice.m4a`                            | the voice track, when the take was voiced or `--voice-track` was given                                         |
+| `piwi-showcase.cues.csv`                             | the cue sheet: each line's start and end, its beat and its text, for a person who reads them                   |
 | `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                     |
 | `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the parts as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">`       |
 | `teaser.mp4`, `teaser.webm`                          | the story from the red run to the green test (`TEASER_BEATS`), about 45 s, subtitled, 1920 × 1080, within 7 MB |
@@ -224,6 +238,11 @@ which ffmpeg makes the outputs; the subtitles are the stage's plates (PNG with t
 | `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                             |
 | `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card but the parts', at the middle of its lines                      |
 | `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                             |
+
+The voice track lays each line's reading at its cue, the cards' too (`mixArguments`: `adelay`, `amix`), as long as the
+cut, at −16 LUFS and a true peak of −1.5 dBTP (`loudnorm`, `LOUDNESS`), 48 kHz; a line plays at its own speed, as the
+cut never plays a line fast. `--voice-track <recording>` takes a person's recording of the cue sheet in its place, laid
+from the cut's start. The teaser and the clips stay muted.
 
 The teaser takes each of its beats from its start through its lines and 0.6 s more, grown or shrunk evenly to about
 45 s (`teaserParts`), crossfades them, and is encoded in two passes at about the full cut's bitrate (6 MB), lower until
@@ -237,4 +256,5 @@ Xvfb at 3840 × 2160 in a step of its own, runs the take as the step's own proce
 cancel or the job's timeout reaches it; `xvfb-run` would not pass it on), and uploads `results/` when the take fails
 or is stopped, for two weeks, the master left out. Run by hand with its `film` input, the job installs ffmpeg and the
 stage's fonts (Inter, JetBrains Mono), films the virtual take in place of the check, renders the cut and uploads
-`results/cut/` as `showcase-cut`, for two weeks.
+`results/cut/` as `showcase-cut`, for two weeks. Its `voice` input (on by default) installs Piper in a virtual
+environment outside the checkout, caches the voice by `lib/voice.mjs`'s hash, and films with `--voice`.

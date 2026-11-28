@@ -47,6 +47,9 @@ script, the beats, the take and the cut work is in [`ARCHITECTURE.md`](ARCHITECT
 - **A take that stops keeps what it saw before anything closes**: a failed beat, a set that fails to build, a signal
   (`keepEvidence` in `showcase.mjs`). A new app of the set leaves its log in `results/logs/` and the signals to the
   take (Playwright's `handleSIGINT: false`).
+- **The voice is a recording-backed model whose license allows this use, pinned and checked**: `VOICE` in
+  `lib/voice.mjs` names its revision and each file's SHA-256, and Piper (GPL-3.0) runs as a program of its own, never
+  bundled. A reading is never committed; it lives in the take's results.
 - **The checkout's packages are linked from this repository, never installed** (`linkPackages` in
   `lib/workspace.mjs`): a run tests this commit's reporter.
 - **A label a beat finds by its name is part of the check**: renaming a button or a command title a beat clicks (the
@@ -62,6 +65,7 @@ From `apps/showcase/`, once `npm run reporter:build` (packages/reporter), `npm r
 xvfb-run -a -s "-screen 0 3840x2160x24" npm run showcase:check   # the whole story in check mode
 xvfb-run -a -s "-screen 0 3840x2160x24" node showcase.mjs --until paused --keep   # up to a beat, the set kept
 xvfb-run -a -s "-screen 0 3840x2160x24" npm run showcase:film    # the virtual take: results/master.mkv, take.json
+xvfb-run -a -s "-screen 0 3840x2160x24" npm run showcase:film -- --voice   # the same, each line read by Piper first
 npm run showcase:cut                                             # the cut of results/ into results/cut/
 node showcase.mjs --cut results --beats paused --out results/paused   # one beat's cut, to look at the stage
 node showcase.mjs --lint                                         # the lines alone
@@ -70,6 +74,8 @@ npm run showcase:lint                                            # :fix to fix
 npm run showcase:format                                          # :check to verify only
 ```
 
+- `--voice` needs Piper: `pip install piper-tts` (a virtual environment outside the repository will do), or its path in
+  `SHOWCASE_PIPER`; the voice downloads once into `~/.cache/piwi-showcase/voices` (`SHOWCASE_VOICE_CACHE`).
 - VS Code comes from `apps/vscode/.vscode-test/` (the extension's suites download it there), else
   `SHOWCASE_VSCODE_CACHE`. A take needs ports 3077 (the instance), 4173 (the shop) and 9334 (the test's browser) free.
 - A virtual take and the cut need ffmpeg (x11grab, libx264, libvpx-vp9) and the stage's fonts, Inter and JetBrains

@@ -4,7 +4,7 @@
 // and which master frame it draws from.
 import { CALM, around, calmShots, clamp, fit, union, viewAt, viewRect } from './camera.mjs';
 import { keyCaps, keysAt, pointerAt, ringsAt } from './cursor.mjs';
-import { OUTPUT_FPS, frameCount, lineMs, masterFrame } from './timeline.mjs';
+import { OUTPUT_FPS, frameCount, lineMs, masterFrame, spokenMs } from './timeline.mjs';
 
 /** The stage's frame above each window's content, and the gap it leaves between windows, in master pixels. */
 export const TITLE_BAR = 64;
@@ -239,8 +239,9 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const card = (story) => {
     let at = t;
     const lines = story.lines.map((text) => {
-      const line = { text, start: at, end: at + lineMs(text) / 1000 - CUE_GAP_S };
-      at += lineMs(text) / 1000;
+      const ms = spokenMs(text, log.voice?.readings);
+      const line = { text, start: at, end: at + ms / 1000 - CUE_GAP_S };
+      at += ms / 1000;
       return line;
     });
     const seconds = Math.max(story.seconds ?? 0, at - t);

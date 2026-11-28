@@ -71,7 +71,7 @@ async function warmDashboard(set) {
  * Resolves with what the take plays through: `hooks` for `play`, `raise` for the context, `prepare` for the gestures,
  * and `finish`, which ends the capture and writes the take log.
  */
-export async function startFilming({ set, out, story, scale, width, height, take = 'virtual', say }) {
+export async function startFilming({ set, out, story, scale, width, height, take = 'virtual', voice = null, say }) {
   const log = {
     version: TAKE_VERSION,
     take,
@@ -80,6 +80,8 @@ export async function startFilming({ set, out, story, scale, width, height, take
     beats: [],
     raises: [],
     presence: [],
+    // The voice's reading of each line, read before the take: a beat holds until its lines are spoken.
+    ...(voice && { voice }),
   };
   say('the dashboard’s pages, opened once before the capture');
   await warmDashboard(set).catch((why) =>
@@ -135,7 +137,7 @@ export async function startFilming({ set, out, story, scale, width, height, take
   let current = null;
   const hooks = {
     started(b) {
-      current = { id: b.id, start: Date.now(), lines: scheduleLines(b.lines.en, Date.now()) };
+      current = { id: b.id, start: Date.now(), lines: scheduleLines(b.lines.en, Date.now(), voice?.readings) };
       log.beats.push(current);
     },
     /** The hold: the beat stays until its lines are read, and its last action's result `SETTLE_MS` more. */

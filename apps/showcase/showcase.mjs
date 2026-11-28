@@ -7,8 +7,12 @@
 // lines are read, and the take log the cut reads; the cut renders the video from a take's results.
 //
 //   xvfb-run -a -s "-screen 0 3840x2160x24" node showcase.mjs --mode check [--until <beat>] [--out <dir>] [--keep]
-//   xvfb-run -a -s "-screen 0 3840x2160x24" node showcase.mjs --take virtual [--until <beat>] [--out <dir>]
+//   xvfb-run -a -s "-screen 0 3840x2160x24" node showcase.mjs --take virtual [--voice] [--until <beat>] [--out <dir>]
 //   node showcase.mjs --cut <take's results> [--out <dir>] [--size 1080|2160] [--renderers <n>] [--beats <id,…>]
+//     [--voice-track <recording>]
+//
+// `--voice` has Piper read every line before the take (`lib/voice.mjs`), each beat held while its lines are spoken, and
+// the cut voices the full cut with those readings; `--voice-track` voices it with a person's recording of the cue sheet.
 //
 // It needs the reporter, the Nitro integration, the VS Code extension (with the editor service) and Piwi Picker built,
 // VS Code downloaded into apps/vscode/.vscode-test (the extension's suites download it), and Playwright's Chromium;
@@ -98,7 +102,16 @@ if (cutFrom) {
     });
   }
   try {
-    await cut({ take: takeDir, out, size, renderers, beats: option('--beats')?.split(','), say, signal: stop.signal });
+    await cut({
+      take: takeDir,
+      out,
+      size,
+      renderers,
+      beats: option('--beats')?.split(','),
+      voiceTrack: option('--voice-track'),
+      say,
+      signal: stop.signal,
+    });
   } catch (error) {
     if (stop.signal.aborted) process.exit(128 + os.constants.signals[stop.signal.reason]);
     console.error(error);
@@ -127,6 +140,17 @@ for (const name of Object.keys(process.env)) {
 
 if (mode === 'film') needTools();
 results(out);
+
+// The voice reads every line before the take, so that each beat holds as long as its lines are spoken.
+let voice = null;
+if (mode === 'film' && args.includes('--voice')) {
+  const { VOICE, ensureVoice, readLines } = await import('./lib/voice.mjs');
+  say('Reading the lines with the voice');
+  const model = ensureVoice(undefined, (step) => say(`  ${step}`));
+  const texts = STORY.flatMap((b) => b.lines.en);
+  const readings = readLines(texts, { model, dir: path.join(out, 'voice'), say: (step) => say(`  ${step}`) });
+  voice = { name: VOICE.name, dir: 'voice', readings };
+}
 const logs = path.join(out, 'logs');
 fs.mkdirSync(logs, { recursive: true });
 
@@ -189,6 +213,7 @@ try {
         scale: SCALE,
         width: TILES.dashboard.width * SCALE,
         height: TILES.dashboard.height * SCALE,
+        voice,
         say: (step) => say(`  ${step}`),
       });
     }

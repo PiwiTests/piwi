@@ -1,8 +1,8 @@
 // The cut: renders a take's video from its master and its log. The stage page (`stage/`) draws each output frame from
 // the plan (`cut-plan.mjs`) on the master's frame, which a decoder feeds it in order; Playwright screenshots it and
 // ffmpeg encodes the frames, in time ranges side by side. From that render come the full cut (MP4 and WebM, with and
-// without the subtitles burned in), the teaser, a clip per beat, the posters, the subtitles, the chapters and the
-// contact sheet.
+// without the subtitles burned in, voiced when the take was), the voice track, the teaser, a clip per beat, the
+// posters, the subtitles, the cue sheet, the chapters and the contact sheet.
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
@@ -17,11 +17,13 @@ import {
   chapterTime,
   chaptersText,
   chaptersVtt,
+  cueSheet,
   subtitleRows,
   teaserParts,
   toSrt,
   toVtt,
 } from './timeline.mjs';
+import { mixArguments } from './voice.mjs';
 import { REPO_ROOT } from './workspace.mjs';
 
 const STAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'stage');
@@ -315,10 +317,20 @@ const sizeOf = (file) => fs.statSync(file).size;
 
 /**
  * Cuts the take in `take` (its results folder: `take.json` and its master) into `out`: at `size` (1080 or 2160 lines),
- * its frames rendered by `renderers` stage pages side by side, the beats `beats` alone when given. `say` hears each
- * step. Resolves with the summary it writes to `out/cut.json`.
+ * its frames rendered by `renderers` stage pages side by side, the beats `beats` alone when given. The full cut is
+ * voiced by `voiceTrack` (a person's recording of the cue sheet) when given, else by the voice's readings when the take
+ * was voiced. `say` hears each step. Resolves with the summary it writes to `out/cut.json`.
  */
-export async function cut({ take, out, size = 1080, renderers = 2, beats = null, say = () => {}, signal = null }) {
+export async function cut({
+  take,
+  out,
+  size = 1080,
+  renderers = 2,
+  beats = null,
+  voiceTrack = null,
+  say = () => {},
+  signal = null,
+}) {
   const started = Date.now();
   const log = JSON.parse(fs.readFileSync(path.join(take, 'take.json'), 'utf8'));
   const master = path.join(take, log.master.file);
@@ -341,6 +353,8 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
   fs.writeFileSync(path.join(out, `${NAME}.en.srt`), toSrt(cues));
   fs.writeFileSync(path.join(out, `${NAME}.chapters.txt`), chaptersText(plan.chapters, plan.duration));
   fs.writeFileSync(path.join(out, `${NAME}.chapters.vtt`), chaptersVtt(plan.chapters, plan.duration));
+  // The cue sheet, for a person who reads the lines in place of the voice.
+  fs.writeFileSync(path.join(out, `${NAME}.cues.csv`), cueSheet(plan.cues));
 
   const work = path.join(out, '.work');
   fs.mkdirSync(path.join(work, 'plates'), { recursive: true });
@@ -405,8 +419,8 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
     const input = ['-f', 'concat', '-safe', '0', '-i', stage];
     const withPlates = [...input, '-f', 'concat', '-safe', '0', '-i', platesFile];
     const burn = `[1:v]fps=${OUTPUT_FPS},format=yuva420p[s];[0:v][s]overlay=0:0:eof_action=pass,format=yuv420p[v]`;
-    const h264 = flags('-c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p -movflags +faststart -an');
-    const vp9 = flags('-c:v libvpx-vp9 -crf 34 -b:v 0 -deadline good -cpu-used 4 -row-mt 1 -tile-columns 2 -an');
+    const h264 = flags('-c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p -movflags +faststart');
+    const vp9 = flags('-c:v libvpx-vp9 -crf 34 -b:v 0 -deadline good -cpu-used 4 -row-mt 1 -tile-columns 2');
     const subtitled = ['-filter_complex', burn, '-map', '[v]'];
     const outputs = {};
     const timed = async (name, run) => {
@@ -416,14 +430,51 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
       say(`  ${name}: ${(outputs[name].bytes / 1e6).toFixed(2)} MB in ${outputs[name].seconds} s`);
     };
 
-    // The full cut.
-    await timed(`${NAME}.mp4`, () => ffmpeg([...input, ...h264, path.join(out, `${NAME}.mp4`)]));
-    await timed(`${NAME}-subtitled.mp4`, () =>
-      ffmpeg([...withPlates, ...subtitled, ...h264, path.join(out, `${NAME}-subtitled.mp4`)]),
+    // The voice track: each line's reading at its cue, or a person's recording, at the web's loudness.
+    const readings = log.voice
+      ? plan.cues.map((cue) => ({
+          file: path.join(take, log.voice.dir, log.voice.readings[cue.text].file),
+          start: cue.start,
+        }))
+      : [];
+    const voiced = voiceTrack ? [{ file: path.resolve(voiceTrack), start: 0 }] : readings;
+    const voice = voiced.length ? path.join(out, `${NAME}-voice.m4a`) : null;
+    if (voice) {
+      const mix = mixArguments(voiced, plan.duration);
+      await timed(`${NAME}-voice.m4a`, () =>
+        ffmpeg([...mix, '-map', '[voice]', ...flags('-c:a aac -b:a 160k'), voice]),
+      );
+    }
+    // The full cut: the voice track the input after the frames (and the plates), else no sound.
+    const sound = (index, codec) => (voice ? ['-map', `${index}:a`, ...flags(codec)] : ['-an']);
+    const voiceInput = voice ? ['-i', voice] : [];
+    const aac = '-c:a aac -b:a 160k';
+    const opus = '-c:a libopus -b:a 96k';
+    await timed(`${NAME}.mp4`, () =>
+      ffmpeg([...input, ...voiceInput, '-map', '0:v', ...sound(1, aac), ...h264, path.join(out, `${NAME}.mp4`)]),
     );
-    await timed(`${NAME}.webm`, () => ffmpeg([...input, ...vp9, path.join(out, `${NAME}.webm`)]));
+    await timed(`${NAME}-subtitled.mp4`, () =>
+      ffmpeg([
+        ...withPlates,
+        ...voiceInput,
+        ...subtitled,
+        ...sound(2, aac),
+        ...h264,
+        path.join(out, `${NAME}-subtitled.mp4`),
+      ]),
+    );
+    await timed(`${NAME}.webm`, () =>
+      ffmpeg([...input, ...voiceInput, '-map', '0:v', ...sound(1, opus), ...vp9, path.join(out, `${NAME}.webm`)]),
+    );
     await timed(`${NAME}-subtitled.webm`, () =>
-      ffmpeg([...withPlates, ...subtitled, ...vp9, path.join(out, `${NAME}-subtitled.webm`)]),
+      ffmpeg([
+        ...withPlates,
+        ...voiceInput,
+        ...subtitled,
+        ...sound(2, opus),
+        ...vp9,
+        path.join(out, `${NAME}-subtitled.webm`),
+      ]),
     );
 
     // The teaser: its beats' parts, crossfaded, subtitled, muted, within its size.

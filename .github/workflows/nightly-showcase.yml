@@ -15,6 +15,10 @@ on:
         description: Film the virtual take and render the cut (the video, the teaser, the clips), in place of the check
         type: boolean
         default: false
+      voice:
+        description: Voice the film, Piper reading every line (with film)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -48,6 +52,22 @@ jobs:
       - name: Install ffmpeg and the stage's fonts
         if: ${{ inputs.film }}
         run: sudo apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-jetbrains-mono
+
+      # Piper runs as a program of its own (GPL-3.0), in a virtual environment outside the checkout; its voice is
+      # downloaded once and checked by its SHA-256 (lib/voice.mjs).
+      - name: Install Piper
+        if: ${{ inputs.film && inputs.voice }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/piper"
+          "$RUNNER_TEMP/piper/bin/pip" install --quiet piper-tts==1.8.0
+          echo "SHOWCASE_PIPER=$RUNNER_TEMP/piper/bin/piper" >> "$GITHUB_ENV"
+
+      - name: Cache the voice
+        if: ${{ inputs.film && inputs.voice }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/piwi-showcase/voices
+          key: showcase-voice-${{ hashFiles('apps/showcase/lib/voice.mjs') }}
 
       - name: Build the reporter
         working-directory: packages/reporter
@@ -87,7 +107,7 @@ jobs:
         working-directory: apps/showcase
         env:
           SHOWCASE_CAPTURE_SUDO: '1'
-        run: exec node showcase.mjs --take virtual
+        run: exec node showcase.mjs --take virtual ${{ inputs.voice && '--voice' || '' }}
 
       - name: Render the cut
         if: ${{ inputs.film }}

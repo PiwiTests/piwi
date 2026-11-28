@@ -24,11 +24,23 @@ export function lineMs(text) {
   return Math.round((text.length / READING_CPS + LINE_PAUSE_S) * 1000);
 }
 
-/** The lines of a beat read one after another from `start` (ms): each with its start and length, in ms. */
-export function scheduleLines(lines, start) {
+/**
+ * How long a line holds when the voice read it, `readings` (`lib/voice.mjs`'s, by text) holding its reading: the
+ * reading, then `LINE_PAUSE_S`; else its reading time at `READING_CPS` (`lineMs`). In ms.
+ */
+export function spokenMs(text, readings = null) {
+  const reading = readings?.[text];
+  return reading ? reading.ms + Math.round(LINE_PAUSE_S * 1000) : lineMs(text);
+}
+
+/**
+ * The lines of a beat read one after another from `start` (ms), each as long as `spokenMs` with the voice's
+ * `readings`: each with its start and length, in ms.
+ */
+export function scheduleLines(lines, start, readings = null) {
   let at = start;
   return lines.map((text) => {
-    const line = { text, start: at, ms: lineMs(text) };
+    const line = { text, start: at, ms: spokenMs(text, readings) };
     at += line.ms;
     return line;
   });
@@ -145,6 +157,22 @@ export function chaptersText(chapters, end) {
   return `${foldChapters(chapters, end)
     .map((c) => `${chapterTime(c.start)} ${c.title}`)
     .join('\n')}\n`;
+}
+
+/**
+ * The cue sheet of `cues` (`{ start, end, text, beat }`, in seconds), one a row of CSV after its header: when each line
+ * starts and ends (`M:SS.ss` and seconds), its beat and its text, for a person who reads them in place of the voice.
+ */
+export function cueSheet(cues) {
+  const field = (value) => (/[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+  const clock = (seconds) => {
+    const hundredths = Math.round(seconds * 100);
+    return `${chapterTime(Math.floor(hundredths / 100))}.${String(hundredths % 100).padStart(2, '0')}`;
+  };
+  const rows = cues.map((c) =>
+    [clock(c.start), clock(c.end), c.start.toFixed(2), c.end.toFixed(2), c.beat ?? '', c.text].map(field).join(','),
+  );
+  return `${['start', 'end', 'start_s', 'end_s', 'beat', 'line'].join(',')}\n${rows.join('\n')}\n`;
 }
 
 /** WebVTT chapters (a `<track kind="chapters">`) of `chapters`, each ending where the next starts, the last at `end`. */
