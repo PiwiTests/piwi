@@ -43,30 +43,6 @@ Compress-Archive -Path .data -DestinationPath piwi-backup.zip
 
 If artifacts are in S3, lean on the bucket's own durability and versioning rather than copying `.data/storage/`. Keep the database backup and the storage backup from the *same moment* so they agree.
 
-### Read-only while you copy
-
-An online copy can still catch a run being written. With the token of
-[`PIWI_OPERATOR_TOKEN`](/reference/configuration#authentication), whoever runs the instance can make it read-only
-for the time of the copy: people still sign in, browse and export, every change and upload is refused with 409 and
-`errorCode` `READ_ONLY` (a reporter's too), the scheduled tasks that change data wait, and every page says so in a
-banner.
-
-```bash
-node -e "fetch('http://localhost:3000/api/operator/limits',{method:'PUT',headers:{Authorization:'Bearer your_operator_token','Content-Type':'application/json'},body:JSON.stringify({readOnly:true})}).then(r=>r.text()).then(console.log)"
-```
-
-Wait about 10 seconds for every server process to read the switch, then until the operator's usage route
-([Upgrading → Wait for the runs in progress](./upgrading#wait-for-the-runs-in-progress)) shows no request or diagnosis
-in progress (`requestsInProgress` and `diagnosesInProgress` at 0 under `now`) before you copy. Send `{"readOnly":false}` once the
-copy is done. The switch lives in the database, so the copy holds it too: an instance restored from it starts
-read-only.
-
-A reporter that meets a read-only instance stops sending, says so once, and leaves the tests and their exit code as
-they were. A run the instance holds no results of is saved on the reporter's machine, one file a run, at most 20 runs
-and 100 MB per project, the oldest dropped first; the next run sends them, oldest first, once the instance takes
-writes again. A CI runner thrown away after its job keeps nothing. A run whose results the instance already took
-keeps them there, without the traces, videos, screenshots or report it had not sent yet.
-
 ## Restoring
 
 Restoring is also how you roll back an upgrade: [Upgrading → Downgrading is not supported](./upgrading#downgrading-is-not-supported) gives the steps.
@@ -74,7 +50,6 @@ Restoring is also how you roll back an upgrade: [Upgrading → Downgrading is no
 1. **Stop the container.**
 2. **Restore the database and `.data/storage/`** from a backup pair taken at the same time. For SQLite, delete any leftover `.data/piwi.db-wal` and `.data/piwi.db-shm` files (the server runs SQLite in write-ahead-log mode, and a stale log would be replayed onto the restored file), put `piwi-backup.db` back as `.data/piwi.db` and unpack the storage archive; on a Linux host, hand the restored files back to the container's user with `sudo chown -R 1001:1001 .data`. For PostgreSQL, restore the dump into an empty database (`psql "$PIWI_DATABASE_URL" < piwi-db.sql`).
 3. **Start the version the backup was taken on**, with the same `PIWI_SECRET_KEY`. A backup from version *N* must be restored under version *N* (or newer, which will migrate it forward) — not an older one.
-4. **Make it writable again** if the backup was taken read-only: send `{"readOnly":false}` as above, which needs `PIWI_OPERATOR_TOKEN` set on the restored instance. Until then, every page shows the read-only banner.
 
 Then confirm the running version at **Settings → About**, and that recent runs are present. See [Upgrading](./upgrading) for the full version-change story and the checks that tell you a migration landed.
 

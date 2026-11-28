@@ -384,8 +384,6 @@ export const PIWI_ENV_VARS = {
     type: 'number',
     min: 0,
     docs: 'operate/storage#data-retention',
-    notes:
-      "A value set through PUT /api/operator/limits takes the place of this variable's; one that keeps fewer days applies 14 days after it is set.",
   },
   PIWI_RETENTION_MIN_RUNS: {
     description:
@@ -462,7 +460,7 @@ export const PIWI_ENV_VARS = {
     since: '0.79.0',
     unlisted: true,
     notes:
-      "A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`. A value set through PUT /api/operator/limits takes the place of this variable's.",
+      "A refused file answers 409 with `errorCode` `STORAGE_QUOTA_FILES_REFUSED`, a refused run 409 with `STORAGE_QUOTA_EXCEEDED`.",
   },
   PIWI_STORAGE_PATH: {
     description: 'Directory for local file storage (when PIWI_STORAGE_TYPE is "local").',
@@ -1151,7 +1149,6 @@ export const PIWI_ENV_VARS = {
     min: 1024 * 1024,
     max: 5 * 1024 * 1024 * 1024,
     since: '0.19.0',
-    notes: "A value set through PUT /api/operator/limits takes the place of this variable's.",
   },
   PIWI_SUBMIT_MAX_BYTES: {
     description:
@@ -1162,7 +1159,6 @@ export const PIWI_ENV_VARS = {
     min: 1024 * 1024,
     max: 512 * 1024 * 1024,
     since: '0.65.0',
-    notes: "A value set through PUT /api/operator/limits takes the place of this variable's.",
   },
   // ── Offline export limits ───────────────────────────────────────────────
   PIWI_EXPORT_MAX_INLINE_BYTES: {

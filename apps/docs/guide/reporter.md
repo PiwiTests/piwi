@@ -222,8 +222,8 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 [Capture fixtures → Troubleshooting](./capture-fixtures#troubleshooting).
 
 **Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
-request. A run the reporter could not deliver (dashboard down or read-only, no credential, a sign-in page answering
-instead) is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run without traces or
+request. A run the reporter could not deliver (dashboard down, no credential, a sign-in page answering in its place)
+is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run without traces or
 attachments; it never fails the Playwright run. A stream that cannot start while the dashboard is down or busy retries
 for the run's life, its events kept within
 [`maxStreamBufferBytes`](/reference/reporter-options#maxstreambufferbytes); one starting late says how late. Live events the
