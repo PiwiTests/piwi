@@ -1224,12 +1224,7 @@ export const HELP_TOPICS = {
       '- **Runs kept** — the days of runs the nightly cleanup keeps.',
     ].join('\n'),
     doc: 'operate/storage#storage-management',
-    envVars: [
-      'PIWI_STORAGE_QUOTA_BYTES',
-      'PIWI_IMPORT_MAX_BYTES',
-      'PIWI_SUBMIT_MAX_BYTES',
-      'PIWI_RETENTION_DAYS',
-    ],
+    envVars: ['PIWI_STORAGE_QUOTA_BYTES', 'PIWI_IMPORT_MAX_BYTES', 'PIWI_SUBMIT_MAX_BYTES', 'PIWI_RETENTION_DAYS'],
   },
   'account.email': {
     title: 'Email & verification',
