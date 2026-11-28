@@ -28,6 +28,10 @@ vi.mock('../../server/storage', () => ({
       if (path.endsWith('unwritable.js')) throw new Error(`503 Slow Down: ${path}`);
       state.written.set(path, data);
     },
+    writeFileFrom: async (path: string, source: string) => {
+      if (path.endsWith('unwritable.js')) throw new Error(`503 Slow Down: ${path}`);
+      state.written.set(path, await (await import('node:fs/promises')).readFile(source));
+    },
     deleteDirectory: async (path: string) => {
       for (const key of [...state.written.keys()]) if (key.startsWith(`${path}/`)) state.written.delete(key);
     },

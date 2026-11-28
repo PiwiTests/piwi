@@ -1,7 +1,19 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
-import { buildZip, decompressEntry, parseZip, parseZipDirectory, ZipLimitError } from '../../server/utils/trace-zip';
+import {
+  buildZip,
+  decompressEntry,
+  decompressFileEntry,
+  openZipFile,
+  parseZip,
+  parseZipDirectory,
+  readZipDirectory,
+  ZipLimitError,
+} from '../../server/utils/trace-zip';
 import { parseZipSync } from '../utils/zip';
 
 describe('buildZip / parseZipSync round-trip', () => {
@@ -191,5 +203,77 @@ describe('ZIP limits', () => {
     expect(meta!.method).toBe(8);
     await expect(decompressEntry(zip, meta!)).resolves.toHaveLength(64 * 1024);
     await expect(decompressEntry(zip, { ...meta!, uncompressedSize: 1024 })).rejects.toThrow();
+  });
+});
+
+describe('a ZIP read from a file, by position', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'piwi-zip-file-'));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  let count = 0;
+  /** The archive in a file of its own, opened for reading by position. */
+  async function onDisk(zip: Buffer) {
+    const path = join(dir, `${++count}.zip`);
+    writeFileSync(path, zip);
+    return openZipFile(path);
+  }
+
+  test('reads the directory and every entry as the in-memory reader does', async () => {
+    const entries = [
+      { name: 'trace.trace', data: Buffer.from('{"type":"context"}\n'.repeat(500)) },
+      { name: 'resources/abc.bin', data: randomBytes(70_000) },
+      { name: 'empty.txt', data: Buffer.alloc(0) },
+    ];
+    for (const compress of [false, true]) {
+      const zip = buildZip(entries, { compress });
+      const file = await onDisk(zip);
+      try {
+        const metas = await readZipDirectory(file);
+        expect(metas).toEqual(parseZipDirectory(zip));
+        for (const meta of metas) {
+          expect((await decompressFileEntry(file, meta)).equals(await decompressEntry(zip, meta))).toBe(true);
+        }
+      } finally {
+        await file.close();
+      }
+    }
+  });
+
+  test('refuses what the in-memory reader refuses', async () => {
+    const budget = buildZip([
+      { name: 'a.trace', data: Buffer.alloc(600, 0x61) },
+      { name: 'b.trace', data: Buffer.alloc(600, 0x62) },
+    ]);
+    const cases: [Buffer, { maxInflatedBytes?: number }, unknown][] = [
+      [sharedBytesZip(3, Buffer.alloc(1024, 0x61)), {}, ZipLimitError],
+      [budget, { maxInflatedBytes: 1000 }, ZipLimitError],
+      [Buffer.from('definitely not a zip'), {}, /EOCD not found/],
+      [buildZip([{ name: 'a.txt', data: Buffer.from('hello world') }]).subarray(0, 20), {}, /EOCD not found/],
+    ];
+    for (const [zip, options, refusal] of cases) {
+      expect(() => parseZipDirectory(zip, options)).toThrow(refusal as never);
+      const file = await onDisk(zip);
+      await expect(readZipDirectory(file, options)).rejects.toThrow(refusal as never);
+      await file.close();
+    }
+  });
+
+  test('never reads an entry past the file, nor a central directory over 16 MiB', async () => {
+    const zip = buildZip([{ name: 'a.txt', data: Buffer.from('AAAA') }]);
+    const file = await onDisk(zip);
+    const [meta] = await readZipDirectory(file);
+    await expect(decompressFileEntry(file, { ...meta!, compressedSize: 0xfffffff0 })).rejects.toThrow(/Truncated/);
+    await file.close();
+
+    // An end-of-directory record that says the directory starts at the file's first byte, 17 MiB before it.
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(1, 10);
+    const large = await onDisk(Buffer.concat([Buffer.alloc(17 * 1024 * 1024), eocd]));
+    await expect(readZipDirectory(large)).rejects.toThrow(/central directory too large/);
+    await large.close();
   });
 });

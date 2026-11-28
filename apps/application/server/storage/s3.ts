@@ -1,9 +1,17 @@
 import type { S3Client } from '@aws-sdk/client-s3';
+import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { StorageAdapter, S3Config } from './types';
 
 /** The AWS SDK's S3 module, and the client this adapter's config built with it. */
 type S3Sdk = { s3: typeof import('@aws-sdk/client-s3'); s3Client: S3Client };
+
+/**
+ * The bytes of one part of a file `writeFileFrom` sends in several: a file up to this size goes in one request. Two
+ * parts are read and sent at a time, so a file of any size holds about two parts in memory.
+ */
+const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
+const UPLOAD_PARTS_AT_ONCE = 2;
 
 /**
  * AWS S3 storage adapter
@@ -48,6 +56,23 @@ export class S3StorageAdapter implements StorageAdapter {
       });
 
       await s3Client.send(command);
+    } catch (error) {
+      console.error(`Failed to write file to S3: ${path}`, error);
+      throw error;
+    }
+  }
+
+  async writeFileFrom(path: string, sourcePath: string): Promise<void> {
+    try {
+      const { s3Client } = await this.sdk();
+      const { Upload } = await import('@aws-sdk/lib-storage');
+      const upload = new Upload({
+        client: s3Client,
+        params: { Bucket: this.config.bucket, Key: path, Body: createReadStream(sourcePath) },
+        partSize: UPLOAD_PART_BYTES,
+        queueSize: UPLOAD_PARTS_AT_ONCE,
+      });
+      await upload.done();
     } catch (error) {
       console.error(`Failed to write file to S3: ${path}`, error);
       throw error;

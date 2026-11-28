@@ -1,5 +1,5 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir as fsMkdir, existsSync, createReadStream } from 'fs';
-import { rm, stat } from 'fs/promises';
+import { copyFile, rm, stat } from 'fs/promises';
 import { once } from 'events';
 import { join, dirname, resolve, relative, isAbsolute } from 'path';
 import type { Readable } from 'stream';
@@ -45,6 +45,12 @@ export class LocalStorageAdapter implements StorageAdapter {
     }
 
     await writeFileAsync(fullPath, data);
+  }
+
+  async writeFileFrom(path: string, sourcePath: string): Promise<void> {
+    const fullPath = this.resolvePath(path);
+    await mkdirAsync(dirname(fullPath), { recursive: true });
+    await copyFile(sourcePath, fullPath);
   }
 
   async readFile(path: string): Promise<Buffer> {

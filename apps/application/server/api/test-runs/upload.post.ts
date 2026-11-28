@@ -2,7 +2,7 @@ import { getDatabase } from '../../database';
 import { projects, testRuns, files } from '../../database/schema';
 import type { Project } from '../../database/schema';
 import { eq } from 'drizzle-orm';
-import { upsertTraceFile } from '../../utils/trace-blobs';
+import { upsertTraceFileAt } from '../../utils/trace-blobs';
 import { join, posix } from 'path';
 import { randomBytes } from 'node:crypto';
 import { decompressDirectory } from '../../utils/compression';
@@ -13,7 +13,7 @@ import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { attachmentStoragePaths } from '../../utils/attachment-paths';
 import { tmpdir } from 'os';
-import { rm, mkdtemp, readdir, readFile } from 'fs/promises';
+import { rm, mkdtemp, readdir } from 'fs/promises';
 import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
@@ -306,7 +306,7 @@ async function handleUpload(
         const tempDir = await mkdtemp(join(tmpdir(), `piwi-report-${type}-`));
 
         try {
-          await decompressDirectory(await readFile(report.path), tempDir);
+          await decompressDirectory(report.path, tempDir);
 
           // Determine the correct entry file for this report type.
           // Blob reports contain .zip archives rather than HTML; find the first one.
@@ -339,7 +339,7 @@ async function handleUpload(
     /** Store a report as the single file it was uploaded as. */
     async function storeReportFile(report: UploadedFile): Promise<{ path: string; size: number }> {
       const path = posix.join(projectPath, uniqueReportName(report.filename));
-      await storage.writeFile(path, await readFile(report.path));
+      await storage.writeFileFrom(path, report.path);
       return { path, size: report.size };
     }
 
@@ -519,7 +519,7 @@ async function handleUpload(
           const testRunsCaseId = inserted.id;
 
           try {
-            const blob = await upsertTraceFile(project!.id, await readFile(traceFile.path));
+            const blob = await upsertTraceFileAt(project!.id, traceFile.path);
             console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${blob.path}`);
             await db.insert(files).values({
               testRunsCaseId,
@@ -561,7 +561,7 @@ async function handleUpload(
             const storagePath = storagePaths[fi]!;
 
             try {
-              await storage.writeFile(storagePath, await readFile(fileEntry.path));
+              await storage.writeFileFrom(storagePath, fileEntry.path);
               await db.insert(files).values({
                 testRunsCaseId,
                 testRunId: testRun.id,

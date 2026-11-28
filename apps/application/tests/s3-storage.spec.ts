@@ -1,3 +1,7 @@
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, expect } from './fixtures';
 import { S3StorageAdapter } from '../server/storage/s3';
 import { LocalStorageAdapter } from '../server/storage/local';
@@ -94,6 +98,25 @@ test.describe('S3 storage', () => {
       await adapter.writeFile(path, data);
       const result = await adapter.readFile(path);
       expect(Buffer.compare(result, data)).toBe(0);
+    });
+
+    test('should store a file from disk, in one request or in parts', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'piwi-s3-from-'));
+      try {
+        // 8 MiB parts: 20 MiB goes in three, 1 KiB in one request.
+        for (const [name, size] of [
+          ['small.bin', 1024],
+          ['large.bin', 20 * 1024 * 1024 + 5],
+        ] as const) {
+          const bytes = randomBytes(size);
+          writeFileSync(join(dir, name), bytes);
+          await adapter.writeFileFrom(`${keyPrefix}/${name}`, join(dir, name));
+          expect(await adapter.fileSize(`${keyPrefix}/${name}`)).toBe(size);
+          expect(Buffer.compare(await adapter.readFile(`${keyPrefix}/${name}`), bytes)).toBe(0);
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     test('should overwrite an existing file', async () => {

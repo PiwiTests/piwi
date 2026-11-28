@@ -1,5 +1,7 @@
 import { dirname, resolve, relative, isAbsolute } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { pipeline } from 'stream';
 import { createGunzip } from 'zlib';
 
 /**
@@ -40,12 +42,14 @@ interface ArchiveLimits {
  * format cannot hold or one cut short.
  */
 async function* archiveFiles(
-  compressedBuffer: Buffer,
+  compressed: Buffer | { path: string },
   want: (path: string) => boolean,
   { maxInflatedBytes, maxEntryBytes }: ArchiveLimits,
 ): AsyncGenerator<{ path: string; content: Buffer }> {
   const stream = createGunzip();
-  stream.end(compressedBuffer);
+  if (Buffer.isBuffer(compressed)) stream.end(compressed);
+  // A failed read of the file ends the inflate with its error.
+  else pipeline(createReadStream(compressed.path), stream, () => {});
 
   let inflated = 0;
   let header: Buffer = EMPTY; // bytes of a record header not yet complete
@@ -105,15 +109,16 @@ async function* archiveFiles(
 
 /**
  * Decompress a gzip-compressed report archive (the format {@link archiveFiles}
- * reads) into a target directory. Throws on a malformed archive, one over the
- * size limits, or a file whose path leaves the directory.
+ * reads), from a file of this server's disk read as a stream, into a target
+ * directory. Throws on a malformed archive, one over the size limits, or a file
+ * whose path leaves the directory.
  */
-export async function decompressDirectory(compressedBuffer: Buffer, targetDir: string): Promise<void> {
+export async function decompressDirectory(archivePath: string, targetDir: string): Promise<void> {
   try {
     await mkdir(targetDir, { recursive: true });
     let fileCount = 0;
     const limits = { maxInflatedBytes: MAX_ARCHIVE_BYTES, maxEntryBytes: MAX_ARCHIVE_BYTES };
-    for await (const file of archiveFiles(compressedBuffer, () => true, limits)) {
+    for await (const file of archiveFiles({ path: archivePath }, () => true, limits)) {
       // Guard against path traversal (zip-slip): the archive is
       // attacker-controllable (uploaded to /api/test-runs/upload, which is open
       // when auth is disabled), so an entry path like `../../evil` must not

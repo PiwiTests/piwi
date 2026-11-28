@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
@@ -59,7 +59,8 @@ describe('decompressDirectory', () => {
   async function extract(archive: Buffer) {
     const dir = await mkdtemp(join(tmpdir(), 'piwi-archive-'));
     try {
-      await decompressDirectory(archive, join(dir, 'out'));
+      await writeFile(join(dir, 'report.gz'), archive);
+      await decompressDirectory(join(dir, 'report.gz'), join(dir, 'out'));
       const names = (await readdir(join(dir, 'out'), { recursive: true })).sort();
       return { names, index: await readFile(join(dir, 'out', 'index.html'), 'utf8').catch(() => null) };
     } finally {

@@ -51,6 +51,13 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   by shard, while the parts an upload skipped add up in `tracesNotKept` and the rest; readers show the sum
   (`describeIngestHealth`; `tests/unit/storage-quota-ingest.test.ts`).
 
+## Uploaded files
+
+- **A file an upload streamed to a temp file goes to storage from that file, never read whole**: an attachment or a
+  report through `storage.writeFileFrom`, a trace through `upsertTraceFileAt`, which hashes it as a stream and reads its
+  ZIP by position (`openZipFile`, `server/utils/trace-zip.ts`), a compressed report through `decompressDirectory`'s
+  path (`tests/unit/upload-files-from-disk.test.ts`).
+
 ## Timed-out tests fold into `failedTests`
 
 `test_runs` has no `timedOutTests` column. Playwright's `'timedOut'` (stored as `'timedout'`) counts as failed, so that
