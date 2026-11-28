@@ -24,7 +24,6 @@ import {
 import type { DbClient } from '../database';
 import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
 import { isUniqueViolation } from './db-errors';
-import { isReadOnly } from './operator-limits';
 import {
   CREDENTIAL_READ_FEATURES,
   credentialLogDestination,
@@ -56,6 +55,7 @@ import { requestOAuthTokens, revokeOAuthToken, type OAuthClient, type OAuthToken
 import { configuredGitlabHosts } from './scm/gitlab-hosts';
 import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
+import { isReadOnly } from '#shared/operator-limits';
 
 const ENCRYPTED_PREFIX = 'v1:';
 /** The most of a reason the log keeps. */

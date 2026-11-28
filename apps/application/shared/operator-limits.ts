@@ -195,6 +195,11 @@ export function readOnlySetting(stored: StoredOperatorLimits): LimitSetting<bool
     : { value: stored.readOnly, source: 'operator' };
 }
 
+/** Whether the instance is read-only, by the operator's limits this process holds: never in a browser. */
+export function isReadOnly(): boolean {
+  return readOnlySetting(heldOperatorLimits()).value;
+}
+
 /** Every limit as it applies at `now`. */
 export function instanceLimitsOf(stored: StoredOperatorLimits, env: LimitEnv, now: Date): InstanceLimits {
   return {

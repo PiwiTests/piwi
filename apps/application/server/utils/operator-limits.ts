@@ -4,8 +4,8 @@ import {
   heldOperatorLimits,
   holdOperatorLimits,
   instanceLimitsOf,
+  isReadOnly,
   processEnv,
-  readOnlySetting,
   readStoredOperatorLimits,
   type InstanceLimits,
   type StoredOperatorLimits,
@@ -112,9 +112,7 @@ export function instanceLimits(now = new Date()): InstanceLimits {
 }
 
 /** Whether the instance is read-only, by the held operator's limits. */
-export function isReadOnly(): boolean {
-  return readOnlySetting(heldOperatorLimits()).value;
-}
+export { isReadOnly };
 
 /** Whether the instance is read-only, by the limits read from the database now: what a scheduled task asks. */
 export async function readOnlyNow(db?: DrizzleDB): Promise<boolean> {
