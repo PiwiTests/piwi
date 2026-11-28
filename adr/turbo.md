@@ -267,9 +267,12 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
 
 ## Consequences
 
-- **The hooks tie the package to the Playwright versions they were tested with** (1.64.1). A new version needs the
-  hooks' end-to-end suite and the benchmark before it joins `TESTED_VERSIONS`; `PIWI_TURBO_ALLOW_UNTESTED=1` lets a
-  user try one.
+- **The hooks tie the package to the Playwright versions they were tested with** (1.64.1). A new version
+  needs the hooks' end-to-end suite and the benchmark before it joins `TESTED_VERSIONS`; `PIWI_TURBO_ALLOW_UNTESTED=1`
+  lets a user try one. The first update, to 1.65.1, changed no internal a hook wraps but one event a hook relied on:
+  Playwright now reports a request as failed once its document is gone, so a keepalive request still on its way no
+  longer counted as waiting for `keepStaticCache`, and its isolation pair failed. The hook reads the requests still
+  pending from Chromium's own events instead. The other 246 tests of the suite passed unchanged.
 - **Context reuse widens what a test can leak to the next one.** The isolation pairs cover storage of every kind,
   Cache Storage a page or a service worker writes after the test, permissions, headers, offline mode, HTTP
   credentials, routes, init scripts, bindings, CDP sessions and what they emulate, the clock, the viewport, media,

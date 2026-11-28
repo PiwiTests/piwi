@@ -103,6 +103,11 @@ interface CacheWatch {
   requestHeaders: Map<string, Record<string, string>>;
   delivered: Set<string>;
   /**
+   * The requests Chromium sent that have no response, end or failure of their own yet. Playwright reports a request
+   * as failed once its document is gone, while a request that outlives its document is still on its way.
+   */
+  pending: Set<string>;
+  /**
    * The requests Playwright counts as favicons and reports no event for: the method of each hop from the first whose URL
    * ends in `/favicon.ico`, and whether the request has finished or failed.
    */
@@ -410,6 +415,7 @@ export function watchStaticCache(serverContext: ServerPage): void {
     answered: new Map(),
     requestHeaders: new Map(),
     delivered: new Set(),
+    pending: new Set(),
     favicons: new Map(),
     blind: browserName !== 'chromium',
   };
@@ -493,6 +499,7 @@ function watchSession(session: ServerPage, context: ServerPage): void {
   session.on('Network.requestWillBeSent', (event: ProtocolEvent) => {
     const received = watch();
     if (!received || !event?.requestId) return;
+    received.pending.add(event.requestId);
     const method = event.request?.method ?? 'GET';
     const favicon = received.favicons.get(event.requestId);
     if (favicon) favicon.methods.add(method);
@@ -500,7 +507,10 @@ function watchSession(session: ServerPage, context: ServerPage): void {
       received.favicons.set(event.requestId, { methods: new Set([method]), done: false });
   });
   const finished = (event: ProtocolEvent) => {
-    const favicon = event?.requestId ? watch()?.favicons.get(event.requestId) : undefined;
+    const received = watch();
+    if (!received || !event?.requestId) return;
+    received.pending.delete(event.requestId);
+    const favicon = received.favicons.get(event.requestId);
     if (favicon) favicon.done = true;
   };
   session.on('Network.loadingFinished', finished);
@@ -520,7 +530,10 @@ function watchSession(session: ServerPage, context: ServerPage): void {
     received.answered.set(event.requestId, hops);
   });
   session.on('Network.responseReceived', (event: ProtocolEvent) => {
-    if (event?.requestId) watch()?.delivered.add(event.requestId);
+    const received = watch();
+    if (!received || !event?.requestId) return;
+    received.delivered.add(event.requestId);
+    received.pending.delete(event.requestId);
   });
 }
 
@@ -599,6 +612,7 @@ function hookContextReset(core: ServerPage): void {
       received.answered = new Map();
       received.requestHeaders = new Map();
       received.delivered = new Set();
+      received.pending = new Set();
       received.favicons = new Map();
       // A request still waiting for its response, a response the browser received that no page received, a favicon
       // still loading or one the browser may serve again (Playwright reports no event for favicons), or a service
@@ -625,6 +639,7 @@ function hookContextReset(core: ServerPage): void {
         !unsafeFavicon &&
         !unwatchedWorker &&
         judged.waiting.length === 0 &&
+        judged.pending.size === 0 &&
         [...judged.answered.keys()].every((id) => judged.delivered.has(id)) &&
         (await onlyStaticAssets(judged.responses));
       if (!keep) return await resetStorage.call(this, progress, storageState, mode);
