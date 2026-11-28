@@ -55,7 +55,11 @@ banner.
 node -e "fetch('http://localhost:3000/api/operator/limits',{method:'PUT',headers:{Authorization:'Bearer your_operator_token','Content-Type':'application/json'},body:JSON.stringify({readOnly:true})}).then(r=>r.text()).then(console.log)"
 ```
 
-Send `{"readOnly":false}` once the copy is done.
+Wait about 10 seconds for every server process to read the switch, then until the operator's usage route
+([Upgrading → Wait for the runs in progress](./upgrading#wait-for-the-runs-in-progress)) shows no request or diagnosis
+in progress (`requestsInProgress` and `diagnosesInProgress` at 0 under `now`) before you copy. Send `{"readOnly":false}` once the
+copy is done. The switch lives in the database, so the copy holds it too: an instance restored from it starts
+read-only.
 
 ## Restoring
 
@@ -64,6 +68,7 @@ Restoring is also how you roll back an upgrade: [Upgrading → Downgrading is no
 1. **Stop the container.**
 2. **Restore the database and `.data/storage/`** from a backup pair taken at the same time. For SQLite, delete any leftover `.data/piwi.db-wal` and `.data/piwi.db-shm` files (the server runs SQLite in write-ahead-log mode, and a stale log would be replayed onto the restored file), put `piwi-backup.db` back as `.data/piwi.db` and unpack the storage archive; on a Linux host, hand the restored files back to the container's user with `sudo chown -R 1001:1001 .data`. For PostgreSQL, restore the dump into an empty database (`psql "$PIWI_DATABASE_URL" < piwi-db.sql`).
 3. **Start the version the backup was taken on**, with the same `PIWI_SECRET_KEY`. A backup from version *N* must be restored under version *N* (or newer, which will migrate it forward) — not an older one.
+4. **Make it writable again** if the backup was taken read-only: send `{"readOnly":false}` as above, which needs `PIWI_OPERATOR_TOKEN` set on the restored instance. Until then, every page shows the read-only banner.
 
 Then confirm the running version at **Settings → About**, and that recent runs are present. See [Upgrading](./upgrading) for the full version-change story and the checks that tell you a migration landed.
 
