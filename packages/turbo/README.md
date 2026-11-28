@@ -240,14 +240,16 @@ withOptimizations(config, {
   changed neither, left no fake clock or WebAuthn credentials installed, and the next test asks for the context options
   the last one had (a file's own `viewport` or `colorScheme` brings it back): a reset took 14 ms in place of 31 ms, and
   Flashwright's TodoMVC suite 3% less time.
-- **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up
-  a source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
-  lookup; stack traces read the same. With another experimental hook on, which puts Playwright's server classes
-  within reach, the server's race of every evaluation in a page against its context's destruction captures no stack:
-  it formats one through source-map-support in case it must clone that error, but the client gives a failed call the
-  test's own frames, so the test's errors read the same, and a trace records the server's error without Playwright's
-  internal frames. Where Playwright shows them (`PWDEBUGIMPL`), the race keeps its stack. TodoMVC took 6% less time,
-  SVGOMG 4%.
+- **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up a
+  source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
+  lookup; stack traces read the same. With another experimental hook on, which puts Playwright's server classes within
+  reach, the server's race of every evaluation in a page against its context's destruction captures no stack: it formats
+  one through source-map-support in case it must clone that error, but the client gives a failed call the test's own
+  frames, so the test's errors read the same, and a trace records the server's error without Playwright's internal
+  frames. Nor do the errors Playwright prepares in case a call times out, three for every call, or, on Chromium, in case
+  a command to the browser fails, one for every command: a call that makes one command took 1 to 5% less time for each.
+  Where Playwright shows its internal frames (`PWDEBUGIMPL`), all three keep their stack. For the race alone, TodoMVC
+  took 6% less time and SVGOMG 4%.
 - **`screenshotMatches`**: Playwright decodes the capture and the baseline of every screenshot assertion to compare
   them, about 40 ms for a 1280×720 page. A capture whose bytes are the baseline's, or those of a capture that matched
   the same baseline with the same options before, passes without that; any other is compared as Playwright compares

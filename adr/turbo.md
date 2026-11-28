@@ -100,7 +100,7 @@ out.
 | `failFast` | Reference workload, red run of six failing assertions: −22% (25.2 s to 19.6 s), with the same failures and no false one. |
 | `skipStabilityWait` | One worker: TodoMVC 1.11× vs 1.03×, Shop 1.20× vs 1.10×, Inventory 1.06× vs 0.99×. |
 | `fastReset` | noop 0.93× vs 0.83×, TodoMVC 1.41× vs 1.21×, Shop 1.28× vs 1.27×. |
-| `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. The server's stack at each evaluation left out, on top: TodoMVC 5,082 to 4,761 ms, SVGOMG 2,128 to 2,044 ms (5 runs each). |
+| `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. The server's stack at each evaluation left out, on top: TodoMVC 5,082 to 4,761 ms, SVGOMG 2,128 to 2,044 ms (5 runs each). The errors prepared for each call's timeout (three a call) and each command's failure, on Playwright 1.65.1: a profile of a test of 3,600 fills, clicks and assertions gave 370 ms to the commands' errors, of 6.2 s not spent waiting for the browser. Each part alone, on and off in alternation over 30 rounds of 150 `locator.isVisible()` calls, two runs: 1.2 and 2.5% less time per call for the commands, 0.6 and 4.9% for the timeouts, within the 5% the same call varies by from run to run; nothing measurable on a fill. |
 | `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither, left no fake clock or WebAuthn credentials installed (their scripts leave the context only after its reset loaded `about:blank`, so that document still runs them), and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
 | `earlyInjection` | Same app, one tab: the first fill after a navigation took 25 ms and the next 6 ms, the difference being Playwright creating its injected script in the document's utility world. Created as soon as the document's utility context exists: 9 to 11 ms, with the navigation 2 to 8 ms longer. TodoMVC (as above) 4,148 to 3,860 ms. |
 | `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). The DOM snapshot after each call, and before most, left in flight, on top: 5,000 to 4,617 ms, and SVGOMG traced the same way 2,240 to 2,104 ms (5 runs each). |
@@ -350,10 +350,12 @@ take there. A mouse move is answered at the browser's next frame, 16.7 ms, which
   reaches its page before the next call's on the same protocol session, and the calls that reach a page another way
   wait for it. A call on another page of the trace, such as a popup that changes its opener, is not ordered with it.
   A snapshot still in flight after 3 s, the time Playwright gives one, no longer holds any call.
-- **`fastStackTraces` leaves Playwright's internal frames out of a race's error**: the test's error reads the same,
-  but a trace records the server's error without them, and code that captures stacks while the race starts (an
-  `async_hooks` init callback, a promise library with long stack traces) gets none for that moment. Where Playwright
-  shows its internal frames (`PWDEBUGIMPL`, its own tests), the race keeps its stack.
+- **`fastStackTraces` leaves Playwright's internal frames out of the server's own errors**: a race's, a call's timeout
+  and, on Chromium, a failed command's. The test's error reads the same, but a trace records the server's error without
+  them, and code that captures stacks while a race, a call or a command starts (an `async_hooks` init callback, a
+  promise library with long stack traces) gets none for that moment. The task a call runs captures its own stacks as
+  stock: the limit is back before it starts. Where Playwright shows its internal frames (`PWDEBUGIMPL`, its own tests),
+  all three keep their stack.
 - **`fastTraces`' script bodies part retires at Playwright 1.66**: Playwright itself stops fetching the bodies of
   the scripts a trace omits from 1.66 (microsoft/playwright#44078). When 1.66 joins the tested versions, the hook's
   shape check fails on the changed recorder, and that part is removed rather than adapted.

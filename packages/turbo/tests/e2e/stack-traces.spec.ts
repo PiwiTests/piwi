@@ -117,4 +117,69 @@ test.describe('with another hook on', () => {
     expect(light?.stack).toBe(stock?.stack);
     expect(light?.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
   });
+
+  test('a call that times out fails with the same error, and one that throws keeps its stack', async ({ page }) => {
+    await page.setContent('<p>timeout</p>');
+    expect(state.lightTimeouts).toBe(true);
+    const errors: Error[] = [];
+    const thrown: Error[] = [];
+    const prepared: number[] = [];
+    for (const lightTimeouts of [true, false]) {
+      state.lightTimeouts = lightTimeouts;
+      const before = state.counters.lightTimeouts;
+      try {
+        const failure = (call: Promise<unknown>) =>
+          call.then(
+            () => new Error('the call passed'),
+            (error: Error) => error,
+          );
+        errors.push(await failure(page.locator('#missing').click({ timeout: 300 })));
+        thrown.push(await failure(page.evaluate(() => Promise.reject(new Error('from the page')))));
+      } finally {
+        state.lightTimeouts = true;
+      }
+      prepared.push(state.counters.lightTimeouts - before);
+    }
+    const [light, stock] = errors;
+    // The call, and the instrumentation before and after it, each prepare one.
+    expect(prepared[0]).toBeGreaterThanOrEqual(2);
+    expect(prepared[1]).toBe(0);
+    expect(light.message).toContain('Timeout 300ms exceeded');
+    expect(light.message).toBe(stock.message);
+    expect(light.stack).toBe(stock.stack);
+    expect(light.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
+    expect(thrown[0].message).toContain('from the page');
+    expect(thrown[0].stack).toBe(thrown[1].stack);
+  });
+
+  test('a command the browser refuses fails with the same error', async ({ page, context, browserName }) => {
+    test.skip(browserName !== 'chromium', "The commands of a CDP session are Chromium's.");
+    await page.setContent('<p>command</p>');
+    expect(state.lightCommands).toBe(true);
+    const session = await context.newCDPSession(page);
+    const errors: Error[] = [];
+    const sent: number[] = [];
+    for (const lightCommands of [true, false]) {
+      state.lightCommands = lightCommands;
+      const before = state.counters.lightCommands;
+      try {
+        errors.push(
+          await session.send('Page.noSuchCommand' as 'Page.enable').then(
+            () => new Error('the command passed'),
+            (error: Error) => error,
+          ),
+        );
+      } finally {
+        state.lightCommands = true;
+      }
+      sent.push(state.counters.lightCommands - before);
+    }
+    const [light, stock] = errors;
+    expect(sent[0]).toBeGreaterThan(0);
+    expect(sent[1]).toBe(0);
+    expect(light.message).toContain('Page.noSuchCommand');
+    expect(light.message).toBe(stock.message);
+    expect(light.stack).toBe(stock.stack);
+    expect(light.stack).toMatch(/stack-traces\.spec\.ts:\d+:\d+/);
+  });
 });

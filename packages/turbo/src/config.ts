@@ -117,7 +117,8 @@ export interface Optimizations {
     /**
      * The test worker's stack traces, which Playwright captures for every API call, look up source maps only for the
      * frames outside Node and `node_modules`. They read the same. With another experimental hook on, Playwright's
-     * server also captures no stack as each evaluation in a page starts: the test's errors read the same, and a trace
+     * server also captures no stack as each evaluation in a page starts, nor for the errors it prepares in case a
+     * call times out or, on Chromium, a command to the browser fails: the test's errors read the same, and a trace
      * records the server's errors without Playwright's internal frames.
      */
     fastStackTraces?: boolean;

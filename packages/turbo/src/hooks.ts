@@ -60,6 +60,10 @@ export const state = {
   fastActions: false,
   /** fastStackTraces' server part: an evaluation's race against its context's destruction captures no stack. */
   lightRaces: false,
+  /** fastStackTraces' server part: a call starts with no stack captured for the error of its timeout. */
+  lightTimeouts: false,
+  /** fastStackTraces' server part, on Chromium: a command is sent with no stack captured for the error of its failure. */
+  lightCommands: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
   sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
@@ -71,6 +75,7 @@ export const state = {
   tracerHooked: false,
   injectedScriptHooked: false,
   raceHooked: false,
+  runHooked: false,
   counters: {
     optimizedScreenshots: 0,
     shortenedRetries: 0,
@@ -86,6 +91,8 @@ export const state = {
     skippedScriptBodies: 0,
     deferredSnapshots: 0,
     lightRaces: 0,
+    lightTimeouts: 0,
+    lightCommands: 0,
     fastLookups: 0,
     repeatedLookupReads: 0,
     deferredPreviews: 0,
@@ -891,6 +898,67 @@ function hookContextRace(context: ServerPage): void {
   state.raceHooked = true;
 }
 
+/**
+ * fastStackTraces, in Playwright's server: for every call, and for the instrumentation that runs before and after
+ * it, Playwright prepares the error of a timeout, whose stack only a call that times out reports. The call runner is
+ * reached from the first one a dispatcher creates.
+ */
+function hookCallRunners(core: ServerPage): void {
+  let owner = core.server?.PageDispatcher?.prototype;
+  while (owner && !Object.prototype.hasOwnProperty.call(owner, 'createProgressController'))
+    owner = Object.getPrototypeOf(owner);
+  const create = owner?.createProgressController as ((...args: unknown[]) => ServerPage) | undefined;
+  if (typeof create !== 'function')
+    throw new IncompatibleError("Playwright's dispatchers have no createProgressController()");
+  owner.createProgressController = function (this: ServerPage, ...args: unknown[]) {
+    const controller = create.apply(this, args);
+    if (!state.runHooked) {
+      try {
+        hookCallRunner(Object.getPrototypeOf(controller));
+      } catch (error) {
+        state.error ??= error as Error;
+      }
+    }
+    return controller;
+  };
+}
+
+function hookCallRunner(proto: ServerPage): void {
+  const run = proto?.run as ((task: (progress: unknown) => unknown, timeout?: number) => Promise<unknown>) | undefined;
+  const source = String(run);
+  const prepared = source.indexOf('new TimeoutError(');
+  const started = source.indexOf('await task(');
+  // The error is made before the task starts, and the run awaits nothing before the task.
+  if (typeof run !== 'function' || prepared < 0 || started < prepared || source.indexOf('await ') !== started)
+    throw new IncompatibleError("Playwright's calls no longer prepare their timeout's error before their task starts");
+  proto.run = function (this: ServerPage, task: (progress: unknown) => unknown, timeout?: number) {
+    if (!state.lightTimeouts) return run.call(this, task, timeout);
+    state.counters.lightTimeouts++;
+    const limit = Error.stackTraceLimit;
+    let restored = false;
+    // The limit is back before the task runs: the errors it makes capture their stack.
+    const restore = () => {
+      if (restored) return;
+      restored = true;
+      Error.stackTraceLimit = limit;
+    };
+    Error.stackTraceLimit = 0;
+    try {
+      return run.call(
+        this,
+        (progress: unknown) => {
+          restore();
+          return task(progress);
+        },
+        timeout,
+      );
+    } finally {
+      restore();
+    }
+  };
+  state.runHooked = true;
+}
+
 const NO_BODY = Buffer.alloc(0);
 
 /**
@@ -1439,6 +1507,11 @@ function hookChromiumSession(page: ServerPage): void {
   const proto = Object.getPrototypeOf(session);
   const original = proto.send as ((method: string, params?: Record<string, unknown>) => Promise<unknown>) | undefined;
   if (typeof original !== 'function') throw new IncompatibleError("Chromium's CDP session has no send()");
+  // fastStackTraces: with each command, Playwright prepares the error of its failure, whose stack only a failed
+  // command reports. The command is written and the error made before send() returns.
+  const source = String(original);
+  if (!source.includes('new ProtocolError("error"') || source.includes('await '))
+    throw new IncompatibleError("Chromium's CDP session no longer prepares a command's error as it sends it");
   proto.send = function send(this: ServerPage, method: string, params?: Record<string, unknown>) {
     if (
       state.fastScreenshots &&
@@ -1447,9 +1520,17 @@ function hookChromiumSession(page: ServerPage): void {
       params?.format === 'png'
     ) {
       state.counters.optimizedScreenshots++;
-      return original.call(this, method, { ...params, optimizeForSpeed: true });
+      params = { ...params, optimizeForSpeed: true };
     }
-    return original.call(this, method, params);
+    if (!state.lightCommands) return original.call(this, method, params);
+    state.counters.lightCommands++;
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 0;
+    try {
+      return original.call(this, method, params);
+    } finally {
+      Error.stackTraceLimit = limit;
+    }
   };
   hookPointerReset(delegate);
   state.sessionHooked = true;
@@ -1511,6 +1592,7 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
   if (typeof Page?.prototype?.reportAsNew !== 'function')
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
   hookContextReset(core);
+  hookCallRunners(core);
   hookPageReset(Page);
   hookBaselines(Page);
   hookScreenshotMatches(Page, version);

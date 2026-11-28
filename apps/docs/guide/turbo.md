@@ -148,8 +148,8 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
 - `earlyInjection` (Chromium) creates the script Playwright's actions run through while each page loads, rather than
   at its first action, and `fastTraces` makes traces cheaper: no request for the script bodies they leave out, and on
   Chromium fewer waits for DOM snapshots.
-- `fastStackTraces` skips source map lookups for Node and `node_modules` frames and, with other hooks, the server's
-  stack per evaluation.
+- `fastStackTraces` skips source map lookups for Node and `node_modules` frames and, with other hooks, the stacks
+  the server captures for each evaluation, call and command.
 
 ```ts
 withOptimizations(config, {

@@ -336,6 +336,8 @@ export const test: TurboTest = base.extend<
     state.fastTraces = fastTraces;
     state.fastActions = fastActions;
     state.lightRaces = lightRaces;
+    state.lightTimeouts = lightRaces;
+    state.lightCommands = lightRaces;
     try {
       if (failFast) await context.addInitScript(IDLE_TRACKER);
       for (const rule of blockRequests)
@@ -419,6 +421,8 @@ export const test: TurboTest = base.extend<
       state.fastTraces = false;
       state.fastActions = false;
       state.lightRaces = false;
+      state.lightTimeouts = false;
+      state.lightCommands = false;
     }
   },
 });
