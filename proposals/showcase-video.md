@@ -70,12 +70,12 @@ zoomed to 125 % (a 1536 × 794 viewport at 2.5 device pixels a CSS pixel); a dev
 shrunk the Runs window, which the same browser holds.
 
 **V3's voice, as built.** `--voice` (`lib/voice.mjs`) is the `local` provider: Piper, run as a program of its own,
-reads every line before the take with `en_US-ljspeech-high` (LJ Speech, public domain; the piper-voices repository,
-MIT), pinned by revision and checked by SHA-256, and each beat holds for its readings plus 0.4 s. The cut mixes the
-readings at their cues, the cards' too, into `piwi-showcase-voice.m4a` at −16 LUFS and voices the full cut (AAC in
-MP4, Opus in WebM); the teaser and the clips stay muted. The `person` provider is the cue sheet the cut always writes
+reads every line before the take with `en_US-bryce-medium` (a young US man's voice, public domain; the piper-voices
+repository, MIT), pinned by revision and checked by SHA-256, and each beat holds for its readings plus 0.4 s. The cut
+mixes the readings at their cues, the cards' too, into `piwi-showcase-voice.m4a` at −16 LUFS and voices the full cut
+(AAC in MP4, Opus in WebM); the teaser and the clips stay muted. The `person` provider is the cue sheet the cut always writes
 (`piwi-showcase.cues.csv`) and `--voice-track <recording>`, which voices the cut with a person's recording in its
-place. Measured here: the 31 lines read in about a minute on four cores, 113 s spoken against 110 s estimated. The
+place. Measured here: the 31 lines read in about half a minute on four cores, 129 s spoken against 110 s estimated. The
 build differs from the text in these ways. The `hosted` provider and the music bed are not built. The nightly job's
 `voice` input films with the voice by default, Piper installed in a virtual environment outside the checkout. The
 story's last part is two beats, a new test debugged to the line where its check goes, then the agent finishing it,

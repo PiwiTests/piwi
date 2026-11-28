@@ -49,11 +49,11 @@ describe('a reading’s length', () => {
 
 describe('the readings', () => {
   test('are kept by the voice and the text', () => {
-    const a = readingFile('/voices/en_US-ljspeech-high.onnx', 'A line.');
+    const a = readingFile('/voices/en_US-bryce-medium.onnx', 'A line.');
     assert.match(a, /^[0-9a-f]{16}\.wav$/);
-    assert.equal(readingFile('/elsewhere/en_US-ljspeech-high.onnx', 'A line.'), a);
+    assert.equal(readingFile('/elsewhere/en_US-bryce-medium.onnx', 'A line.'), a);
     assert.notEqual(readingFile('/voices/en_GB-cori-high.onnx', 'A line.'), a);
-    assert.notEqual(readingFile('/voices/en_US-ljspeech-high.onnx', 'Another line.'), a);
+    assert.notEqual(readingFile('/voices/en_US-bryce-medium.onnx', 'Another line.'), a);
   });
 
   test('hold a line as long as it is spoken, and a pause; a line not read as long as it is read', () => {

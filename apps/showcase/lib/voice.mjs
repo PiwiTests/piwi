@@ -7,16 +7,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * The voice: Piper's `en_US-ljspeech-high`, trained on the LJ Speech recordings (public domain), from the piper-voices
- * repository (MIT) at a fixed revision, each file checked by its SHA-256. Piper itself (GPL-3.0) runs as a program of
- * its own, installed beside the showcase, never bundled.
+ * The voice: Piper's `en_US-bryce-medium`, a young US man's voice whose recordings their speaker put in the public
+ * domain, from the piper-voices repository (MIT) at a fixed revision, each file checked by its SHA-256. Piper itself
+ * (GPL-3.0) runs as a program of its own, installed beside the showcase, never bundled.
  */
 export const VOICE = {
-  name: 'en_US-ljspeech-high',
-  base: 'https://huggingface.co/rhasspy/piper-voices/resolve/613b6e5ad36ddca4e70e171957291483dc244d9f/en/en_US/ljspeech/high/',
+  name: 'en_US-bryce-medium',
+  base: 'https://huggingface.co/rhasspy/piper-voices/resolve/613b6e5ad36ddca4e70e171957291483dc244d9f/en/en_US/bryce/medium/',
   files: {
-    'en_US-ljspeech-high.onnx': '5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a',
-    'en_US-ljspeech-high.onnx.json': '7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0ace14',
+    'en_US-bryce-medium.onnx': 'dc9caa6c313199ffb5ac698b6e542fa6cba388aeaf2731e25262e33b9810aef1',
+    'en_US-bryce-medium.onnx.json': '7ceb1bc4af6d4e41b6d1edbb86c67e91e01eaa71f66db4cd0ae92ac704d415be',
   },
 };
 

@@ -164,11 +164,11 @@ an error, or a master holding fewer than 95 % of the frames of the time since it
 
 `--voice` (`lib/voice.mjs`) has the voice read every line of the story before the take, lines first: Piper, a local
 neural voice run as a program of its own (`SHOWCASE_PIPER`, else `piper` on the PATH; `pip install piper-tts`), with
-`en_US-ljspeech-high`, trained on the LJ Speech recordings (public domain), from the piper-voices repository (MIT) at a
-fixed revision (`VOICE`), downloaded once into `~/.cache/piwi-showcase/voices` (`SHOWCASE_VOICE_CACHE`) and checked by
-its SHA-256. Each reading is a WAV in `results/voice/`, named by a hash of the voice and the line, its length read from
-its header (`wavMs`); a beat holds for those lengths. The whole story's 31 lines read in about a minute on four cores,
-113 s spoken against the 110 s their reading time estimates.
+`en_US-bryce-medium`, a young US man's voice whose recordings are in the public domain, from the piper-voices
+repository (MIT) at a fixed revision (`VOICE`), downloaded once into `~/.cache/piwi-showcase/voices`
+(`SHOWCASE_VOICE_CACHE`) and checked by its SHA-256. Each reading is a WAV in `results/voice/`, named by a hash of the
+voice and the line, its length read from its header (`wavMs`); a beat holds for those lengths. The whole story's 31
+lines read in about half a minute on four cores, 129 s spoken against the 110 s their reading time estimates.
 
 ## The cut
 
