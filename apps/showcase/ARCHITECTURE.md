@@ -162,14 +162,13 @@ an error, or a master holding fewer than 95 % of the frames of the time since it
 
 ### The voice
 
-`--voice` (`lib/voice.mjs`) has the voice read every line of the story before the take, lines first: Piper, a local
-neural voice run as a program of its own (`SHOWCASE_PIPER`, else `piper` on the PATH; `pip install piper-tts`), with
-`en_US-bryce-medium`, a young US man's voice whose recordings are in the public domain, from the piper-voices repository
-(MIT) at a fixed revision (`VOICE`), downloaded once into `~/.cache/piwi-showcase/voices` (`SHOWCASE_VOICE_CACHE`) and
-checked by its SHA-256, read livelier than its defaults at its own speed (`settings`, Piper's `--noise-scale` and
-`--noise-w-scale`). Each reading is a WAV in `results/voice/`, named by a hash of the voice, its settings and the line,
-its length read from its header (`wavMs`); a beat holds for those lengths. The whole story's 31 lines read in about half
-a minute on four cores, 130 s spoken against the 110 s their reading time estimates.
+`--voice` (`lib/voice.mjs`) has the voice read every line of the story before the take, lines first: Kokoro (Kokoro-82M,
+Apache-2.0), a local neural voice, with `am_michael`, a young US man's, at its own speed (`VOICE`), from the model files
+the kokoro-onnx project releases, downloaded once into `~/.cache/piwi-showcase/voices` (`SHOWCASE_VOICE_CACHE`) and
+checked by their SHA-256. `lib/voice.py` reads the lines in one run of a Python with kokoro-onnx (`SHOWCASE_PYTHON`,
+else `python3`), the model loaded once. Each reading is a WAV in `results/voice/`, named by a hash of the voice, its
+model, its speed and the line, its length read from its header (`wavMs`); a beat holds for those lengths. The whole
+story's 31 lines read in about 40 s on four cores, 108 s spoken against the 110 s their reading time estimates.
 
 ## The cut
 
@@ -257,5 +256,5 @@ Xvfb at 3840 × 2160 in a step of its own, runs the take as the step's own proce
 cancel or the job's timeout reaches it; `xvfb-run` would not pass it on), and uploads `results/` when the take fails
 or is stopped, for two weeks, the master left out. Run by hand with its `film` input, the job installs ffmpeg and the
 stage's fonts (Inter, JetBrains Mono), films the virtual take in place of the check, renders the cut and uploads
-`results/cut/` as `showcase-cut`, for two weeks. Its `voice` input (on by default) installs Piper in a virtual
-environment outside the checkout, caches the voice by `lib/voice.mjs`'s hash, and films with `--voice`.
+`results/cut/` as `showcase-cut`, for two weeks. Its `voice` input (on by default) installs kokoro-onnx in a virtual
+environment outside the checkout, caches the model by `lib/voice.mjs`'s hash, and films with `--voice`.

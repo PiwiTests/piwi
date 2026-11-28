@@ -11,7 +11,7 @@
 //   node showcase.mjs --cut <take's results> [--out <dir>] [--size 1080|2160] [--renderers <n>] [--beats <id,…>]
 //     [--voice-track <recording>]
 //
-// `--voice` has Piper read every line before the take (`lib/voice.mjs`), each beat held while its lines are spoken, and
+// `--voice` has Kokoro read every line before the take (`lib/voice.mjs`), each beat held while its lines are spoken, and
 // the cut voices the full cut with those readings; `--voice-track` voices it with a person's recording of the cue sheet.
 //
 // It needs the reporter, the Nitro integration, the VS Code extension (with the editor service) and Piwi Picker built,
@@ -146,10 +146,10 @@ let voice = null;
 if (mode === 'film' && args.includes('--voice')) {
   const { VOICE, ensureVoice, readLines } = await import('./lib/voice.mjs');
   say('Reading the lines with the voice');
-  const model = ensureVoice(undefined, (step) => say(`  ${step}`));
+  const files = ensureVoice(undefined, (step) => say(`  ${step}`));
   const texts = STORY.flatMap((b) => b.lines.en);
-  const readings = readLines(texts, { model, dir: path.join(out, 'voice'), say: (step) => say(`  ${step}`) });
-  voice = { name: VOICE.name, dir: 'voice', readings };
+  const readings = readLines(texts, { files, dir: path.join(out, 'voice'), say: (step) => say(`  ${step}`) });
+  voice = { name: `kokoro ${VOICE.name}`, dir: 'voice', readings };
 }
 const logs = path.join(out, 'logs');
 fs.mkdirSync(logs, { recursive: true });

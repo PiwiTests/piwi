@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       voice:
-        description: Voice the film, Piper reading every line (with film)
+        description: Voice the film, Kokoro reading every line (with film)
         type: boolean
         default: true
 
@@ -53,14 +53,14 @@ jobs:
         if: ${{ inputs.film }}
         run: sudo apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-jetbrains-mono
 
-      # Piper runs as a program of its own (GPL-3.0), in a virtual environment outside the checkout; its voice is
-      # downloaded once and checked by its SHA-256 (lib/voice.mjs).
-      - name: Install Piper
+      # Kokoro runs in a Python environment of its own, outside the checkout; its model is downloaded once and
+      # checked by its SHA-256 (lib/voice.mjs).
+      - name: Install Kokoro
         if: ${{ inputs.film && inputs.voice }}
         run: |
-          python3 -m venv "$RUNNER_TEMP/piper"
-          "$RUNNER_TEMP/piper/bin/pip" install --quiet piper-tts==1.8.0
-          echo "SHOWCASE_PIPER=$RUNNER_TEMP/piper/bin/piper" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/kokoro"
+          "$RUNNER_TEMP/kokoro/bin/pip" install --quiet kokoro-onnx==0.6.1
+          echo "SHOWCASE_PYTHON=$RUNNER_TEMP/kokoro/bin/python" >> "$GITHUB_ENV"
 
       - name: Cache the voice
         if: ${{ inputs.film && inputs.voice }}

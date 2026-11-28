@@ -1,24 +1,28 @@
-// The voice: each line of the story read by Piper, a local neural voice, before the take (lines first), so that a beat
+// The voice: each line of the story read by Kokoro, a local neural voice, before the take (lines first), so that a beat
 // holds as long as its lines are spoken; and the voice track the cut mixes from those readings, each at its cue.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** The reader, which Kokoro's Python package runs: it reads a job's lines with the model loaded once. */
+const READER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'voice.py');
 
 /**
- * The voice: Piper's `en_US-bryce-medium`, a young US man's voice whose recordings their speaker put in the public
- * domain, from the piper-voices repository (MIT) at a fixed revision, each file checked by its SHA-256, read livelier
- * than its defaults (0.667 and 0.8) at its own speed (`settings`: Piper's options). Piper itself (GPL-3.0) runs as a
- * program of its own, installed beside the showcase, never bundled.
+ * The voice: Kokoro's `am_michael`, a young US man's, at its own speed, from Kokoro-82M (Apache-2.0) as the
+ * kokoro-onnx project releases it, each file checked by its SHA-256. Kokoro runs in a Python environment of its own
+ * (`pip install kokoro-onnx`), never bundled.
  */
 export const VOICE = {
-  name: 'en_US-bryce-medium',
-  settings: { '--noise-scale': '0.9', '--noise-w-scale': '1.0' },
-  base: 'https://huggingface.co/rhasspy/piper-voices/resolve/613b6e5ad36ddca4e70e171957291483dc244d9f/en/en_US/bryce/medium/',
+  name: 'am_michael',
+  speed: 1,
+  lang: 'en-us',
+  base: 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/',
   files: {
-    'en_US-bryce-medium.onnx': 'dc9caa6c313199ffb5ac698b6e542fa6cba388aeaf2731e25262e33b9810aef1',
-    'en_US-bryce-medium.onnx.json': '7ceb1bc4af6d4e41b6d1edbb86c67e91e01eaa71f66db4cd0ae92ac704d415be',
+    model: { name: 'kokoro-v1.0.onnx', sha256: '7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5' },
+    voices: { name: 'voices-v1.0.bin', sha256: 'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d' },
   },
 };
 
@@ -32,11 +36,16 @@ export function voiceCache() {
 
 const sha256 = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-/** The voice's model in `dir`, downloaded there once (with curl, which follows the machine's proxy) and checked. */
+/**
+ * The voice's files in `dir` (`{ model, voices }`, their paths), downloaded there once (with curl, which follows the
+ * machine's proxy) and checked.
+ */
 export function ensureVoice(dir = voiceCache(), say = () => {}) {
   fs.mkdirSync(dir, { recursive: true });
-  for (const [name, sum] of Object.entries(VOICE.files)) {
+  const paths = {};
+  for (const [key, { name, sha256: sum }] of Object.entries(VOICE.files)) {
     const file = path.join(dir, name);
+    paths[key] = file;
     if (fs.existsSync(file) && sha256(file) === sum) continue;
     say(`the voice's ${name}, downloaded once into ${dir}`);
     execFileSync('curl', ['-fsSL', '--retry', '3', '-o', file, VOICE.base + name], { stdio: 'inherit' });
@@ -45,7 +54,7 @@ export function ensureVoice(dir = voiceCache(), say = () => {}) {
       throw new Error(`the voice's ${name} is not the file expected: its SHA-256 differs`);
     }
   }
-  return path.join(dir, `${VOICE.name}.onnx`);
+  return paths;
 }
 
 /** The length of a WAV file's sound, in ms, from its header: its `data` chunk's size over its bytes a second. */
@@ -68,43 +77,54 @@ export function wavMs(buffer) {
 }
 
 /**
- * The file a line's reading by the voice `model` with `settings` (Piper's options) is kept in: named by a hash of the
- * voice, its settings and the text.
+ * The file a line's reading by `voice` (`VOICE`'s fields) is kept in: named by a hash of the voice, its model, its
+ * speed and the text.
  */
-export function readingFile(model, text, settings = VOICE.settings) {
+export function readingFile(text, voice = VOICE) {
   const hash = createHash('sha256')
-    .update(`${path.basename(model)}\n${JSON.stringify(settings)}\n${text}`)
+    .update([voice.name, voice.files.model.sha256, voice.speed, voice.lang, text].join('\n'))
     .digest('hex');
   return `${hash.slice(0, 16)}.wav`;
 }
 
 /**
- * Each of `texts` read by the voice's `model` into a WAV in `dir`, once per text, with Piper (`SHOWCASE_PIPER`, else
- * `piper` on the PATH): resolves with each text's `file` (in `dir`) and its length, `ms`.
+ * Each of `texts` read by the voice (`files`, from `ensureVoice`) into a WAV in `dir`, once per text, by Kokoro's
+ * Python package (`SHOWCASE_PYTHON`, else `python3`) in one run: resolves with each text's `file` (in `dir`) and its
+ * length, `ms`.
  */
-export function readLines(texts, { model, dir, piper = process.env.SHOWCASE_PIPER ?? 'piper', say = () => {} }) {
+export function readLines(texts, { files, dir, python = process.env.SHOWCASE_PYTHON ?? 'python3', say = () => {} }) {
   fs.mkdirSync(dir, { recursive: true });
-  const read = {};
   const unique = [...new Set(texts)];
-  say(`${unique.length} lines read by ${path.basename(model, '.onnx')}, into ${dir}`);
-  for (const text of unique) {
-    const file = readingFile(model, text);
-    const target = path.join(dir, file);
-    if (!fs.existsSync(target)) {
-      try {
-        const settings = Object.entries(VOICE.settings).flat();
-        execFileSync(piper, ['-m', model, ...settings, '-f', target], {
-          input: text,
-          stdio: ['pipe', 'ignore', 'pipe'],
-        });
-      } catch (error) {
-        const why = error.code === 'ENOENT' ? `${piper} is not installed: pip install piper-tts` : String(error.stderr);
-        throw new Error(`the voice could not read "${text}": ${why}`);
-      }
+  const missing = unique.filter((text) => !fs.existsSync(path.join(dir, readingFile(text))));
+  say(`${unique.length} lines read by Kokoro's ${VOICE.name} into ${dir}, ${missing.length} of them now`);
+  if (missing.length) {
+    const job = {
+      model: files.model,
+      voices: files.voices,
+      voice: VOICE.name,
+      speed: VOICE.speed,
+      lang: VOICE.lang,
+      lines: missing.map((text) => ({ text, file: path.join(dir, readingFile(text)) })),
+    };
+    try {
+      execFileSync(python, ['-I', READER], { input: JSON.stringify(job), stdio: ['pipe', 'ignore', 'pipe'] });
+    } catch (error) {
+      const stderr = String(error.stderr ?? '');
+      const why =
+        error.code === 'ENOENT'
+          ? `${python} was not found: set SHOWCASE_PYTHON to a Python with kokoro-onnx`
+          : /No module named 'kokoro_onnx'/.test(stderr)
+            ? `${python} has no kokoro-onnx: pip install kokoro-onnx, or set SHOWCASE_PYTHON`
+            : stderr.trim().split('\n').at(-1);
+      throw new Error(`the voice could not read the lines: ${why}`);
     }
-    read[text] = { file, ms: wavMs(fs.readFileSync(target)) };
   }
-  return read;
+  return Object.fromEntries(
+    unique.map((text) => {
+      const file = readingFile(text);
+      return [text, { file, ms: wavMs(fs.readFileSync(path.join(dir, file))) }];
+    }),
+  );
 }
 
 /**

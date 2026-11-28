@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { cueSheet, lineMs, scheduleLines, spokenMs } from '../lib/timeline.mjs';
-import { LOUDNESS, mixArguments, readingFile, wavMs } from '../lib/voice.mjs';
+import { LOUDNESS, VOICE, mixArguments, readingFile, wavMs } from '../lib/voice.mjs';
 
 /** A WAV file of `ms` of silence, 16-bit mono at `rate`, its chunks in `order`. */
 function wav(ms, { rate = 22_050, order = ['fmt ', 'data'], extra = false } = {}) {
@@ -48,13 +48,13 @@ describe('a reading’s length', () => {
 });
 
 describe('the readings', () => {
-  test('are kept by the voice, its settings and the text', () => {
-    const a = readingFile('/voices/en_US-bryce-medium.onnx', 'A line.');
+  test('are kept by the voice, its model, its speed and the text', () => {
+    const a = readingFile('A line.');
     assert.match(a, /^[0-9a-f]{16}\.wav$/);
-    assert.equal(readingFile('/elsewhere/en_US-bryce-medium.onnx', 'A line.'), a);
-    assert.notEqual(readingFile('/voices/en_GB-cori-high.onnx', 'A line.'), a);
-    assert.notEqual(readingFile('/voices/en_US-bryce-medium.onnx', 'Another line.'), a);
-    assert.notEqual(readingFile('/voices/en_US-bryce-medium.onnx', 'A line.', { '--noise-scale': '0.5' }), a);
+    assert.equal(readingFile('A line.', VOICE), a);
+    assert.notEqual(readingFile('Another line.'), a);
+    assert.notEqual(readingFile('A line.', { ...VOICE, name: 'am_fenrir' }), a);
+    assert.notEqual(readingFile('A line.', { ...VOICE, speed: 0.9 }), a);
   });
 
   test('hold a line as long as it is spoken, and a pause; a line not read as long as it is read', () => {
