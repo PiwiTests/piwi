@@ -25,6 +25,7 @@ export const {
   failureDiagnoses,
   failureDiagnosisVersions,
   appSettings,
+  storageTotals,
   files,
   traceResources,
   traceBlobs,
@@ -81,6 +82,7 @@ export const {
   testFunctions,
   testSelections,
   runPlans,
+  shardSplits,
   reusedResults,
   shareLinks,
   graphNodes,
@@ -103,9 +105,12 @@ export const {
   projectStars,
   runTargets,
   runRequests,
+  ciDispatches,
   credentials,
   credentialProjects,
   credentialUses,
+  credentialUserTokens,
+  credentialAuthorizations,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -207,6 +212,8 @@ export type {
   ReportSnapshot,
   RunTarget,
   RunRequestRow,
+  CiDispatchRow,
   CredentialRow,
   CredentialUseRow,
+  CredentialUserTokenRow,
 } from './schema.sqlite';

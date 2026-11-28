@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_credential_user_tokens_remote_user` ON `credential_user_tokens` (`credential_id`,lower("remote_user"));

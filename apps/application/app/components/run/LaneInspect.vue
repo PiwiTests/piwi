@@ -21,7 +21,8 @@ import {
   type InspectMoment,
   type InspectSource,
 } from '~/utils/live-inspect';
-import { SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS } from '~/utils';
+import { SEGMENTED_SELECTED_CLASS } from '~/utils';
+import { SELECTED_ROW_CLASS } from '@piwitests/run-ui/ui-classes';
 
 const props = defineProps<{
   /** Where each page is read, null while the connection it is read through is not open, and what the view says. */

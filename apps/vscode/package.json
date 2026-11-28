@@ -1,7 +1,7 @@
 {
   "name": "piwi",
   "displayName": "Piwi",
-  "version": "0.74.0",
+  "version": "0.78.0",
   "private": true,
   "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
   "categories": [
@@ -46,13 +46,13 @@
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@piwitests/run-model": "*",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.1",
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.0",
     "esbuild": "^0.28.2",
     "ovsx": "^1.3.0",
-    "playwright": "^1.63.0",
+    "playwright": "^1.65.1",
     "sharp": "^0.35.5",
     "vscode-languageclient": "^10.1.2"
   },
@@ -166,28 +166,8 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "No failure in the latest run of this branch: nothing to fix, and nothing your runs since broke.\n[Refresh the latest run](command:piwi.refreshRun)",
-        "when": "piwi.failuresView == clear"
-      },
-      {
-        "view": "piwi.failures",
         "contents": "The Piwi editor service is not answering. It starts with the extension, on a workspace that holds a Playwright config; the log says what it did.\n[Restart the editor service](command:piwi.restartService)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == unavailable"
-      },
-      {
-        "view": "piwi.failures",
-        "contents": "[Retry](command:piwi.refresh)\n[Open settings](command:piwi.openSettings)",
-        "when": "piwi.failuresView == unreachable"
-      },
-      {
-        "view": "piwi.failures",
-        "contents": "[Retry](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
-        "when": "piwi.failuresView == desktop-unproven"
-      },
-      {
-        "view": "piwi.failures",
-        "contents": "[Compare with…](command:piwi.compareWith)\n[Get started](command:piwi.getStarted)",
-        "when": "piwi.failuresView == norun"
       },
       {
         "view": "piwi.picker",

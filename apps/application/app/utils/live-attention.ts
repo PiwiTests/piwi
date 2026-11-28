@@ -1,5 +1,5 @@
 import type { Lane } from '#shared/live-lanes';
-import { liveWorkerName, type LiveLane } from '#shared/live-view';
+import { liveWorkerName, type LiveLane, type LiveWorkerState } from '#shared/live-view';
 import type { TestCaseResult } from '~~/types/api';
 import { stopWords } from './stop-words';
 import { liveCaseKey } from './test-attempts';
@@ -58,10 +58,15 @@ function attemptKey(row: TestCaseResult, lane: LiveLane): string {
 
 /**
  * What each lane needs attention for now, from the page's rows (every attempt, the earlier ones a retry followed
- * included) and the run's lanes as its stream sends them: an attempt that failed, a running one marked **Stuck?**, a
- * lane stopped at a call.
+ * included), the run's lanes as its stream sends them, and its live workers: an attempt that failed, a running one
+ * marked **Stuck?**, a lane stopped at a call, and a CI test held at its failure or paused for its controllers, a stop
+ * that lasts while it waits, whether or not its lane told it yet.
  */
-export function attentionSignals(rows: readonly TestCaseResult[], lanes: readonly Lane[]): AttentionSignal[] {
+export function attentionSignals(
+  rows: readonly TestCaseResult[],
+  lanes: readonly Lane[],
+  workers: readonly LiveWorkerState[] = [],
+): AttentionSignal[] {
   const signals: AttentionSignal[] = [];
   for (const row of rows) {
     const lane = rowLane(row);
@@ -81,6 +86,19 @@ export function attentionSignals(rows: readonly TestCaseResult[], lanes: readonl
       reason: 'stopped',
       test: test?.title ?? stop.title,
       stop: stopWords(stop.reason),
+    });
+  }
+  for (const { shard, worker, slot, paused, pauses } of workers) {
+    const waits = paused?.reason === 'held' || (paused?.reason === 'pause' && paused.until !== undefined && !!pauses);
+    if (slot === undefined || !paused || !waits) continue;
+    const lane = { shard, slot };
+    if (signals.some((signal) => signal.reason === 'stopped' && sameLane(signal.lane, lane))) continue;
+    signals.push({
+      key: `stopped:${shard ?? ''}#${slot}|${worker}|${paused.reason}:${paused.test ?? ''}`,
+      lane,
+      reason: 'stopped',
+      test: paused.test ?? paused.call.title,
+      stop: stopWords(paused.reason),
     });
   }
   return signals;

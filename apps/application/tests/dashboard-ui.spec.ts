@@ -35,7 +35,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/');
 
     // Check page title
-    await expect(page).toHaveTitle(/Piwi Dashboard/);
+    await expect(page).toHaveTitle(/(^| — )Piwi$/);
 
     // Check for stat strip
     await expect(page.getByText('failing now')).toBeVisible();

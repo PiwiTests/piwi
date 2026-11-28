@@ -317,10 +317,11 @@ opening the cluster's page it answers or saying which ticket is linked already.
   that does not answer, with **Retry**, one still being read, or `NOT_CONNECTED` with **Connect**. Re-run the failing
   tests shows while the view lists failures (`piwi.failuresView == failures`), the instance answering or not.
   `tests/menus.test.ts` holds the gates.
-- The welcome content follows the `piwi.failuresView` context key, the service's `FailuresResult.view.state` (or
-  `unavailable` when the service does not answer, read again when the client stops); for `norun`, `unreachable`,
-  `desktop-unproven` and `loading` the view's message is the service's sentence, before any run's line, and the welcome
-  holds the state's buttons.
+- While the tree draws no node, the view says its state (`failuresViewEmpty`): for `clear`, `norun`, `unreachable`,
+  `desktop-unproven`, `refused`, `no-project` and `loading` the view's message is the service's sentence and the tree
+  a node for each action the state links (`FailuresView.links`), as VS Code hides the welcome under a message; for `disconnected` and
+  `unavailable` (the service does not answer, read again when the client stops), the welcome content that follows the
+  `piwi.failuresView` context key, with its buttons.
 - The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 
 ## Runs
@@ -686,10 +687,20 @@ until one says `ended`, or the service stops (`withCiSession`).
   the editor cannot show. No node pauses, steers, shares or holds.
 - **A CI lane in the worker panel** (`openCi`) is watched with `piwi/ciWatch` and drawn from `piwi/ciFrame`, titled
   `Piwi: CI run #78 · worker 2` (`ciLaneTitle`), captioned from the CI sessions (`ciLaneCaption`, which `ciChanged`
-  follows, drawing again only when the caption or the watch changed: `ciLaneRedraws`) and drawn by `pausedPageHtml`
-  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready`, Watch and the layers' sections
-  dropped in the extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused
-  shows under the caption, Watch then off. Another CI lane takes the watch's place on the service's side without an
+  follows, drawing again only when the caption, the watch or the held failure changed: `ciLaneRedraws`) and drawn by
+  `pausedPageHtml` with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready`, Watch, the
+  layers' sections and the lane's buttons (`ci-command`) dropped in the extension too (`ciLaneTakes`), input answered refused. Why the
+  watch ended (`ended`) or was refused shows under the caption, Watch then off.
+- **A held or paused CI test** (`CiTest.held`, `CiTest.paused`, `ciLaneStop`) shows above the image in the service's
+  words (`ciStopHtml`, filled again by the view's script on each state): where it stands and by or for whom, its call
+  and place, and that the CI job's own timeout still runs; its place opens its line (`ci-place`, `ciStopPlace`). The
+  lane's buttons are the service's, in its words: **Let it go** on a held failure (`piwi/ciLetGo`), else
+  `CiTest.controls` (**Pause**, **Resume**, **End the test**: `piwi/ciControl`, `ciCommandParams`), with a Pause waiting
+  or dropped said under them (`pauseAsk`). One is asked in each state of the lane (`CiAsks` of
+  `@piwitests/run-model/ci`, by `ciLaneKey` and the state's `id`), the buttons off until that state changes, the lane
+  shows anything new after the instance took the ask (`ciStopShown`), or the ask is refused; the answer shows under the
+  caption while the lane stands in that state (`ciNoteStands`), a refusal as a warning too. The **CI Runs** view marks a held or
+  paused test with its state (`ciNodes`). Another CI lane takes the watch's place on the service's side without an
   `on: false`; a local slot ends it, and so does a `piwi/ciWatch` the service never answered.
 - **The lane's layers** show under the worker panel's image, a local slot's (`piwi/laneLayer`) and a CI lane's
   (`piwi/ciLayer`) alike: **Why it waits** (the call log's last lines, what the locator matches: `waitsView`), then
@@ -1156,11 +1167,17 @@ about driving VS Code this way is recorded in
 
 ## Nightly suite
 
-The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window. It asserts on
+The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture, in one window for
+`editor.spec.mjs`. It asserts on
 the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
 the quick fixes, the hover, CodeLens, the failures view and the Testing view. It also checks the layout: no row of
 lenses of the active editor, at the window's width and in an editor half as wide, is cut short (its text past its
-box, or its box past the code's area), and a flaky test's line says so.
+box, or its box past the code's area), and a flaky test's line says so. `failures-states.spec.mjs` opens a window of its
+own for six states of the failures view without a failure to list: a run with no failure, no run yet and no project
+chosen, from the stub (`startStub`'s `latest`), an instance that does not answer, one that asks for a key, and none
+named. It holds the view's sentence and link rows, or its welcome and buttons, to
+`packages/editor/tests/golden/failures-view.json`; the loading, desktop-app and baseline states are held there by the
+unit tests alone.
 
 `.github/workflows/nightly-vscode.yml` runs it every night and on demand, not on pull requests. A failure leaves the
 HTML report, with a screenshot of the window.

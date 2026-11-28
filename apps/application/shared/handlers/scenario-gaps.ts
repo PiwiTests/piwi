@@ -99,6 +99,7 @@ import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwites
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
 import { computeChangeCoverage, type ChangeReach } from '#shared/handlers/change-coverage';
+import { isConsoleErrorType, isPageErrorType } from '#shared/console-entries';
 import { unreachedLinesText, type ChangedLines } from '#shared/patch-coverage';
 import { recordOutcome } from '../../server/utils/outcomes';
 import { suggestionHash, type HandbackActor } from '../handback-outcomes';
@@ -1870,6 +1871,8 @@ export interface PassedExecutionErrors {
   /** Routes whose response carried a backend log at error level. */
   backendErrors: string[];
   consoleErrors: number;
+  /** Exceptions the page threw and nothing caught. */
+  pageErrors: number;
 }
 
 /** The evidence detail for a passing execution's errors, or null when it reported none. */
@@ -1889,6 +1892,9 @@ export function passedWithErrorsDetail(e: PassedExecutionErrors): string | null 
   if (e.consoleErrors > 0) {
     parts.push(`the page logged ${e.consoleErrors} console error${e.consoleErrors === 1 ? '' : 's'}`);
   }
+  if (e.pageErrors > 0) {
+    parts.push(`the page threw ${e.pageErrors} uncaught error${e.pageErrors === 1 ? '' : 's'}`);
+  }
   return parts.length > 0 ? `run #${e.runId} · ${parts.join(' · ')}` : null;
 }
 
@@ -1896,11 +1902,11 @@ export function passedWithErrorsDetail(e: PassedExecutionErrors): string | null 
  * The tests whose newest final attempt on the default branch, in the window,
  * passed while the application reported an error: a 5xx from one of the
  * graph's routes, a backend log at error level on one of its responses, or a
- * console error from the page. A console line from another origin's script and
- * the browser's own failed-resource line are not the application's errors. A
- * response no server sent (the test's route handler fulfilled it) is no 5xx of
- * the application, and a test that fulfilled a failing one meant to see the page
- * fail, so its console errors are not counted either.
+ * console error or uncaught error from the page. One from another origin's
+ * script and the browser's own failed-resource line are not the application's
+ * errors. A response no server sent (the test's route handler fulfilled it) is
+ * no 5xx of the application, and a test that fulfilled a failing one meant to
+ * see the page fail, so its page's errors are not counted either.
  */
 async function loadPassedWithErrors(
   db: DrizzleDB,
@@ -1958,7 +1964,13 @@ async function loadPassedWithErrors(
       a.id,
       {
         testCaseId: a.testCaseId,
-        errors: { runId: a.testRunId, serverErrors: [], backendErrors: [], consoleErrors: 0 } as PassedExecutionErrors,
+        errors: {
+          runId: a.testRunId,
+          serverErrors: [],
+          backendErrors: [],
+          consoleErrors: 0,
+          pageErrors: 0,
+        } as PassedExecutionErrors,
       },
     ]),
   );
@@ -2012,19 +2024,24 @@ async function loadPassedWithErrors(
       .where(and(inArray(testRunsCases.id, slice), isNotNull(testRunsCases.consoleLogs)));
     for (const row of consoleRows) {
       const entry = byExecution.get(row.id)!;
-      const sources: string[] = [];
+      const sources: Array<{ src: string; thrown: boolean }> = [];
       for (const log of parseJsonArray(row.consoleLogs)) {
         const l = log as { type?: unknown; text?: unknown; location?: unknown } | null;
-        if (l?.type !== 'error' || (typeof l.text === 'string' && RESOURCE_ERROR_TEXT.test(l.text))) continue;
-        sources.push(typeof l.location === 'string' ? l.location.replace(/(:\d+){1,2}$/, '') : '');
+        if (!isConsoleErrorType(l?.type) || (typeof l?.text === 'string' && RESOURCE_ERROR_TEXT.test(l.text))) continue;
+        sources.push({
+          src: typeof l?.location === 'string' ? l.location.replace(/(:\d+){1,2}$/, '') : '',
+          thrown: isPageErrorType(l?.type),
+        });
       }
       if (sources.length === 0) continue;
-      const origins = sources.some((src) => /^https?:/.test(src))
+      const origins = sources.some(({ src }) => /^https?:/.test(src))
         ? await ownOrigins(row.id, entry.errors.runId)
         : new Set<string>();
-      entry.errors.consoleErrors += sources.filter(
-        (src) => !/^https?:/.test(src) || isOwnOriginRequest(src, origins),
-      ).length;
+      for (const { src, thrown } of sources) {
+        if (/^https?:/.test(src) && !isOwnOriginRequest(src, origins)) continue;
+        if (thrown) entry.errors.pageErrors += 1;
+        else entry.errors.consoleErrors += 1;
+      }
     }
     const requestRows = await db
       .select({
@@ -2056,8 +2073,11 @@ async function loadPassedWithErrors(
     }
   }
   // A test that fulfilled a failing response itself meant to see the page fail:
-  // the console errors that follow are its own doing. Its backend logs stand.
-  for (const id of mocksFailure) byExecution.get(id)!.errors.consoleErrors = 0;
+  // the page's errors that follow are its own doing. Its backend logs stand.
+  for (const id of mocksFailure) {
+    byExecution.get(id)!.errors.consoleErrors = 0;
+    byExecution.get(id)!.errors.pageErrors = 0;
+  }
 
   // One execution per test: a test that passed on several browsers reports its first with errors.
   const out = new Map<number, PassedExecutionErrors>();

@@ -66,14 +66,17 @@ export function protectedResourceMetadata(baseUrl: string) {
     authorization_servers: [urls.issuer],
     scopes_supported: [MCP_OAUTH_SCOPE],
     bearer_methods_supported: ['header'],
-    resource_name: 'Piwi Dashboard MCP server',
+    resource_name: 'Piwi MCP server',
   };
 }
 
 const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 
-/** OAuth 2.0 Authorization Server Metadata (RFC 8414). */
-export function authorizationServerMetadata(baseUrl: string) {
+/**
+ * OAuth 2.0 Authorization Server Metadata (RFC 8414). `clientMetadataDocuments`
+ * says whether a client may name its metadata document as its `client_id`.
+ */
+export function authorizationServerMetadata(baseUrl: string, opts: { clientMetadataDocuments?: boolean } = {}) {
   const urls = mcpOAuthUrls(baseUrl);
   return {
     issuer: urls.issuer,
@@ -89,6 +92,7 @@ export function authorizationServerMetadata(baseUrl: string) {
     revocation_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
+    ...(opts.clientMetadataDocuments ? { client_id_metadata_document_supported: true } : {}),
   };
 }
 
@@ -319,6 +323,26 @@ export function cleanClientUri(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Why a client's `grant_types` and `response_types` cannot be served, or null:
+ * the authorization code grant (with refresh tokens) and the `code` response
+ * type alone. Absent, they default to those.
+ */
+export function clientTypesProblem(metadata: Record<string, unknown>): string | null {
+  const grantTypes = metadata.grant_types ?? ['authorization_code'];
+  if (!Array.isArray(grantTypes) || !grantTypes.includes('authorization_code')) {
+    return 'grant_types must include authorization_code';
+  }
+  if (grantTypes.some((g) => g !== 'authorization_code' && g !== 'refresh_token')) {
+    return 'only authorization_code and refresh_token are supported';
+  }
+  const responseTypes = metadata.response_types ?? ['code'];
+  if (!Array.isArray(responseTypes) || responseTypes.some((r) => r !== 'code')) {
+    return 'only the code response type is supported';
+  }
+  return null;
 }
 
 /** Whether a registration asks for a client secret: any method but `none`. */

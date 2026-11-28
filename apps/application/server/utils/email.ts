@@ -3,6 +3,7 @@ import type { ReportBundle } from '#shared/reports/types';
 import { renderReportEmail } from '#shared/reports/render-email';
 import { emailButton, emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
 import { BRAND_MARK_CID, piwiMarkPng } from '#shared/brand';
+import { formatBytes } from '#shared/utils/format-bytes';
 import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import {
   renderDigestEmailAt,
@@ -55,7 +56,7 @@ export function getSmtpConfig(): SmtpConfig {
   const user = process.env.PIWI_SMTP_USER || '';
   const pass = process.env.PIWI_SMTP_PASS || '';
   const from = process.env.PIWI_SMTP_FROM || '';
-  const fromName = process.env.PIWI_SMTP_FROM_NAME || 'Piwi Dashboard';
+  const fromName = process.env.PIWI_SMTP_FROM_NAME || 'Piwi';
   const port = parseInt(process.env.PIWI_SMTP_PORT || '587', 10);
   // Default secure to true only for port 465; explicit PIWI_SMTP_SECURE overrides
   const secureDefault = port === 465;
@@ -164,15 +165,51 @@ export function renderInviteEmail(token: string, username: string, invitedBy?: s
     ? `<p style="margin:0 0 16px;color:#52525b;">You were invited by <strong>${escapeHtml(invitedBy)}</strong>. Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`
     : `<p style="margin:0 0 16px;color:#52525b;">Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`;
   const body = `
-    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">You've been invited to Piwi Dashboard</h2>
+    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">You've been invited to Piwi</h2>
     ${byLine}
     ${account.html}
     ${emailButton(url, 'Set password &amp; activate')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
-  const { html } = emailLayout("You've been invited to Piwi Dashboard", body);
+  const { html } = emailLayout("You've been invited to Piwi", body);
   const byText = invitedBy ? `You were invited by ${invitedBy}. ` : '';
-  const text = `You've been invited to Piwi Dashboard\n\n${byText}Click the link below to set your password and activate your account. This link expires in 72 hours.\n\n${account.text}\n\n${url}`;
+  const text = `You've been invited to Piwi\n\n${byText}Click the link below to set your password and activate your account. This link expires in 72 hours.\n\n${account.text}\n\n${url}`;
   return { html, text };
+}
+
+/** Tells an administrator that whoever runs the instance invited another one, and where to remove the account. */
+export function renderOperatorInviteNoticeEmail(invited: string): { html: string; text: string } {
+  const url = `${siteUrl()}/settings/users`;
+  const body = `
+    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">An administrator was invited</h2>
+    <p style="margin:0 0 16px;color:#52525b;">The operator of this instance invited <strong>${escapeHtml(invited)}</strong> to become an administrator. The invitation link went to that address only, and expires in 72 hours.</p>
+    <p style="margin:0 0 24px;color:#52525b;">If nobody on your team expected it, delete the account in Settings → Users before the link is used.</p>
+    ${emailButton(url, 'Open Users')}
+    <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
+  const { html } = emailLayout('An administrator was invited', body);
+  const text = `An administrator was invited\n\nThe operator of this instance invited ${invited} to become an administrator. The invitation link went to that address only, and expires in 72 hours.\n\nIf nobody on your team expected it, delete the account in Settings → Users before the link is used.\n\n${url}`;
+  return { html, text };
+}
+
+/** Tells an administrator the stored bytes crossed a level of the storage quota, and where to see what takes the room. */
+export function renderStorageWarningEmail(
+  usedBytes: number,
+  quotaBytes: number,
+  level: number,
+): { html: string; text: string } {
+  const url = `${siteUrl()}/settings/storage`;
+  const percent = Math.floor((usedBytes / quotaBytes) * 100);
+  const title = `Storage is at ${level}% of its quota`;
+  const usage = `This instance stores ${formatBytes(usedBytes)} of its ${formatBytes(quotaBytes)} quota (${percent}%).`;
+  const next =
+    'Settings → Storage shows what takes the room. Deleting old runs, or a shorter data retention, frees it; whoever runs the instance can raise the quota.';
+  const body = `
+    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">${escapeHtml(title)}</h2>
+    <p style="margin:0 0 16px;color:#52525b;">${escapeHtml(usage)}</p>
+    <p style="margin:0 0 24px;color:#52525b;">${escapeHtml(next)}</p>
+    ${emailButton(url, 'Open Storage')}
+    <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
+  const { html } = emailLayout(title, body);
+  return { html, text: `${title}\n\n${usage}\n\n${next}\n\n${url}` };
 }
 
 export function renderVerifyEmail(token: string): { html: string; text: string } {
@@ -190,10 +227,10 @@ export function renderVerifyEmail(token: string): { html: string; text: string }
 export function renderTestEmail(to: string): { html: string; text: string } {
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Test email</h2>
-    <p style="margin:0 0 8px;color:#52525b;">This is a test email from Piwi Dashboard. If you received this, SMTP is configured correctly.</p>
+    <p style="margin:0 0 8px;color:#52525b;">This is a test email from Piwi. If you received this, SMTP is configured correctly.</p>
     <p style="margin:0;color:#a1a1aa;font-size:12px;">Sent to: ${escapeHtml(to)}</p>`;
-  const { html } = emailLayout('Test email — Piwi Dashboard', body);
-  const text = `Test email from Piwi Dashboard. SMTP is configured correctly. Sent to: ${to}`;
+  const { html } = emailLayout('Test email — Piwi', body);
+  const text = `Test email from Piwi. SMTP is configured correctly. Sent to: ${to}`;
   return { html, text };
 }
 

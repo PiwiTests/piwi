@@ -229,6 +229,7 @@ describe('ciServerRequestPreview', () => {
       url: null,
       credential: null,
       carriesAuth: null,
+      droppedInputs: null,
       error: 'Jenkins needs the job to re-run.',
     });
   });
@@ -425,5 +426,58 @@ describe('the preview and the server send the same credential', () => {
       preview: 'instance',
       server: 'instance',
     });
+  });
+});
+
+describe('the preview of a request whose credential allows some inputs only', () => {
+  test('leaves out the inputs the credential does not allow, as a dispatch does, and names them', () => {
+    const state = ciServerFormState(null);
+    state.baseUrl = 'https://jenkins.example.com/';
+    state.credentialId = 3;
+    state.rerun.job = 'qa/e2e';
+    const credential = {
+      id: 3,
+      name: 'QA bot',
+      destination: 'https://jenkins.example.com/',
+      customRequests: false,
+      disabled: false,
+      allowedInputs: ['SUITE'],
+    };
+    const preview = ciServerRequestPreview(state, 'rerun', {
+      instanceUrl: null,
+      credential,
+      inputs: [
+        ['SUITE', 'smoke'],
+        ['TARGET_ENV', 'staging'],
+      ],
+    });
+    expect(preview.droppedInputs).toEqual(['TARGET_ENV']);
+    expect(preview.text).toContain('SUITE=smoke');
+    expect(preview.text).not.toContain('TARGET_ENV');
+    const everyInput = ciServerRequestPreview(state, 'rerun', {
+      instanceUrl: null,
+      credential: { ...credential, allowedInputs: null },
+      inputs: [['TARGET_ENV', 'staging']],
+    });
+    expect(everyInput.droppedInputs).toEqual([]);
+    expect(everyInput.text).toContain('TARGET_ENV=staging');
+  });
+});
+
+describe('the preview of a request carrying the instance credential', () => {
+  test('leaves out the inputs PIWI_CI_SERVER_ALLOWED_INPUTS does not list, as a dispatch does', () => {
+    const state = ciServerFormState(null);
+    state.rerun.job = 'qa/e2e';
+    const opts = {
+      instanceUrl: 'https://jenkins.example.com/',
+      inputs: [['SUITE', 'smoke']] as [string, string][],
+    };
+    const none = ciServerRequestPreview(state, 'rerun', { ...opts, instanceAllowedInputs: [] });
+    expect(none.credential).toBe('instance');
+    expect(none.droppedInputs).toEqual(['SUITE']);
+    expect(none.text).not.toContain('SUITE');
+    const listed = ciServerRequestPreview(state, 'rerun', { ...opts, instanceAllowedInputs: ['SUITE'] });
+    expect(listed.droppedInputs).toEqual([]);
+    expect(listed.text).toContain('SUITE=smoke');
   });
 });

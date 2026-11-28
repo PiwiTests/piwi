@@ -1,4 +1,4 @@
-import { requiredTagsGrepInvert } from '@piwitests/core/environments';
+import { requiredTagsGrepInvert, requiredTagsGrepInvertProblem } from '@piwitests/core/environments';
 
 /**
  * The command lines the editor runs in a terminal: built here from arguments checked one by one, never taken as an
@@ -17,14 +17,23 @@ const SHELL_EXPANDED = /[$`"\\%!\u201C\u201D\u201E\p{Cc}]/u;
 const SHELL_PLAIN = /^[A-Za-z0-9._/:=+-]+$/;
 
 /**
+ * How an option takes its value, as Playwright's command line reads it: `true`, written after `=` or as the next word,
+ * whatever it is; `false`, none; `'optional'`, after `=`, or as the next word unless Playwright reads that word as an
+ * option, as it reads `--shuffle 42` and `--shuffle --headed`; `'variadic'`, one after `=`, else the next word,
+ * whatever it is, and each word after it up to one Playwright reads as an option (`--project chromium firefox`).
+ */
+type OptionValue = boolean | 'optional' | 'variadic';
+
+/**
  * The `playwright test` options an instance may pass, with whether each takes a value: test filters and run options
  * only, none that names a file Playwright loads (`--config`, `--reporter`, `--tsconfig`) or where it writes.
  */
-const PLAYWRIGHT_OPTIONS = new Map<string, boolean>([
+const PLAYWRIGHT_OPTIONS = new Map<string, OptionValue>([
   ['--grep', true],
   ['-g', true],
   ['--grep-invert', true],
-  ['--project', true],
+  ['-G', true],
+  ['--project', 'variadic'],
   ['--repeat-each', true],
   ['--retries', true],
   ['--workers', true],
@@ -33,19 +42,109 @@ const PLAYWRIGHT_OPTIONS = new Map<string, boolean>([
   ['--timeout', true],
   ['--trace', true],
   ['--headed', false],
-  ['--debug', false],
+  ['--debug', 'optional'],
   ['--ui', false],
   ['--last-failed', false],
   ['-x', false],
   ['--pass-with-no-tests', false],
+  ['--shuffle', 'optional'],
 ]);
 
 /**
- * A `--grep-invert` value `requiredTagsGrepInvert` writes: a run's own pattern in `(?:…)|` (group 1), then the
- * lookahead over the required tags (group 2).
+ * The values an option takes, any other refusing the command: `--debug`'s modes. From Playwright 1.63, `--debug`
+ * takes the word after it as its mode unless that word is an option, and refuses any other than these, a test filter
+ * included.
+ */
+const OPTION_CHOICES = new Map<string, readonly string[]>([['--debug', ['inspector', 'cli']]]);
+
+/** `--grep-invert` and its short form. */
+const GREP_INVERT = new Set(['--grep-invert', '-G']);
+
+/** A negative number, which Playwright reads as a value of the option before it, never as one (`--shuffle -5`). */
+const NEGATIVE_NUMBER = /^-(?:\d+|\d*\.\d+)(?:e[+-]?\d+)?$/;
+
+/** Whether Playwright reads `word` as an option rather than as a value of the option before it. */
+const readsAsOption = (word: string) => word.length > 1 && word.startsWith('-') && !NEGATIVE_NUMBER.test(word);
+
+/** A test filter, or an option and its value, as Playwright reads them. */
+interface ArgGroup {
+  /** The option as written before any `=` (`--grep`, `-G`); null for a test filter. */
+  option: string | null;
+  /** Its words as written: the filter, or the option and the words of its value. */
+  words: string[];
+  /** The option's values: the one after `=`, else the words after it. */
+  values: string[];
+}
+
+/**
+ * `args` grouped as Playwright reads them: each test filter, and each option of {@link PLAYWRIGHT_OPTIONS} with the
+ * words its value takes. Null when an argument is not a word, or is neither a test filter nor such an option with its
+ * value, written after `=` for a long option alone (Playwright reads a short one's `=` as the start of its value:
+ * `-G=x` is `=x`), or one {@link OPTION_CHOICES} refuses.
+ */
+function readArgs(args: readonly unknown[]): ArgGroup[] | null {
+  const wordAt = (i: number): string | null => {
+    const word = args[i];
+    return typeof word === 'string' && word ? word : null;
+  };
+  const groups: ArgGroup[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = wordAt(i);
+    if (arg === null) return null;
+    if (!arg.startsWith('-')) {
+      groups.push({ option: null, words: [arg], values: [] });
+      continue;
+    }
+    const eq = arg.indexOf('=');
+    const option = eq < 0 ? arg : arg.slice(0, eq);
+    const takes = PLAYWRIGHT_OPTIONS.get(option);
+    if (takes === undefined) return null;
+    const group: ArgGroup = { option, words: [arg], values: [] };
+    /** The next word, as a word of the option's value. */
+    const take = (word: string) => {
+      group.words.push(word);
+      group.values.push(word);
+      i++;
+    };
+    if (eq >= 0) {
+      if (!takes || !arg.startsWith('--')) return null;
+      group.values.push(arg.slice(eq + 1));
+    } else if (takes === true || takes === 'variadic') {
+      const value = wordAt(i + 1);
+      if (value === null) return null;
+      take(value);
+      for (
+        let next = wordAt(i + 1);
+        takes === 'variadic' && next !== null && !readsAsOption(next);
+        next = wordAt(i + 1)
+      ) {
+        take(next);
+      }
+    } else if (takes === 'optional') {
+      const next = wordAt(i + 1);
+      if (next !== null && !readsAsOption(next)) take(next);
+    }
+    const choices = OPTION_CHOICES.get(option);
+    if (choices && group.values.some((value) => !choices.includes(value))) return null;
+    groups.push(group);
+  }
+  return groups;
+}
+
+/**
+ * The words of `groups`, the test filters first, then the options in their order: an option is then followed by
+ * another or by nothing, so none takes a word it did not take as written once some are left out.
+ */
+function writtenArgs(groups: readonly ArgGroup[]): string[] {
+  return [...groups.filter((g) => !g.option), ...groups.filter((g) => g.option)].flatMap((g) => g.words);
+}
+
+/**
+ * A `--grep-invert` value `requiredTagsGrepInvert` writes: a run's own pattern in `(?:…)|` (group 1, empty for `//i`),
+ * then the lookahead over the required tags (group 2).
  */
 const REQUIRED_TAGS_FILTER =
-  /^(?:\(\?:(.+)\)\|)?\^\(\?!\.\*\(\?:\^\|\\s\)\(\?:(@[A-Za-z0-9_-]{1,63}(?:\|@[A-Za-z0-9_-]{1,63})*)\)\(\?:\\s\|\$\)\)$/;
+  /^(?:\(\?:(.*)\)\|)?\^\(\?!\.\*\(\?:\^\|\\s\)\(\?:(@[A-Za-z0-9_-]{1,63}(?:\|@[A-Za-z0-9_-]{1,63})*)\)\(\?:\\s\|\$\)\)$/;
 
 /**
  * Whether `arg` is the filter that keeps a run to the tests carrying a protected environment's required tags, as
@@ -60,8 +159,9 @@ export function isRequiredTagsFilter(arg: string): boolean {
   const match = REQUIRED_TAGS_FILTER.exec(arg);
   if (!match) return false;
   const own = match[1];
-  if (own !== undefined && (!own || SHELL_EXPANDED.test(own))) return false;
-  return requiredTagsGrepInvert(match[2]!.split('|'), own) === arg;
+  if (own !== undefined && SHELL_EXPANDED.test(own)) return false;
+  // `/own/i` is the own pattern `requiredTagsGrepInvert` keeps as `own`.
+  return requiredTagsGrepInvert(match[2]!.split('|'), own === undefined ? null : `/${own}/i`) === arg;
 }
 
 /** `arg` as a shell word: bare when no shell changes it, else double-quoted; null when a shell would expand it. */
@@ -71,18 +171,13 @@ export function shellWord(arg: string): string | null {
   return arg && !SHELL_EXPANDED.test(arg) ? `"${arg}"` : null;
 }
 
-/** Whether `args` are test filters and the options of {@link PLAYWRIGHT_OPTIONS}, each followed by its value. */
+/**
+ * Whether `args` are test filters and the options of {@link PLAYWRIGHT_OPTIONS}, each with its value, as Playwright
+ * reads them: after `=` for a long option alone, as Playwright reads a short one's `=` as the start of its value
+ * (`-G=x` is `=x`), and one of its choices for an option that has them ({@link OPTION_CHOICES}).
+ */
 export function validPlaywrightArgs(args: unknown[]): args is string[] {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (typeof arg !== 'string' || !arg) return false;
-    if (!arg.startsWith('-')) continue;
-    const eq = arg.indexOf('=');
-    const takesValue = PLAYWRIGHT_OPTIONS.get(eq < 0 ? arg : arg.slice(0, eq));
-    if (takesValue === undefined || (eq >= 0 && !takesValue)) return false;
-    if (takesValue && eq < 0 && typeof args[++i] !== 'string') return false;
-  }
-  return true;
+  return readArgs(args) !== null;
 }
 
 /** The options a run of each test several times sets itself. */
@@ -93,41 +188,33 @@ const MAX_REPEAT = 100;
 
 /**
  * `args` running each test `repeat` times without retries (`--repeat-each=3 --retries=0`), in place of the repeat and
- * retries they set; null when they are not {@link validPlaywrightArgs} or `repeat` is not a whole number from 1 to
- * {@link MAX_REPEAT}.
+ * retries they set, the test filters first ({@link writtenArgs}); null when they are not {@link validPlaywrightArgs} or
+ * `repeat` is not a whole number from 1 to {@link MAX_REPEAT}.
  */
 export function repeatArgs(args: unknown[], repeat: unknown): string[] | null {
-  if (!validPlaywrightArgs(args)) return null;
+  const groups = readArgs(args);
+  if (!groups) return null;
   if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || repeat > MAX_REPEAT) return null;
-  const kept: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-    const eq = arg.indexOf('=');
-    const name = arg.startsWith('-') ? (eq < 0 ? arg : arg.slice(0, eq)) : null;
-    const words = name && eq < 0 && PLAYWRIGHT_OPTIONS.get(name) ? [arg, args[++i]!] : [arg];
-    if (!name || !REPEAT_OPTIONS.has(name)) kept.push(...words);
-  }
-  return [...kept, `--repeat-each=${repeat}`, '--retries=0'];
+  const kept = groups.filter((g) => !g.option || !REPEAT_OPTIONS.has(g.option));
+  return [...writtenArgs(kept), `--repeat-each=${repeat}`, '--retries=0'];
 }
 
 /**
  * `args` kept to the tests carrying one of `tags`, a protected environment's required tags: the run's own
- * `--grep-invert` (the last, as Playwright reads it) taken out and merged into one with `requiredTagsGrepInvert`,
- * written last. Null when `args` are not {@link validPlaywrightArgs}.
+ * `--grep-invert` or `-G` (the last, as Playwright reads it) taken out and merged into one with
+ * `requiredTagsGrepInvert`, written last, the test filters first ({@link writtenArgs}). A sentence saying why, when the
+ * merged one cannot keep the run's own (`requiredTagsGrepInvertProblem`: written `/source/flags` without `i`). Null
+ * when `args` are not {@link validPlaywrightArgs}.
  */
-export function withRequiredTags(args: unknown[], tags: readonly string[]): string[] | null {
-  if (!validPlaywrightArgs(args)) return null;
-  const kept: string[] = [];
-  let own: string | null = null;
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-    const eq = arg.indexOf('=');
-    const name = arg.startsWith('-') ? (eq < 0 ? arg : arg.slice(0, eq)) : null;
-    const words = name && eq < 0 && PLAYWRIGHT_OPTIONS.get(name) ? [arg, args[++i]!] : [arg];
-    if (name === '--grep-invert') own = eq < 0 ? words[1]! : arg.slice(eq + 1);
-    else kept.push(...words);
-  }
-  return [...kept, '--grep-invert', requiredTagsGrepInvert(tags, own)];
+export function withRequiredTags(args: unknown[], tags: readonly string[]): string[] | string | null {
+  const groups = readArgs(args);
+  if (!groups) return null;
+  const isOwn = (g: ArgGroup) => g.option !== null && GREP_INVERT.has(g.option);
+  const own = groups.filter(isOwn).pop();
+  const pattern = own?.values[0] ?? null;
+  const problem = requiredTagsGrepInvertProblem(pattern, own?.option ?? undefined);
+  if (problem) return problem;
+  return [...writtenArgs(groups.filter((g) => !isOwn(g))), '--grep-invert', requiredTagsGrepInvert(tags, pattern)];
 }
 
 /**
@@ -244,9 +331,9 @@ const GREP_PATTERN = /[|()^$\\[\]*+?{}]/;
 export function runName(args: readonly string[]): string {
   const files: string[] = [];
   const values = new Map<string, string>();
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-    if (!arg.startsWith('-')) {
+  for (const group of readArgs(args) ?? []) {
+    if (!group.option) {
+      const arg = group.words[0]!;
       // A location anchored at its start (`^/w/a.spec.ts:3`), in two spellings (`^(?:a|b)/.`, `^(?:a|b):3`) by its first.
       const file = arg
         .replace(/^\^?\(\?:((?:\[.\]|[^|])*)\|.*\)(?=\/\.$|:\d+$|$)/, '$1')
@@ -257,11 +344,8 @@ export function runName(args: readonly string[]): string {
       if (file) files.push(file.replace(URL_ENCODED_ALTERNATIVE, '$1').replace(/\[(.)\]/g, '$1'));
       continue;
     }
-    const eq = arg.indexOf('=');
-    const option = eq < 0 ? arg : arg.slice(0, eq);
-    if (!PLAYWRIGHT_OPTIONS.get(option)) continue;
-    const value = eq < 0 ? args[++i] : arg.slice(eq + 1);
-    if (value && !values.has(option)) values.set(option, value);
+    const value = group.values[0];
+    if (value && !values.has(group.option)) values.set(group.option, value);
   }
   const grep = values.get('--grep') ?? values.get('-g');
   const what = files.length

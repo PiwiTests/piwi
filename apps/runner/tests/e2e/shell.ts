@@ -179,6 +179,7 @@ export function connectionView(state: ConnectionState) {
     keyToKeep: false,
     linkedProjectIds: linked ? [12] : [],
     projectNames: linked ? { 12: 'Acme Checkout' } : {},
+    compares: null,
   };
 }
 

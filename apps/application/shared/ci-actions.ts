@@ -4,7 +4,8 @@
  * An action has its own target (a GitHub workflow, a GitLab pipeline, a
  * Bitbucket custom pipeline, or a CI server request), the inputs it sends
  * beside the Playwright arguments, what it accepts (re-runs of failed tests,
- * a whole suite, a Flake Lab experiment), an optional environment, and may be
+ * a whole suite, the tests carrying some tags, a Flake Lab experiment), an
+ * optional environment, and may be
  * the default for each kind. The list lives in the project's `ciRerun` column
  * as `{ enabled, actions, defaults }`. A stored value with no `actions` list
  * (`via`, a `ciServer` block, one block per provider) converts when read
@@ -14,26 +15,17 @@
  * what talks to a repository host or a CI server lives in `server/utils/`.
  */
 
-import type { ScmProviderName } from '#shared/scm-urls';
+import { SCM_PROVIDER_LABELS, type ScmProviderName } from '#shared/scm-urls';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
-import {
-  CI_SERVER_PRESET_REGISTRY,
-  ciServerTargetProblem,
-  DEFAULT_ARGS_PARAMETER,
-  DEFAULT_DISPATCH_PARAMETER,
-  resolveCiServerTarget,
-  type CiRequestTemplate,
-  type CiServerAuth,
-  type CiServerPreset,
-  type CiServerTarget,
-} from '#shared/ci-server';
+import type { CiRequestTemplate, CiServerAuth, CiServerPreset } from '#shared/ci-server';
+import { ciTargetDefinition, isCiTargetType } from '#shared/ci-targets';
 
 /** What an action may be started for. */
-export const CI_ACTION_KINDS = ['tests', 'suite', 'flakeLab'] as const;
+export const CI_ACTION_KINDS = ['tests', 'suite', 'tags', 'flakeLab'] as const;
 export type CiActionKind = (typeof CI_ACTION_KINDS)[number];
 
 /** The kinds a project names a default action for, and the key each is stored under. */
-export const CI_ACTION_DEFAULT_KEYS = { tests: 'rerun', suite: 'suite', flakeLab: 'flakeLab' } as const;
+export const CI_ACTION_DEFAULT_KEYS = { tests: 'rerun', suite: 'suite', tags: 'tags', flakeLab: 'flakeLab' } as const;
 
 export const MAX_CI_ACTIONS = 20;
 export const MAX_CI_ACTION_INPUTS = 20;
@@ -43,10 +35,15 @@ export const MAX_CI_INPUT_VALUE_LENGTH = 500;
 export const MAX_CI_CHOICE_OPTIONS = 50;
 
 const ACTION_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+/** Whether a text has the shape of a CI action id. */
+export const isCiActionId = (id: string): boolean => ACTION_ID.test(id);
 /** An input name: a GitHub input id, a GitLab or Bitbucket variable key and a Jenkins parameter all accept it. */
 export const CI_INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,99}$/;
 /** The variable names GitLab and Bitbucket reserve for the CI itself: an input may not set them. */
 const RESERVED_VARIABLE_NAME = /^(CI_|GITLAB_|BITBUCKET_)/i;
+
+/** Whether GitLab and Bitbucket reserve a variable name for the CI itself, so an input may not set it. */
+export const isReservedVariableName = (name: string): boolean => RESERVED_VARIABLE_NAME.test(name);
 
 /** An input an action sends beside the Playwright arguments: a fixed value, or one of a few options. */
 export type CiActionInput =
@@ -104,7 +101,7 @@ export interface CiActionsSettings {
   enabled: boolean;
   actions: CiAction[];
   /** The action ids buttons use for each kind when no environment decides. */
-  defaults: { rerun?: string; flakeLab?: string; suite?: string };
+  defaults: { rerun?: string; flakeLab?: string; suite?: string; tags?: string };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -117,98 +114,15 @@ export function newCiActionId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** The CI server target an action of type `ci-server` sends through, in the shape the CI server code reads. */
-export function ciServerTargetOf(target: Extract<CiActionTarget, { type: 'ci-server' }>): CiServerTarget {
-  return {
-    preset: target.preset,
-    ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
-    ...(target.credentialId ? { credentialId: target.credentialId } : {}),
-    ...(target.user ? { user: target.user } : {}),
-    rerun: target.fields,
-    ...(target.custom ? { custom: { auth: target.custom.auth, rerun: target.custom.request } } : {}),
-  };
-}
-
 /** The input names the target itself sends, which an action input may not reuse. */
 export function builtInInputNames(target: CiActionTarget): string[] {
-  switch (target.type) {
-    case 'github':
-      return [target.argsInput, ...(target.dispatchIdInput ? [target.dispatchIdInput] : [])];
-    case 'gitlab':
-    case 'bitbucket':
-      return [target.argsVariable];
-    case 'ci-server':
-      return target.preset === 'custom'
-        ? []
-        : [
-            target.fields.argsParameter || DEFAULT_ARGS_PARAMETER,
-            target.fields.dispatchParameter || DEFAULT_DISPATCH_PARAMETER,
-          ];
-  }
-}
-
-/** A posted `ci-server` action target in the shape `resolveCiServerTarget` reads. */
-function rawCiServerTarget(target: Record<string, unknown>): Record<string, unknown> {
-  const custom = isRecord(target.custom) ? target.custom : null;
-  return {
-    preset: target.preset,
-    baseUrl: target.baseUrl,
-    credentialId: target.credentialId,
-    user: target.user,
-    rerun: target.fields,
-    ...(custom ? { custom: { auth: custom.auth, rerun: custom.request } } : {}),
-  };
-}
-
-/** A posted credential id: a positive integer, else absent. */
-function credentialIdOf(raw: unknown): { credentialId?: number } {
-  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? { credentialId: raw } : {};
+  return ciTargetDefinition(target.type).builtInNames(target);
 }
 
 /** A target from an untrusted payload, or null when it cannot dispatch. */
 function resolveTarget(input: unknown): CiActionTarget | null {
-  if (!isRecord(input)) return null;
-  if (input.type === 'github') {
-    const workflow = str(input.workflow);
-    const ref = str(input.ref);
-    const argsInput = str(input.argsInput);
-    const dispatchIdInput = str(input.dispatchIdInput);
-    if (!workflow || !ref || !argsInput) return null;
-    return {
-      type: 'github',
-      workflow,
-      ref,
-      argsInput,
-      ...(dispatchIdInput ? { dispatchIdInput } : {}),
-      ...credentialIdOf(input.credentialId),
-    };
-  }
-  if (input.type === 'gitlab') {
-    const ref = str(input.ref);
-    const argsVariable = str(input.argsVariable);
-    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable, ...credentialIdOf(input.credentialId) } : null;
-  }
-  if (input.type === 'bitbucket') {
-    const pipeline = str(input.pipeline);
-    const argsVariable = str(input.argsVariable);
-    return pipeline && argsVariable
-      ? { type: 'bitbucket', pipeline, argsVariable, ...credentialIdOf(input.credentialId) }
-      : null;
-  }
-  if (input.type === 'ci-server') {
-    const resolved = resolveCiServerTarget(rawCiServerTarget(input));
-    if (!resolved) return null;
-    return {
-      type: 'ci-server',
-      preset: resolved.preset,
-      ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
-      ...(resolved.credentialId ? { credentialId: resolved.credentialId } : {}),
-      ...(resolved.user ? { user: resolved.user } : {}),
-      fields: resolved.rerun,
-      ...(resolved.custom ? { custom: { auth: resolved.custom.auth, request: resolved.custom.rerun } } : {}),
-    };
-  }
-  return null;
+  if (!isRecord(input) || !isCiTargetType(input.type)) return null;
+  return ciTargetDefinition(input.type).resolve(input);
 }
 
 function resolveInputs(input: unknown, target: CiActionTarget): CiActionInput[] {
@@ -287,15 +201,8 @@ export function hasCiActions(raw: unknown): raw is Record<string, unknown> & { a
   return isRecord(raw) && Array.isArray(raw.actions);
 }
 
-const PROVIDER_LABEL: Record<ScmProviderName, string> = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
 const RERUN_NAME = 'Re-run failed tests';
 const FLAKE_LAB_NAME = 'Flake Lab';
-
-/** What names an action in a list that holds several: the host or the CI server preset it targets. */
-function targetLabel(target: CiActionTarget): string {
-  if (target.type !== 'ci-server') return PROVIDER_LABEL[target.type];
-  return target.preset === 'custom' ? 'Custom request' : CI_SERVER_PRESET_REGISTRY[target.preset].label;
-}
 
 /**
  * The actions a stored value with no `actions` list stands for: a re-run
@@ -403,7 +310,9 @@ export function ciActionsFromLegacy(legacy: CiRerunSettings): CiActionsSettings 
     [rerun, RERUN_NAME],
     [flakeLab, FLAKE_LAB_NAME],
   ] as const) {
-    for (const action of list) action.name = list.length > 1 ? `${base} · ${targetLabel(action.target)}` : base;
+    for (const action of list) {
+      action.name = list.length > 1 ? `${base} · ${ciTargetDefinition(action.target.type).label(action.target)}` : base;
+    }
   }
 
   return {
@@ -450,8 +359,8 @@ function inputProblem(raw: unknown, taken: Set<string>, target: CiActionTarget):
   }
   if (taken.has(name.toLowerCase())) return `The input "${name}" is sent twice: names must be unique.`;
   taken.add(name.toLowerCase());
-  if ((target.type === 'gitlab' || target.type === 'bitbucket') && RESERVED_VARIABLE_NAME.test(name)) {
-    return reservedInputMessage(name, target.type);
+  if (ciTargetDefinition(target.type).reservesCiVariables && RESERVED_VARIABLE_NAME.test(name)) {
+    return reservedInputMessage(name, target);
   }
   if (raw.kind === 'fixed') {
     if (typeof raw.value === 'string' && raw.value.trim().length > MAX_CI_INPUT_VALUE_LENGTH) {
@@ -501,10 +410,8 @@ export function ciActionsProblem(raw: unknown): string | null {
     const action = resolveAction(entry);
     if (!action) {
       const target = isRecord(entry) && isRecord(entry.target) ? entry.target : null;
-      if (target?.type === 'ci-server') {
-        const problem = ciServerTargetProblem(rawCiServerTarget(target));
-        if (problem) return `${label}: ${problem}`;
-      }
+      const problem = target && isCiTargetType(target.type) ? ciTargetDefinition(target.type).problem(target) : null;
+      if (problem) return `${label}: ${problem}`;
       return `${label} needs a name and a complete target.`;
     }
     const posted = entry as Record<string, unknown>;
@@ -528,37 +435,27 @@ export function ciActionsProblem(raw: unknown): string | null {
   return null;
 }
 
-/** Why an input name is refused on GitLab or Bitbucket: the CI itself reserves it. */
-export function reservedInputMessage(name: string, provider: 'gitlab' | 'bitbucket' = 'gitlab'): string {
-  return `The input "${name}" is a variable ${PROVIDER_LABEL[provider]} reserves: names starting with CI_, GITLAB_ or BITBUCKET_ cannot be set.`;
+/** Why an input name is refused on a target whose CI reserves it (`reservesCiVariables` of its definition). */
+export function reservedInputMessage(name: string, target: CiActionTarget): string {
+  return `The input "${name}" is a variable ${ciTargetDefinition(target.type).label(target)} reserves: names starting with CI_, GITLAB_ or BITBUCKET_ cannot be set.`;
 }
 
 /** The first of an action's inputs that GitLab or Bitbucket reserve the name of, or null. */
 export function reservedInputName(action: CiAction): string | null {
-  if (action.target.type !== 'gitlab' && action.target.type !== 'bitbucket') return null;
+  if (!ciTargetDefinition(action.target.type).reservesCiVariables) return null;
   return action.inputs.find((input) => RESERVED_VARIABLE_NAME.test(input.name))?.name ?? null;
 }
 
 /** A short description of an action's target, for the list. */
 export function ciActionTargetSummary(target: CiActionTarget): string {
-  switch (target.type) {
-    case 'github':
-      return `GitHub · ${target.workflow}`;
-    case 'gitlab':
-      return 'GitLab pipeline';
-    case 'bitbucket':
-      return `Bitbucket · custom: ${target.pipeline}`;
-    case 'ci-server':
-      return target.preset === 'custom'
-        ? 'Custom request'
-        : `${CI_SERVER_PRESET_REGISTRY[target.preset].label} · ${target.fields.job ?? ''}`.trim();
-  }
+  return ciTargetDefinition(target.type).summary(target);
 }
 
 /** The label of each kind an action accepts. */
 export const CI_ACTION_KIND_LABELS: Record<CiActionKind, string> = {
   tests: 'Re-runs',
   suite: 'Run on CI',
+  tags: 'Tagged tests',
   flakeLab: 'Flake Lab',
 };
 
@@ -567,10 +464,17 @@ export function ciActionDefaultKinds(settings: CiActionsSettings, actionId: stri
   return CI_ACTION_KINDS.filter((kind) => settings.defaults[CI_ACTION_DEFAULT_KEYS[kind]] === actionId);
 }
 
-/** The inputs an action sends with a dispatch: fixed values as set, a choice as its default. */
-export function ciActionInputValues(action: CiAction): Record<string, string> {
+/**
+ * The inputs an action sends with a dispatch: fixed values as set, a choice as
+ * the value `chosen` names when it is one of its options, else its default.
+ */
+export function ciActionInputValues(action: CiAction, chosen?: Record<string, string> | null): Record<string, string> {
   const values: Record<string, string> = {};
-  for (const input of action.inputs) values[input.name] = input.kind === 'fixed' ? input.value : input.default;
+  for (const input of action.inputs) {
+    const pick = chosen?.[input.name];
+    values[input.name] =
+      input.kind === 'fixed' ? input.value : pick != null && input.options.includes(pick) ? pick : input.default;
+  }
   return values;
 }
 
@@ -579,24 +483,27 @@ export type CiActionPick = { action: CiAction; reason: null } | { action: null; 
 
 /** Whether an action can serve a run whose repository is on `provider` (null: no supported repository). */
 function servesProvider(action: CiAction, provider: ScmProviderName | null): boolean {
-  return action.target.type === 'ci-server' || action.target.type === provider;
+  const host = ciTargetDefinition(action.target.type).host;
+  return host === null || host === provider;
 }
 
 /** What each kind is started for, in a sentence about the absence of an action. */
 const KIND_PHRASE: Record<CiActionKind, string> = {
   tests: 're-runs tests',
   suite: 'runs the suite',
+  tags: 'runs tagged tests',
   flakeLab: 'runs Flake Lab',
 };
 
 /**
  * The action a dispatch of `kind` uses. Among the actions that accept the kind
  * and can serve the run (a GitHub, GitLab or Bitbucket action only a run whose
- * repository is on that host; a CI server action always), the one whose
- * environment is the run's (`environmentId`), else whose label equals the
- * run's ignoring case, else the default for the kind, else the first.
- * `actionId` (an id or an exact name) names one instead, which must accept the
- * kind and serve the run too.
+ * repository is on that host; a CI server action always), the one that
+ * started the run (`startedBy`, from the dispatch the run was matched to),
+ * else the one whose environment is the run's (`environmentId`), else whose
+ * label equals the run's ignoring case, else the default for the kind, else
+ * the first. `actionId` (an id or an exact name) names one instead, which must
+ * accept the kind and serve the run too.
  */
 export function pickCiAction(
   settings: CiActionsSettings,
@@ -608,6 +515,8 @@ export function pickCiAction(
     /** The environment the run's label resolved to. */
     environmentId?: number | null;
     actionId?: string | null;
+    /** The id of the action whose dispatch started the run. */
+    startedBy?: string | null;
   },
 ): CiActionPick {
   const requested = run.actionId?.trim();
@@ -632,10 +541,12 @@ export function pickCiAction(
     return {
       action: null,
       reason: run.provider
-        ? `No CI action ${KIND_PHRASE[kind]} for a ${PROVIDER_LABEL[run.provider]} repository.`
+        ? `No CI action ${KIND_PHRASE[kind]} for a ${SCM_PROVIDER_LABELS[run.provider]} repository.`
         : 'Its run has no supported repository to dispatch to.',
     };
   }
+  const starter = run.startedBy ? serving.find((a) => a.id === run.startedBy) : undefined;
+  if (starter) return { action: starter, reason: null };
   const environment = run.environment?.trim().toLowerCase();
   const byEnvironment =
     (run.environmentId != null ? serving.find((a) => a.environmentId === run.environmentId) : undefined) ??
@@ -651,6 +562,34 @@ export interface CiActionCheckResult {
   /** The names a dispatch sends that the target does not declare. */
   missing: string[];
   message: string;
+}
+
+/**
+ * A target to list jobs or fields from, as the action editor posts it: an
+ * action's target whose job (a workflow, a custom pipeline, a Jenkins job) may
+ * still be empty, and whose arguments input is not needed.
+ */
+export type CiListingTarget =
+  | { type: 'github'; ref: string; workflow: string; credentialId?: number }
+  | { type: 'gitlab'; ref: string; credentialId?: number }
+  | { type: 'bitbucket'; pipeline: string; credentialId?: number }
+  | {
+      type: 'ci-server';
+      preset: Exclude<CiServerPreset, 'custom'>;
+      baseUrl?: string;
+      credentialId?: number;
+      user?: string;
+      /** The Jenkins job path, empty to list the jobs. */
+      job: string;
+      /** The default branch a multibranch job is read on. */
+      ref: string;
+    };
+
+/** A target to list from, from an untrusted payload, or why it cannot be listed from, for the user. */
+export function resolveCiListingTarget(input: unknown): { target: CiListingTarget } | { error: string } {
+  if (!isRecord(input)) return { error: 'The request names no target.' };
+  if (!isCiTargetType(input.type)) return { error: 'The target type is not one Piwi dispatches to.' };
+  return ciTargetDefinition(input.type).resolveListing(input);
 }
 
 /** The input and argument names a dispatch of this action sends, which the target must declare. */

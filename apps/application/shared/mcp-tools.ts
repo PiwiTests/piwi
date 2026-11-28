@@ -1,6 +1,6 @@
 /**
  * MCP tool catalog — the single source of truth for tool names, descriptions,
- * and input schemas exposed by the Piwi Dashboard MCP server.
+ * and input schemas exposed by the Piwi MCP server.
  *
  * Lives in `shared/` because it is consumed from two places:
  *  - `server/utils/mcp/tools.ts` attaches a DB-backed handler to each entry and
@@ -17,6 +17,12 @@ import { EXTRACT_RULES } from './test-function-extract-prompt';
 import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 import { REPORT_LANGUAGES } from './reports/languages';
 import { CLUSTER_STATUSES } from './inbox-queues';
+
+/** The longest edge, in pixels, of an image `get_case_screenshots` sends; a larger one is downscaled. */
+export const MCP_SCREENSHOT_MAX_EDGE = 1920;
+
+/** The most bytes an image `get_case_screenshots` sends may take; a larger one is re-encoded. */
+export const MCP_SCREENSHOT_MAX_BYTES = 512 * 1024;
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -241,7 +247,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
-      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test. `environments` says where the run executed: each shard’s `runner` (`timeZone`, `locale`, `os`, `nodeVersion`, `ciImage`), each project’s `browser` as its page reported itself, and each instrumented `server` under test with its `clockOffsetMs` from the runner and `restarted: true` when it restarted during the run. Shards that disagree on a field, or a field that changed since the last passing run, point at a failure that happens only in one place. `reused` (`count`, `planId`) counts the tests the run skipped under a pass reuse plan because an earlier pass ran their unchanged code: they are not in its cases; `unrecorded: true` instead means the run claimed a plan whose reused tests could not be recorded.',
+      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. An error of a worker names it as `worker` (its lane from 1, as for a case), with its `shardIndex` in a sharded run and its `playwrightProject`, from Playwright 1.60. They explain a failed run with no failed test. `environments` says where the run executed: each shard’s `runner` (`timeZone`, `locale`, `os`, `nodeVersion`, `ciImage`), each project’s `browser` as its page reported itself, and each instrumented `server` under test with its `clockOffsetMs` from the runner and `restarted: true` when it restarted during the run. Shards that disagree on a field, or a field that changed since the last passing run, point at a failure that happens only in one place. `reused` (`count`, `planId`) counts the tests the run skipped under a pass reuse plan because an earlier pass ran their unchanged code: they are not in its cases; `unrecorded: true` instead means the run claimed a plan whose reused tests could not be recorded.',
       EXECUTION_WORKER,
     ),
     inputSchema: {
@@ -445,14 +451,15 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'List an execution’s screenshots, the page the test failed on first, and return the image data of the first three on request.',
-      'By default it returns metadata only (file name, media type, size) for every screenshot. Call it that way first, then set `content: true` to get the first three only, with their base64 image data (each capped at about 100 KB).',
+      'By default it returns metadata only (file name, media type, size) for every screenshot. Call it that way first, then set `content: true` to get the first three only, each as an image after a line naming it, with its `width` and `height`.',
+      `A PNG, JPEG, GIF or WebP image goes as stored when it is at most ${MCP_SCREENSHOT_MAX_EDGE} px on its long edge and ${MCP_SCREENSHOT_MAX_BYTES / 1024} KB, else as a smaller JPEG, whose size \`sentAs\` gives. \`notSent\` says why a listed screenshot has no image (another format, or a file that does not decode).`,
       'The screenshot of the page the test failed on comes first, flagged `atFailure`, when it is known: the capture fixtures’ screenshot of the page the test last acted on, or, for an execution that failed, the only screenshot. Without the fixtures, Playwright takes one per page still open at the failure and one per page of each context the test closed before, so none of several is flagged.',
     ),
     inputSchema: {
       type: 'object',
       properties: {
         executionId: { type: 'number', description: 'Test run case ID' },
-        content: { type: 'boolean', description: 'Include base64 image data (default false — metadata only)' },
+        content: { type: 'boolean', description: 'Send the images (default false — metadata only)' },
       },
       required: ['executionId'],
     },
@@ -507,7 +514,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals, the ARIA snapshot and the test’s stdout and stderr.',
-      '`include` fetches only the heavy parts you need; the error, status and summary always come back. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+      '`include` fetches only the heavy parts you need; the error, status and summary always come back. A console entry’s `location` is `url:line:column`, 1-based as an editor counts them. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
       EXECUTION_WORKER,
     ),
     inputSchema: {
@@ -775,6 +782,7 @@ export const MCP_TOOL_DEFS = [
       [
         'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before, and for a leaked or lingering one `lastUse`: the line of the last call a test made on it, where its close belongs',
         'each shard’s machine: cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk',
+        'each shard’s workers (`workerHealth`): how busy their event loop was, the worst p99 delay and the context switches per test, with `gcReported` false where the runtime (Bun) reports no garbage collection, so no worker’s heap was judged piling up',
         'the busiest open pages per worker',
         'the costliest tests by the CPU of their worker and browser processes, with the pages each found already open',
       ],
@@ -1489,7 +1497,10 @@ export const MCP_TOOL_DEFS = [
     permission: 'run:control',
     description: md(
       'Re-run exactly a failure cluster’s affected tests in CI.',
-      'It is the cluster page’s **Re-run in CI**: it runs one of the project’s CI actions that accepts tests (the project’s default for re-runs unless `action` names another) with the project’s source-control token, or sends one request to its CI server when the action targets one, and returns the provider, the action id and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no CI action or token is configured, `action` matches no CI action that accepts tests, none of the cluster’s tests has a file path a re-run can name, or the cluster has no supported repository.',
+      'It is the CI re-run of the cluster page’s run button: it runs one of the project’s CI actions that accepts tests with the project’s source-control token, or sends one request to its CI server when the action targets one. Without `action` it runs the action whose dispatch started the cluster’s last run, else the one of that run’s environment, else the project’s default for re-runs.',
+      'It runs on `ref` when given, else on the branch of the cluster’s last run, else on the branch the action names. A branch must pass git’s branch-name rules, and an action whose job runs its configured branch (a Jenkins job without `{branch}` in its path, a Custom request that names no branch) takes none. `inputs` sets the action’s choice inputs, each to one of its options; a choice left out takes the value the dispatch that started the cluster’s last run sent through the same action, else its default. A fixed input, or a name the action does not declare, is refused.',
+      'It returns `dispatchId`, the dispatch’s `state` (`dispatched` until a run reports), the provider, the action id, the branch and the URL to watch: the run itself when GitHub answers it, else the provider’s runs. Follow it with `get_ci_dispatch`, which gives the run once one reports and that run’s result.',
+      'Fails with the reason when CI re-run is off for the project, no CI action or token is configured, `action` matches no CI action that accepts tests, the branch or an input is refused, none of the cluster’s tests has a file path a re-run can name, the cluster has no supported repository, or the same re-run was dispatched less than 10 seconds before.',
       'Requires `run:control` (Maintainer and above on the project).',
     ),
     inputSchema: {
@@ -1500,8 +1511,39 @@ export const MCP_TOOL_DEFS = [
           type: 'string',
           description: 'A CI action id or its exact name; defaults to the project’s default for re-runs',
         },
+        ref: {
+          type: 'string',
+          description: 'The branch to run on; when absent or empty, the branch of the cluster’s last run',
+        },
+        inputs: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description: 'The action’s choice inputs to set, by name, each to one of its options',
+        },
       },
       required: ['clusterId'],
+    },
+  },
+  {
+    name: 'get_ci_dispatch',
+    module: 'core',
+    capability: 'scm',
+    description: md(
+      'Get one CI dispatch: its state, the run that answered it and that run’s result.',
+      'Use it to follow what `rerun_cluster_in_ci` started, by the `dispatchId` it returned; the dispatches of the dashboard’s run dialog are read the same way. It carries:',
+      [
+        '`state`: `dispatched` until a run reports, `running` once one is matched, `ended` once it finishes, `unreported` when no run reported within six hours (the job may not pass the dispatch id on as `PIWI_ORIGIN_REF`, the reporter may not be set up there, or the job failed before Playwright started), `refused` when the provider refused it, with its words in `detail` for a caller who holds `run:control` on the project',
+        '`runId` and `run`: the matched run, with its `status` (`running`, `passed`, `failed`…) and its `totalTests`, `passedTests` and `failedTests`; read it with `get_run` for its failures',
+        '`kind` (`tests`, `suite`, `tags`, `flakeLab`), `origin` (`page`, `mcp`, `api`), the action (`actionId`, `actionName`), `provider` and `preset`, `url` (the provider’s run once known, else its runs list), `args` (the arguments handed to CI), `ref` (the branch; absent when the job runs its configured branch), `tests` (how many tests the arguments name), `dispatchedAt` and `byName`',
+      ],
+      'Returns null for an unknown id or a dispatch of a project outside your scope. A run usually reports a few minutes after its dispatch: poll it now and then rather than in a tight loop.',
+    ),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dispatchId: { type: 'string', description: 'The dispatch id, 16 hex digits, from rerun_cluster_in_ci' },
+      },
+      required: ['dispatchId'],
     },
   },
   {

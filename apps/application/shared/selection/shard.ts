@@ -10,9 +10,16 @@
  * groups), then each group is placed whole with longest-processing-time
  * balancing: the heaviest group goes to the lightest shard. A group heavier than
  * a shard's fair share still lands on one shard; balance is best effort, the
- * lock guarantee is not. A test with no recorded duration weighs the median
- * recorded one (1 ms when none has one), so new tests spread across shards.
+ * lock guarantee is not. Playwright's built-in `-exclusive-` lock is no shared
+ * name: its holder runs alone in whichever shard's run it lands in, so its
+ * holders are placed like tests without a lock. Tests that share a `group` key
+ * are bound as tests sharing a lock are: the reporter's balanced sharding names
+ * by it the tests Playwright runs in one worker, in order (a serial describe, a
+ * file that is not fully parallel). A test with no recorded duration weighs the
+ * median recorded one (1 ms when none has one), so new tests spread across
+ * shards.
  */
+import { isExclusiveLock } from '../test-locks';
 
 /** The fields the balancer reads from a resolved test. */
 export interface ShardableTest {
@@ -22,6 +29,8 @@ export interface ShardableTest {
   title: string;
   avgDurationMs: number | null;
   locks: string[];
+  /** A key the test shares with the tests that must run in its shard; none binds it to no other test. */
+  group?: string | number;
 }
 
 /** Deterministic base order — file, then suite, then title, then id. */
@@ -41,8 +50,9 @@ function representative<T extends ShardableTest>(tests: T[]): T {
 
 /**
  * Partition tests into connected components: two tests are in the same component
- * when they share a lock name, transitively. A test with no locks is its own
- * singleton component. Uses union-find keyed by array index.
+ * when they share a lock name or a `group` key, transitively; the `-exclusive-`
+ * lock joins none. A test with neither is its own singleton component. Uses
+ * union-find keyed by array index.
  */
 function groupByLock<T extends ShardableTest>(rows: T[]): T[][] {
   const parent = rows.map((_, i) => i);
@@ -63,12 +73,18 @@ function groupByLock<T extends ShardableTest>(rows: T[]): T[][] {
   };
 
   const firstHolder = new Map<string, number>();
+  const firstMember = new Map<string | number, number>();
   rows.forEach((row, i) => {
     for (const lock of row.locks) {
+      if (isExclusiveLock(lock)) continue;
       const seen = firstHolder.get(lock);
       if (seen === undefined) firstHolder.set(lock, i);
       else union(seen, i);
     }
+    if (row.group === undefined) return;
+    const seen = firstMember.get(row.group);
+    if (seen === undefined) firstMember.set(row.group, i);
+    else union(seen, i);
   });
 
   const groups = new Map<number, T[]>();
@@ -94,7 +110,7 @@ function unknownDurationWeight(rows: ShardableTest[]): number {
 
 /**
  * Split rows into `total` shards balanced by summed average duration, keeping
- * every test that shares a lock in the same shard. Deterministic for the same
+ * every test that shares a lock or a group in the same shard. Deterministic for the same
  * input: groups are placed heaviest-first (ties broken by their stable-least
  * test), each onto the currently lightest shard (ties broken by the lower shard
  * index), and each shard's tests are returned in stable order.
@@ -125,12 +141,15 @@ export function partitionTestsIntoShards<T extends ShardableTest>(rows: T[], tot
  * Lock names shared by two or more of these tests — the locks that plain
  * file-count sharding (Playwright's own `--shard`) could split across shards,
  * letting the same lock be held on two shards at once. A lock held by a single
- * test cannot be split, so it is not reported.
+ * test cannot be split, so it is not reported, nor is the `-exclusive-` lock,
+ * whose holder runs alone in its own shard's run.
  */
 export function locksSpanningTests(rows: ShardableTest[]): string[] {
   const holders = new Map<string, number>();
   for (const row of rows) {
-    for (const lock of new Set(row.locks)) holders.set(lock, (holders.get(lock) ?? 0) + 1);
+    for (const lock of new Set(row.locks)) {
+      if (!isExclusiveLock(lock)) holders.set(lock, (holders.get(lock) ?? 0) + 1);
+    }
   }
   return [...holders.entries()]
     .filter(([, count]) => count > 1)

@@ -13,7 +13,7 @@ import {
   withoutStackFrames,
   type ParsedPlaywrightError,
 } from '../src/error-parse';
-import { ERRORS, type ErrorKey } from './fixtures/playwright-errors';
+import { ERRORS, STACK, type ErrorKey } from './fixtures/playwright-errors';
 import { extractErrorSignature } from '../src/error-signature';
 import { appendErrorLocation } from '../src/error-text';
 
@@ -65,6 +65,17 @@ const EXPECTED: Record<ErrorKey, Expected> = {
     action: 'fill',
     locator: "getByPlaceholder('Search')",
     lastState: 'not-visible',
+    isLocatorResolutionFailure: false,
+  },
+  clickInert: {
+    kind: 'action-timeout',
+    action: 'click',
+    locator: "getByRole('button', { name: 'Place order' })",
+    leafLocator: "getByRole('button', { name: 'Place order' })",
+    timeoutMs: 5000,
+    lastState: 'inert',
+    lastStateLine: 'element is inert',
+    lastCallLogLine: 'element is inert',
     isLocatorResolutionFailure: false,
   },
   clickChained: {
@@ -141,6 +152,16 @@ const EXPECTED: Record<ErrorKey, Expected> = {
     received: '"Sign in"',
     lastState: 'resolved',
     isLocatorResolutionFailure: false,
+  },
+  toHaveTextDescribed: {
+    kind: 'assertion-timeout',
+    assertion: 'toHaveText',
+    locator: "getByTestId('cart').getByTestId('order-total')",
+    leafLocator: "getByTestId('order-total')",
+    expected: '"$42.00"',
+    timeoutMs: 5000,
+    lastState: 'not-found',
+    isLocatorResolutionFailure: true,
   },
   toHaveAttribute: {
     kind: 'assertion-timeout',
@@ -388,6 +409,127 @@ describe('parsePlaywrightError — edge cases', () => {
   });
 });
 
+describe('parsePlaywrightError — an inert element', () => {
+  test('fill and selectOption wait for the element to stop being inert, as click does', () => {
+    const fill = parsePlaywrightError(`TimeoutError: locator.fill: Timeout 5000ms exceeded.
+Call log:
+  - waiting for getByLabel('Coupon code')
+    - locator resolved to <input id="coupon" name="coupon"/>
+  - fill("SPRING")
+  - attempting fill action
+    2 × waiting for element to be visible, enabled and editable
+      - element is inert
+    - retrying fill action
+    - waiting 20ms
+${STACK}`);
+    expect(fill).toMatchObject({ action: 'fill', lastState: 'inert', lastStateLine: 'element is inert' });
+
+    const select = parsePlaywrightError(`TimeoutError: locator.selectOption: Timeout 5000ms exceeded.
+Call log:
+  - waiting for getByLabel('Country')
+    - locator resolved to <select id="country">…</select>
+  - attempting select option action
+    2 × waiting for element to be visible and enabled
+      - element is inert
+    - retrying select option action
+    - waiting 20ms
+${STACK}`);
+    expect(select).toMatchObject({ action: 'selectOption', lastState: 'inert', isLocatorResolutionFailure: false });
+  });
+
+  test('a later state line wins over an earlier inert one', () => {
+    const parsed = parsePlaywrightError(`TimeoutError: locator.click: Timeout 5000ms exceeded.
+Call log:
+  - waiting for getByRole('button', { name: 'Pay' })
+    - locator resolved to <button>Pay</button>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is inert
+  - retrying click action
+    - waiting for element to be visible, enabled and stable
+    - element is not enabled
+${STACK}`);
+    expect(parsed.lastState).toBe('not-enabled');
+  });
+});
+
+describe('parsePlaywrightError — a locator given describe()', () => {
+  // Playwright prints a described locator's description in the `Locator:` header and its chain in the call log.
+  test('the chain the call log waited for stands in for the description', () => {
+    const parsed = parsePlaywrightError(`Error: expect(locator).toBeVisible() failed
+
+Locator:  Place order button
+Expected: visible
+Received: hidden
+Timeout:  5000ms
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for getByRole('button', { name: 'Place order' })
+    9 × locator resolved to <button hidden type="submit">Place order</button>
+      - unexpected value "hidden"
+${STACK}`);
+    expect(parsed).toMatchObject({
+      kind: 'assertion-timeout',
+      locator: "getByRole('button', { name: 'Place order' })",
+      leafLocator: "getByRole('button', { name: 'Place order' })",
+      lastState: 'hidden',
+    });
+  });
+
+  test('the strict-mode chain stands in for the description', () => {
+    const parsed = parsePlaywrightError(`Error: expect(locator).toBeVisible() failed
+
+Locator: Save button
+Expected: visible
+Timeout: 5000ms
+Error: strict mode violation: getByRole('button', { name: 'Save' }) resolved to 2 elements:
+    1) <button>Save</button> aka getByRole('button', { name: 'Save', exact: true })
+    2) <button>Save draft</button> aka getByRole('button', { name: 'Save draft' })
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for getByRole('button', { name: 'Save' })
+${STACK}`);
+    expect(parsed).toMatchObject({ kind: 'strict-mode', locator: "getByRole('button', { name: 'Save' })" });
+  });
+
+  test('without a call log the description is the locator', () => {
+    const parsed = parsePlaywrightError(
+      'Error: expect(locator).toHaveScreenshot(expected) failed\n\nLocator: Order summary\nTimeout: 5000ms\n',
+    );
+    expect(parsed.locator).toBe('Order summary');
+    expect(parsed.leafLocator).toBeNull();
+  });
+
+  test("the call log's Expect line gives the matcher and the timeout, with or without the locator in it", () => {
+    for (const line of [
+      'Expect "toBeVisible" with timeout 1000ms',
+      'Expect "toBeVisible" Place order button with timeout 1000ms',
+      `Expect "toBeVisible" getByRole('button', { name: 'Place order' }) with timeout 1000ms`,
+    ]) {
+      const parsed = parsePlaywrightError(
+        `Error: Place order is offered\n\nCall log:\n  - ${line}\n  - waiting for getByRole('button', { name: 'Place order' })\n`,
+      );
+      expect(parsed, line).toMatchObject({ assertion: 'toBeVisible', timeoutMs: 1000 });
+    }
+  });
+
+  test('a header that holds a chain wins over the call log', () => {
+    const parsed = parsePlaywrightError(`Error: expect(locator).toBeVisible() failed
+
+Locator: getByRole('dialog').getByRole('button', { name: 'Close' })
+Expected: visible
+Timeout: 5000ms
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for getByRole('dialog').getByRole('button', { name: 'Close' })
+${STACK}`);
+    expect(parsed.locator).toBe("getByRole('dialog').getByRole('button', { name: 'Close' })");
+  });
+});
+
 describe('parsePlaywrightError — step params back the locator', () => {
   test("the error text's own locator wins over the step params", () => {
     const parsed = parsePlaywrightError(
@@ -430,6 +572,42 @@ describe('locator and frame helpers', () => {
     expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Delete' })");
   });
 
+  test('extractSelector reads a chain that enters a frame through the first locator call inside it', () => {
+    const waitingFor = (locator: string) =>
+      `TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${locator}\n`;
+    for (const locator of [
+      "frameLocator().getByLabel('Card number')",
+      "frameLocator('#pay').getByLabel('Card number')",
+      "locator('#pay').contentFrame().getByLabel('Card number')",
+      "locator('iframe').first().contentFrame().getByLabel('Expiry')",
+      "locator('iframe').nth(2).contentFrame().getByLabel('Expiry')",
+      "locator('iframe').filter({ hasText: 'a' }).contentFrame().getByLabel('Expiry')",
+      "getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card number')",
+      "frameLocator().locator('#my-frame').contentFrame().getByRole('button')",
+      "locator('#outer').contentFrame().locator('#inner').contentFrame().getByLabel('Card number')",
+      "locator('#outer').contentFrame().frameLocator('#inner').getByLabel('Card number')",
+    ]) {
+      expect(extractSelector(waitingFor(`${locator}.first()`)), locator).toBe(locator);
+    }
+    expect(extractSelector("await page.frameLocator('#pay').getByLabel('Card').fill('4242')")).toBe(
+      "frameLocator('#pay').getByLabel('Card')",
+    );
+    expect(extractSelector("Error: frameLocator('#pay').owner().first() has no src")).toBe("frameLocator('#pay')");
+    expect(extractSelector("Error: locator('iframe#pay').contentFrame().owner() has no src")).toBe(
+      "locator('iframe#pay')",
+    );
+    const cutShort = `locator('iframe').first().contentFrame().getByRole('button', { name: '${'x'.repeat(100)}`;
+    const inner = cutShort.indexOf('getByRole');
+    expect(extractSelector(cutShort)).toBe(cutShort.slice(0, inner + 80));
+  });
+
+  test('extractSelector reads the first call alone of a chain that enters no frame', () => {
+    expect(extractSelector("waiting for getByRole('row', { name: 'Acme' }).getByRole('button').first()")).toBe(
+      "getByRole('row', { name: 'Acme' })",
+    );
+    expect(extractSelector("waiting for locator('iframe').first().owner().click()")).toBe("locator('iframe')");
+  });
+
   test('extractLeafSelector reads parentheses inside names as text', () => {
     const text = "waiting for getByRole('dialog').getByRole('button', { name: 'Save :)' }) to be visible";
     expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Save :)' })");
@@ -438,6 +616,58 @@ describe('locator and frame helpers', () => {
   test('extractLeafSelector still finds the leaf of a chain cut short', () => {
     const text = "waiting for getByRole('row', { name: 'A (b)' }).getByRole('button', { name: 'Delete (c";
     expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Delete (c");
+  });
+
+  test('visible(), frameLocator() and owner() are links of the chain', () => {
+    const visible = parsePlaywrightError(
+      "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Add to cart' }).visible()\n",
+    );
+    expect(visible.locator).toBe("getByRole('button', { name: 'Add to cart' }).visible()");
+    expect(visible.leafLocator).toBe("getByRole('button', { name: 'Add to cart' })");
+
+    const anyFrame = parsePlaywrightError(
+      "TimeoutError: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for frameLocator().getByLabel('Card number')\n",
+    );
+    expect(anyFrame.locator).toBe("frameLocator().getByLabel('Card number')");
+    expect(anyFrame.leafLocator).toBe("getByLabel('Card number')");
+
+    const text = "Error: the payment frame never loaded: frameLocator('#pay').owner().first() has no src";
+    expect(extractLocatorChain(text)).toBe("frameLocator('#pay').owner().first()");
+    expect(extractLeafSelector(text)).toBeNull();
+    const owner = "Error: locator('iframe#pay').contentFrame().owner() has no src";
+    expect(extractLocatorChain(owner)).toBe("locator('iframe#pay').contentFrame().owner()");
+    expect(extractLeafSelector(owner)).toBe("locator('iframe#pay')");
+  });
+
+  test('a chain cut short keeps its visible(), owner(), describe() and within() links', () => {
+    expect(extractLocatorChain("waiting for getByRole('row').visible().getByRole('button', { name: 'Delete (c")).toBe(
+      "getByRole('row').visible()",
+    );
+    expect(extractLocatorChain("waiting for locator('iframe').contentFrame().owner().getByText('Pay (")).toBe(
+      "locator('iframe').contentFrame().owner()",
+    );
+    expect(extractLocatorChain("waiting for getByRole('row').describe('Order row').getByText('Ada (")).toBe(
+      "getByRole('row').describe('Order row')",
+    );
+    expect(extractLocatorChain("waiting for getByText('Ada').within(page.getByRole('row')).getByText('x (")).toBe(
+      "getByText('Ada').within(page.getByRole('row'))",
+    );
+  });
+
+  test('a describe() link stays in the text read and out of the leaf', () => {
+    const text = "Error: getByRole('button', { name: 'Pay' }).describe('Pay button').first() stayed disabled";
+    expect(extractLocatorChain(text)).toBe("getByRole('button', { name: 'Pay' }).describe('Pay button').first()");
+    expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Pay' })");
+  });
+
+  test('a within() link is read as written, and its leaf is the locator it wraps', () => {
+    const text =
+      "Error: Save is unreachable: getByRole('button', { name: 'Save' }).within(getByRole('dialog')) is covered";
+    expect(extractLocatorChain(text)).toBe("getByRole('button', { name: 'Save' }).within(getByRole('dialog'))");
+    expect(extractLeafSelector(text)).toBe("getByRole('button', { name: 'Save' })");
+    const narrowed = "getByText('Ada').within(getByRole('row')).first() is hidden";
+    expect(extractLocatorChain(narrowed)).toBe("getByText('Ada').within(getByRole('row')).first()");
+    expect(extractLeafSelector(narrowed)).toBe("getByText('Ada')");
   });
 
   test('extractSelector and extractLocatorChain return null without a locator', () => {

@@ -7,10 +7,10 @@
 import { desc, eq } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../../server/database/schema';
 import type { RetryCase } from '#shared/retry-command';
+import { MAX_RERUN_TESTS } from '#shared/ci-dispatch-request';
 import type { DrizzleDB } from './db';
 
-/** Affected tests a re-run names at most. */
-export const MAX_RERUN_TESTS = 100;
+export { MAX_RERUN_TESTS };
 
 /**
  * Each affected test of the cluster in each Playwright project it failed in, at

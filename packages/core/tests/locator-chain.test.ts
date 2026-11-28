@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   canonicalLocator,
+  isLocatorChainMethod,
   locatorCallValues,
   parseLeafLocatorCall,
   locatorScopes,
@@ -73,8 +74,96 @@ describe('parseLocatorChain', () => {
     ['trailing text', "getByText('a') and more"],
     ['an unterminated string', "getByText('a"],
     ['arbitrary code', "locator(eval('1'))"],
+    ['getByRef', "getByRef('e2')"],
+    ['getByRef as a link', "getByRole('dialog').getByRef('e2')"],
+    ['within first', "within(getByRole('dialog'))"],
+    ['within without a locator', "getByRole('button').within('dialog')"],
+    ['within with two locators', "getByRole('button').within(getByRole('dialog'), getByRole('main'))"],
+    ['describe first', "describe('Submit')"],
+    ['describe without a string', "getByRole('button').describe(1)"],
+    ['describe with two strings', "getByRole('button').describe('Submit', 'button')"],
   ])('refuses %s', (_label, expr) => {
     expect(tryParseLocatorChain(expr)).toBeNull();
+  });
+});
+
+describe('within() and describe(), as Playwright prints them', () => {
+  test.each([
+    // `a.within(b)` is `b.locator(a)`, as Playwright's client builds it.
+    [
+      "getByRole('button', { name: 'Save' }).within(getByRole('dialog'))",
+      "getByRole('dialog').locator(getByRole('button', { name: 'Save' }))",
+    ],
+    [
+      "getByRole('row').getByRole('button').within(getByTestId('orders')).first()",
+      "getByTestId('orders').locator(getByRole('row').getByRole('button')).first()",
+    ],
+    [
+      "getByText('Total').within(locator('aside').filter({ hasText: 'Cart' }))",
+      "locator('aside').filter({ hasText: 'Cart' }).locator(getByText('Total'))",
+    ],
+    [
+      "getByRole('button').within(getByRole('dialog')).within(getByRole('main'))",
+      "getByRole('main').locator(getByRole('dialog').locator(getByRole('button')))",
+    ],
+    [
+      "locator('.row').filter({ has: getByText('Ada').within(getByRole('cell')) })",
+      "locator('.row').filter({ has: getByRole('cell').locator(getByText('Ada')) })",
+    ],
+    ["getByRole('button', { name: 'Pay' }).describe('Pay button')", "getByRole('button', { name: 'Pay' })"],
+    ['getByRole(\'listitem\').describe("Cart line").nth(2)', "getByRole('listitem').nth(2)"],
+    [
+      "getByRole('button').describe('Save').within(getByRole('dialog').describe('Editor'))",
+      "getByRole('dialog').locator(getByRole('button'))",
+    ],
+  ])('reads %s', (written, printed) => {
+    expect(canonicalLocator(written)).toBe(printed);
+  });
+
+  test('a spec line reads the same as the chain Playwright prints', () => {
+    expect(
+      canonicalLocator("await page.getByRole('button', { name: 'Save' }).describe('Save').within(getByRole('dialog'))"),
+    ).toBe("getByRole('dialog').locator(getByRole('button', { name: 'Save' }))");
+  });
+
+  test('a within() targets the locator() call it builds, inside the locator it was given', () => {
+    const chain = parseLocatorChain("getByRole('button', { name: 'Save' }).within(getByRole('dialog'))");
+    expect(locatorTarget(chain)).toBe("locator(getByRole('button', { name: 'Save' }))");
+    expect(locatorScopes(chain)).toEqual(["getByRole('dialog')"]);
+  });
+
+  test('scanLocatorChain spans the text each call was read from', () => {
+    const text = "getByRole('button').describe('Save').within(getByRole('dialog').first()).click()";
+    const scanned = scanLocatorChain(text)!;
+    expect(renderLocatorChain(scanned.chain)).toBe("getByRole('dialog').first().locator(getByRole('button'))");
+    expect(scanned.spans.map((s) => text.slice(s.start, s.end))).toEqual([
+      "getByRole('dialog')",
+      'first()',
+      "getByRole('button').describe('Save')",
+    ]);
+    expect(text.slice(scanned.end)).toBe('.click()');
+  });
+
+  test('a describe() link has no span', () => {
+    const text = "getByRole('listitem').describe('Cart line').nth(2) to be visible";
+    const scanned = scanLocatorChain(text)!;
+    expect(scanned.spans.map((s) => text.slice(s.start, s.end))).toEqual(["getByRole('listitem')", 'nth(2)']);
+    expect(text.slice(scanned.end)).toBe(' to be visible');
+  });
+
+  test('a scan stops before a within() that holds no locator, as before any link it cannot read', () => {
+    const text = "getByRole('button').within(page.getByRole('dialog')).click()";
+    const scanned = scanLocatorChain(text)!;
+    expect(renderLocatorChain(scanned.chain)).toBe("getByRole('button')");
+    expect(text.slice(scanned.end)).toBe(".within(page.getByRole('dialog')).click()");
+  });
+
+  test('within and describe are links of a chain; getByRef is not', () => {
+    expect(isLocatorChainMethod('within')).toBe(true);
+    expect(isLocatorChainMethod('describe')).toBe(true);
+    expect(isLocatorChainMethod('visible')).toBe(true);
+    expect(isLocatorChainMethod('owner')).toBe(true);
+    expect(isLocatorChainMethod('getByRef')).toBe(false);
   });
 });
 

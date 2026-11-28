@@ -57,6 +57,10 @@ a worker someone else watches in full at a large size says so in its tile. In a 
 stops asking for tiles, and asks again as you come back. An older reporter sends its images at 640 by 400 pixels, four a
 second, whatever the view asks; the dashboard passes one a second of them to a tile.
 
+A CI run's workers keep their own connections through an outage or a restart of the dashboard: each tries again after
+1, 2, 4, 8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out says so once
+in the run's log, with the cause, and once more as it is back.
+
 ## In the demo
 
 The live demo runs no browser: **Watch all** on a simulated run shows each running worker's step where its image

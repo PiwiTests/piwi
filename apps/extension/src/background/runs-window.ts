@@ -2,7 +2,7 @@
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
  * desktop app, the secret area and the browser's WebSocket; the CI runs in progress the connected instance lists,
  * read while a window is open, their runs' streams while one shows (`ciRuns`), and the CI lane they watch
- * (`ciWatch`); the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at each change, what
+ * (`ciWatch`), with **Let it go** on its held failure; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at each change, what
  * each code written at a stop came to, the frames of the live views and lanes it watches and the layers of those lanes
  * it asked for, and passes the window's commands on, its views and lanes stopped as it closes; the popup's Runs tile;
  * and the global shortcut.
@@ -20,6 +20,8 @@ import {
   fetchActiveRuns,
   fetchDesktopHubs,
   fetchRunMetadata,
+  controlCiTest,
+  letGoCiTest,
   openLiveWatch,
   openRunStream,
 } from '../shared/piwi-client.js';
@@ -92,6 +94,10 @@ export const ciWatch: CiLaneWatch = new CiLaneWatch({
     withConnectionHealth(settings.instanceUrl, () => openLiveWatch(settings, runId, query, signal)),
   change: (settings, runId, body) =>
     withConnectionHealth(settings.instanceUrl, () => changeLiveWatch(settings, runId, body)),
+  letGo: (settings, runId, body) =>
+    withConnectionHealth(settings.instanceUrl, () => letGoCiTest(settings, runId, body)),
+  control: (settings, runId, body) =>
+    withConnectionHealth(settings.instanceUrl, () => controlCiTest(settings, runId, body)),
 });
 
 /** The browser windows of the Runs windows connected now, by their port. */
@@ -151,6 +157,7 @@ function serveRunsPort(port: chrome.runtime.Port): void {
   const ciViewer: CiViewer = {
     frame: (frame) => post({ type: 'ci-frame', ...frame }),
     ended: (lane, why) => post({ type: 'ci-ended', ...lane, why }),
+    controller: (lane, on) => post({ type: 'ci-controller', ...lane, controller: on }),
   };
   const postState = () => post({ type: 'state', state: { ...runHubs.state(viewer), ci: ciRuns.state() } });
   const unlisten = runHubs.listen(postState, (code) => post({ type: 'code', ...code }));
@@ -170,6 +177,14 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     } else if (request.type === 'ci-watch') {
       const { id, on, ...lane } = request;
       void ciWatch.watch(ciViewer, lane, on).then((answer) => post({ type: 'answer', id, ...answer }));
+    } else if (request.type === 'ci-let-go') {
+      const { id, ...lane } = request;
+      const held = ciRuns.held(lane.runId, lane.shard, lane.lane);
+      void ciWatch.letGo(lane, held).then((answer) => post({ type: 'answer', id, ...answer }));
+    } else if (request.type === 'ci-control') {
+      const { id, command, ...lane } = request;
+      const worker = ciRuns.laneWorker(lane.runId, lane.shard, lane.lane);
+      void ciWatch.control(lane, worker, command).then((answer) => post({ type: 'answer', id, ...answer }));
     } else if (request.type === 'command') {
       const { id, ...command } = request;
       void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));

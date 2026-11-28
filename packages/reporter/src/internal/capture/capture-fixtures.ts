@@ -88,9 +88,9 @@ import {
   type FlakeConditions,
 } from '../flake/mode.js';
 import type { FlakePlan } from '@piwitests/core/flake-plan';
-import { joinErrorMessages } from '@piwitests/core/error-text';
+import { joinErrorMessages, pageErrorStackPlace, pageErrorText } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { SECRET_AUTOCOMPLETE, hideSecretsInText, hideTypedText, maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, cutText, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -148,7 +148,7 @@ import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
 import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
 import { forgetWaitingRequests, readServerLogs, tellApiCall, watchCalls, watchPageEvents } from './run-events.js';
-import { layersTestBegan, layersTestEnded, layersTitleOf } from './lane-layers.js';
+import { keptTitle, layersTestBegan, layersTestEnded, layersTitleOf, shownTitle } from './lane-layers.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -158,14 +158,22 @@ import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeLiveView,
+  liveViewHold,
+  liveViewMayHold,
   liveViewMayPause,
   liveViewOpen,
+  liveViewPause,
   liveViewStopped,
   liveViewTestBegan,
   liveViewTestEnded,
+  liveViewTestFunctionEnded,
+  onLiveViewPause,
   openLiveView,
+  PAUSE_DROPPED,
+  type LiveHold,
+  type LiveWait,
 } from './live-view.js';
-import { listenCalls, trackCalls } from './live-call-log.js';
+import { followsCallStream, listenCalls, trackCalls } from './live-call-log.js';
 import { laneCalled, laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardTracing } from './live-inspect.js';
 import { guardScreencast } from './page-view.js';
@@ -425,6 +433,12 @@ interface CaptureSink {
   // Finish and the stops the editor asks; null when it has none and no run connection is open, or the gate refuses,
   // until a `page.pause()` Piwi takes over.
   pause: PauseState | null;
+  // A controller paused this CI attempt on the instance's live view (`onLiveViewPause`): its `pause` was made for it, and
+  // a stop of reason `pause` waits for its controllers (`liveViewPause`).
+  livePause: boolean;
+  // The context whose debugger holds the call a controller ended this CI attempt at (`endFromPiwi`): its stop is not
+  // let go, so the call never runs; null for none.
+  endedFromPiwi: BrowserContext | null;
   // While the pause is on, the locator calls in flight by call site without its column: a stop on one of their lines
   // highlights the call's element, and a pick there is folded into its snapshot.
   locatorCalls: Map<string, LocatorCall>;
@@ -519,6 +533,8 @@ function createSink(): CaptureSink {
     pickOffered: false,
     userPick: null,
     pause: null,
+    livePause: false,
+    endedFromPiwi: null,
     locatorCalls: new Map(),
     stops: [],
     shownStops: new Map(),
@@ -763,7 +779,12 @@ async function settleBeforeClose(closing: { page?: Page; context?: BrowserContex
 async function settleContextClose(context: BrowserContext): Promise<void> {
   CLOSING_CONTEXTS.add(context);
   await settleBeforeClose({ context });
-  if (contextDebugger(context)?.pausedDetails()) await steerDebugger(context, 'resume');
+  if (!contextDebugger(context)?.pausedDetails()) return;
+  // A call held where a controller ended the CI test goes on only once its pages are gone: it fails, and never runs.
+  if (ENDED_CONTEXTS.has(context)) {
+    await Promise.all(openPages(context).map((page) => internalCall(page, () => page.close()).catch(() => undefined)));
+  }
+  await steerDebugger(context, 'resume');
 }
 
 function isPageClosed(page: Page): boolean {
@@ -780,6 +801,15 @@ function pageContext(page: Page): BrowserContext | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether Playwright hands this context to the worker's next test instead of closing it: its `context` fixture made
+ * it for reuse (`reuseContext`, `PW_TEST_REUSE_CONTEXT`, with video off), which its client marks `_forReuse`
+ * (feature-checked: false where the mark is missing).
+ */
+function isReusedContext(context: BrowserContext): boolean {
+  return (context as BrowserContext & { _forReuse?: unknown })._forReuse === true;
 }
 
 /** The evaluate's raw result: navigation/paint plus raw core-vitals entries. */
@@ -1689,6 +1719,9 @@ function locatorSource(target: Locator, method: string, args: unknown[]): string
 /** Each context whose next call is a `page.pause()` Piwi took over, with that call's site and page. */
 const PAGE_PAUSES = new WeakMap<BrowserContext, { location: string; page: Page }>();
 
+/** Each context whose debugger holds the call a controller ended a CI test at (`endFromPiwi`), until it closes. */
+const ENDED_CONTEXTS = new WeakSet<BrowserContext>();
+
 /** Each context whose close began: a stop of it goes on unshown. */
 const CLOSING_CONTEXTS = new WeakSet<BrowserContext>();
 
@@ -1831,7 +1864,8 @@ function onDebuggerStop(context: BrowserContext): void {
     } catch {
       if (state) how = goOn(state);
     } finally {
-      await steerDebugger(context, how);
+      // Ended from the instance's live view: the stopped call stays held until its context closes.
+      if (sink?.endedFromPiwi !== context) await steerDebugger(context, how);
     }
   })();
 }
@@ -1867,11 +1901,15 @@ function stopBarPage(sink: CaptureSink, context: BrowserContext, of: StopPage): 
   return open[open.length - 1] ?? null;
 }
 
-/** What a stop at a failure shows beside the stop's own: the failing locator a pick replaces. */
+/**
+ * What a stop at a failure shows beside the stop's own: the failing locator a pick replaces; and, for a CI test held
+ * for its controllers on the instance's live view, its hold, which ends the stop.
+ */
 interface FailureStop {
   failed: FailedLocatorInfo | null;
   /** The error the stop names (`failureError`); null for an error with no text. */
   error: string | null;
+  hold?: LiveHold | null;
 }
 
 /**
@@ -1905,15 +1943,21 @@ async function showStop(
   of: StopPage,
   failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
-  // Every surface names the stopped call without the text it types: the terminal, the bar, the hub, `piwi-pauses`.
-  const title = hideSecretsInText(hideTypedText(calledAs));
+  // Every surface names the stopped call without the text it types, and without the values the attempt knows as it is
+  // told (`shownTitle`): the terminal, the bar, the hub, the live view, `piwi-pauses`.
+  const title = keptTitle(calledAs);
   const testInfo = sink.testInfo;
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
   if (!testInfo) return undefined;
-  const bar = !!page && pauseGateFromTestInfo(testInfo, sink.headless).headless === false;
+  // A CI test held or paused for its controllers waits for them alone: no bar shows, nobody stands at the CI machine.
+  const livePause = !failure && reason === 'pause' && sink.livePause;
+  const wait: LiveWait | null = failure?.hold ?? (livePause ? liveViewPause() : null);
+  // A Pause dropped before its call came goes on at once.
+  if (livePause && !wait) return 'resume';
+  const bar = !wait && !!page && pauseGateFromTestInfo(testInfo, sink.headless).headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
-  if (!bar && !place) return undefined;
+  if (!bar && !place && !wait) return undefined;
   const failing = failure?.failed ?? null;
   /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
   const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
@@ -1952,9 +1996,10 @@ async function showStop(
   // The run page's live view says the worker is paused, until the stop ends.
   const stoppedAt = callSitePlace(location);
   const goneOn = liveViewStopped({
-    reason,
+    reason: failure?.hold ? 'held' : reason,
     call: { title, file: stoppedAt?.file ?? null, line: stoppedAt?.line ?? null },
     test: testInfo.title,
+    ...(wait ? { until: wait.until } : {}),
   });
   // The reporter's process tells the instance, while someone has the run open (`stop-notes.ts`).
   const noted = { testId: testInfo.testId, retry: testInfo.retry };
@@ -1963,7 +2008,7 @@ async function showStop(
     ...noted,
     stop: {
       reason,
-      title,
+      title: shownTitle(title),
       file: stoppedAt ? stopFile(stoppedAt.file, configDirFromConfig(testInfo.config)) : null,
       line: stoppedAt?.line ?? null,
       bar,
@@ -1977,6 +2022,11 @@ async function showStop(
   const over = new AbortController();
   end.signal.addEventListener('abort', () => over.abort(), { once: true });
   let fromEditor: PauseAnswer | undefined;
+  // The controllers' wait ends as End the test, or goes on.
+  void wait?.ended.then((how) => {
+    if (how === 'end') fromEditor = 'end';
+    over.abort();
+  });
   const pickAt =
     page && !guessed
       ? async (x: number, y: number): Promise<PickAtAnswer> => {
@@ -2059,7 +2109,11 @@ async function showStop(
       : undefined;
   const shown = withTestTimeoutHeld(testInfo, async (): Promise<PauseAnswer> => {
     if (!bar || !page) {
-      console.log(stopLine(failure ? 'failure' : reason, callSiteLine(location), title, runHost()));
+      console.log(
+        wait
+          ? waitLine(failure ? 'failure' : 'pause', callSiteLine(location), wait.until)
+          : stopLine(failure ? 'failure' : reason, callSiteLine(location), shownTitle(title), runHost()),
+      );
       if (page && intents && held) {
         const stop = held.stop;
         await internalCall(page, () =>
@@ -2076,7 +2130,7 @@ async function showStop(
         page,
         {
           location,
-          call: title,
+          call: shownTitle(title),
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
           target: stoppedOn
             ? {
@@ -2100,6 +2154,7 @@ async function showStop(
       ),
     );
   }).finally(async () => {
+    wait?.end();
     // A stop ended unanswered took its duration as it ended; a call the test ended under is waited for a while.
     if (!end.signal.aborted) record.duration = Date.now() - record.startedAt;
     else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
@@ -2119,13 +2174,24 @@ async function showStop(
   const answer = await shown;
   if (!end.signal.aborted) {
     const chosen = fromEditor ?? answer;
-    return chosen === 'end' ? endTest(sink, call, title, location, reason) : chosen;
+    if (chosen === 'end' && livePause && wait) return endFromPiwi(sink, context, location, wait.by);
+    return chosen === 'end' ? endTest(sink, call, shownTitle(title), location, reason) : chosen;
   }
   // The test ended under it: as on Finish, nothing stops after it.
   if (end.signal.reason === 'ended') return 'finish';
   // Its page or context closed: as on Resume, once the page that closed is gone.
   await settledWithin(stop.after ? [stop.after] : [], END_STOP_MS);
   return 'resume';
+}
+
+/**
+ * What a CI run's log says of a test waiting for its controllers, held at its failure or paused: where, and until when
+ * at most, in UTC.
+ */
+function waitLine(kind: 'failure' | 'pause', place: string, until: number): string {
+  const time = new Date(until).toISOString().slice(11, 19);
+  const what = kind === 'failure' ? `The test failed at ${place}: held` : `The test is paused at ${place}`;
+  return `[piwi] ${what} for the people watching it on the run page, until ${time} UTC at the latest.`;
 }
 
 /**
@@ -2175,6 +2241,62 @@ function endTest(
   console.log(`[piwi] ${said}`);
   tellHub({ type: 'notice', message: said });
   return 'end';
+}
+
+/** The error a CI test ended from the instance's live view fails with: who ended it, when the instance named them. */
+export function endedFromPiwiError(by: string | null): Error {
+  return new Error(by ? `Ended from Piwi by ${by}` : 'Ended from Piwi');
+}
+
+/**
+ * End a CI test at its pause (**End the test** from the instance's live view): the test fails at once with who ended it
+ * (`endedFromPiwiError`), as a timeout ends a test: the runner's wait on what runs now (the test function or a
+ * `beforeEach` hook, `_timeoutManager`, feature-checked) is given up with that error, and the stopped call stays held by
+ * its context's debugger (`endedFromPiwi`) until the context closes, so it never runs, nor does anything after it. The
+ * locator calls in flight that carry the end signal are given up too, and any later one fails with the same error. On a
+ * runner of another shape, the test fails at its next locator call, or as its function ends, and the stopped call
+ * runs first unless it is a locator call that carries the end signal (Playwright 1.62 and later).
+ */
+function endFromPiwi(sink: CaptureSink, context: BrowserContext, location: string, by: string | null): PauseAnswer {
+  const testInfo = sink.testInfo!;
+  const error = endedFromPiwiError(by);
+  console.log(`[piwi] ${error.message} at ${callSiteLine(location)}: the test fails here.`);
+  sink.ended = true;
+  sink.skip = error;
+  sink.end.abort(error);
+  if (failNow(testInfo, error)) {
+    sink.endedFromPiwi = context;
+    ENDED_CONTEXTS.add(context);
+    return 'end';
+  }
+  // The runner's wait cannot be given up: the test fails as it next reaches a locator call, or as its function ends.
+  const callbacks = (testInfo as unknown as { _onDidFinishTestFunctionCallbacks?: unknown })
+    ._onDidFinishTestFunctionCallbacks;
+  if (callbacks instanceof Set) {
+    callbacks.add(() => {
+      if (testInfo.status === 'passed') throw error;
+    });
+  }
+  return 'end';
+}
+
+/** The runner's part of a test that `failNow` reads, feature-checked. */
+interface RunnerTestInfo {
+  _failWithError?: (error: unknown) => void;
+  _timeoutManager?: { _running?: { timeoutPromise?: { reject?: (error: unknown) => void } } };
+}
+
+/**
+ * Fail the test now with `error`, as a timeout fails it: the runner records the error and gives up its wait on what
+ * runs now. False on a runner of another shape, which changes nothing.
+ */
+function failNow(testInfo: TestInfo, error: Error): boolean {
+  const runner = testInfo as unknown as RunnerTestInfo;
+  const reject = runner._timeoutManager?._running?.timeoutPromise?.reject;
+  if (typeof runner._failWithError !== 'function' || typeof reject !== 'function') return false;
+  runner._failWithError(error);
+  reject.call(runner._timeoutManager!._running!.timeoutPromise, error);
+  return true;
 }
 
 /**
@@ -2342,8 +2464,10 @@ function regionSecrets(region: Locator): Promise<string[]> {
 
 /**
  * A failure in an interactive run (the worker's run connection open to an editor that shows a held failure,
- * `editorShows`, and a test that can stop): once the test function and its hooks are done, the failing page is held, as
- * a stop at the failing line with the reason `failure`. The evidence is read first, and nothing the pages do during the
+ * `editorShows`, and a test that can stop), or in a CI run whose project holds a failing test for its controllers
+ * while one watches its worker in full (`liveViewMayHold`): once the test function and its hooks are done, the failing
+ * page is held, as a stop at the failing line with the reason `failure`, which the instance's live view hears as
+ * `held` with its end, and which its hold ends (`liveViewHold`). The evidence is read first, and nothing the pages do during the
  * hold is the failure's (`frozenAt`): no request, console entry or dialog is recorded from then on, and the code reach
  * of its context ends. The test timeout is held while the stop shows (`withTestTimeoutHeld`). The editor and the bar
  * answer it as any stop, with Pick (which replaces the failing locator), Record (the missing steps, above the failing
@@ -2355,7 +2479,10 @@ function regionSecrets(region: Locator): Promise<string[]> {
  */
 async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   const testInfo = sink.testInfo;
-  if (sink.failureHeld || !sink.pause || !testInfo || !editorShows('failure')) return;
+  // A CI test a controller ended failed as they asked: there is no failure of its own to hold.
+  if (sink.failureHeld || !testInfo || (sink.ended && sink.livePause)) return;
+  const local = !!sink.pause && editorShows('failure');
+  if (!local && !liveViewMayHold()) return;
   const { status, expectedStatus } = testInfo;
   if ((status !== 'failed' && status !== 'timedOut') || status === expectedStatus) return;
   const page = [sink.lastActivePage, fallback].find((open) => !!open && !isPageClosed(open));
@@ -2386,10 +2513,13 @@ async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   sink.frozenAt = Date.now();
   await stopSinkCodeReach(sink, { context });
   // An error names what the test used: a URL's credentials stay in the worker.
-  const title = hideSecretsInText(`Failed: ${said.trim().slice(0, 300)}`).slice(0, 1000);
+  const title = cutText(hideSecretsInText(`Failed: ${cutText(said.trim(), 300)}`), 1000);
   const errorText = failureError(error?.message ?? error?.value);
-  const named = errorText === null ? null : hideSecretsInText(errorText).slice(0, MAX_STOP_ERROR);
-  await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed, error: named });
+  const named = errorText === null ? null : cutText(hideSecretsInText(errorText), MAX_STOP_ERROR);
+  // A CI test is held from here on, while its controllers still watch.
+  const hold = local ? null : liveViewHold();
+  if (!local && !hold) return;
+  await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed, error: named, hold });
 }
 
 /** The most lines of a failure's error its stop names. */
@@ -2398,7 +2528,7 @@ const FAILURE_ERROR_LINES = 4;
 /**
  * A failure's error as its stop names it to the editor, as plain text: the failing error's message without its ANSI
  * codes and without the `Error: ` the runner writes before a plain error's message, its lines up to the first blank
- * one or its call log, four at most and `MAX_STOP_ERROR` characters; null for an error with no text.
+ * one or its call log, four at most, cut to `MAX_STOP_ERROR` characters (`cutText`); null for an error with no text.
  */
 export function failureError(message: string | undefined): string | null {
   const lines: string[] = [];
@@ -2410,7 +2540,7 @@ export function failureError(message: string | undefined): string | null {
     lines.push(line.trimEnd());
     if (lines.length === FAILURE_ERROR_LINES) break;
   }
-  const text = lines.join('\n').slice(0, MAX_STOP_ERROR);
+  const text = cutText(lines.join('\n'), MAX_STOP_ERROR);
   return text.trim() ? text : null;
 }
 
@@ -2721,6 +2851,8 @@ function endStopsWithTestFunction(testInfo: TestInfo, sink: CaptureSink): void {
   callbacks.clear();
   callbacks.add(() => {
     sink.functionEnded = true;
+    // A controller's Pause no call of the function took goes: the test's failure, if any, holds as any other.
+    liveViewTestFunctionEnded();
     return endShownStops(sink, 'ended');
   });
   for (const callback of theirs) callbacks.add(callback);
@@ -3044,6 +3176,69 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
 
 /**
+ * A console message's place as `url:line:column`, both 0-based: its `line` and
+ * `column` (Playwright 1.60 and later), else the `lineNumber` and
+ * `columnNumber` an older Playwright gives.
+ */
+function consoleLocation(location: {
+  url: string;
+  line?: number;
+  column?: number;
+  lineNumber?: number;
+  columnNumber?: number;
+}): string {
+  return `${location.url}:${location.line ?? location.lineNumber}:${location.column ?? location.columnNumber}`;
+}
+
+/** What a context's `weberror` hands its listeners: `location()` from Playwright 1.60. */
+interface WebErrorLike {
+  error(): unknown;
+  location?: () => { url: string; line?: number; column?: number } | null | undefined;
+}
+
+/**
+ * Where each uncaught page error was thrown, as `url:line:column` (0-based), by its error: Playwright hands the
+ * context's `weberror` the error first, then the page's `pageerror` the same one.
+ */
+const PAGE_ERROR_LOCATIONS = new WeakMap<object, string>();
+
+/** Keep the place `WebError.location()` gives each uncaught error of a context's pages. */
+function notePageErrorLocations(context: BrowserContext): void {
+  if (typeof context.on !== 'function') return;
+  (context.on as (event: string, handler: (webError: WebErrorLike) => void) => void)('weberror', (webError) => {
+    try {
+      const error = webError.error();
+      const location = typeof webError.location === 'function' ? webError.location() : null;
+      if (error && typeof error === 'object' && location?.url) {
+        PAGE_ERROR_LOCATIONS.set(error, consoleLocation(location));
+      }
+    } catch {
+      /* a context event handler must never throw */
+    }
+  });
+}
+
+/**
+ * Where an uncaught page error was thrown, as `url:line:column` (0-based): the place its `weberror` gave, else the
+ * first frame of its stack that names a URL.
+ */
+function pageErrorLocation(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  return PAGE_ERROR_LOCATIONS.get(error) ?? pageErrorStackPlace((error as { stack?: unknown }).stack);
+}
+
+/** An uncaught page error's text: `TypeError: cart is undefined`, or the value thrown that is no `Error`. */
+function thrownText(error: unknown): string {
+  if (error instanceof Error) return pageErrorText(error) || 'Error';
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
+}
+
+/**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
  * page already reached through another path (browser patch, `page` fixture).
@@ -3196,11 +3391,23 @@ function instrumentPage(page: Page): void {
     });
   }
 
-  // An exception the page threw and nothing caught once a server probe's fault
-  // was applied: its sign the application did not handle the fault.
-  page.on('pageerror', () => {
+  // An exception the page threw and nothing caught: a console entry of its own, `pageerror`, and once a server probe's
+  // fault was applied, its sign the application did not handle the fault.
+  page.on('pageerror', (error: unknown) => {
     const sink = currentSink;
-    if (sink?.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
+    if (!sink) return;
+    if (sink.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
+    if (sink.frozenAt !== null) return;
+    try {
+      sink.consoleEntries.push({
+        type: 'pageerror',
+        text: thrownText(error),
+        timestamp: Date.now(),
+        location: pageErrorLocation(error),
+      });
+    } catch {
+      /* a page event handler must never throw */
+    }
   });
 
   page.on('console', (msg: ConsoleMessage) => {
@@ -3213,7 +3420,8 @@ function instrumentPage(page: Page): void {
         type,
         text: msg.text(),
         timestamp: Date.now(),
-        location: location ? `${location.url}:${location.lineNumber}:${location.columnNumber}` : null,
+        // A message of an inline script, `page.evaluate` or a `data:` page has an empty URL: no place to name.
+        location: location?.url ? consoleLocation(location) : null,
       });
     }
   });
@@ -3468,6 +3676,7 @@ function instrumentContext(context: BrowserContext): void {
     });
   }
   observeOwnApiRequests(context);
+  notePageErrorLocations(context);
   // In a run a person may pause and watch, the context's calls are followed from its start, for a view that comes later.
   if (runChannelOpen() || liveViewMayPause()) listenCalls(context, layersTitleOf);
   // Inspect may trace the context itself: the test's own `tracing.start` stops Piwi's trace first.
@@ -3628,6 +3837,20 @@ function requestDuration(
 }
 
 /**
+ * The ARIA snapshot of the page's body Playwright took as the test's last
+ * failed `expect` found no element (`errorContext` of its error, Playwright 1.60
+ * and later), or null.
+ */
+function expectFailureAria(testInfo: Pick<TestInfo, 'errors'>): string | null {
+  const errors = testInfo.errors ?? [];
+  for (let i = errors.length - 1; i >= 0; i--) {
+    const aria = (errors[i] as { errorContext?: unknown }).errorContext;
+    if (typeof aria === 'string' && aria.trim()) return aria;
+  }
+  return null;
+}
+
+/**
  * Drain in-flight capture work and attach the collected `piwi-*` data to the
  * test, sourced from the sink so it works regardless of how the test's pages
  * were made.
@@ -3669,11 +3892,11 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   await attachBrowserEnvironment(testInfo);
 
-  // The stops the pause bar showed.
+  // The stops the pause bar showed, each title with the values the attempt knows now hidden.
   if (sink.stops.length > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.pauses, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(sink.stops)),
+      body: Buffer.from(JSON.stringify(sink.stops.map((stop) => ({ ...stop, title: shownTitle(stop.title) })))),
     });
   }
 
@@ -3768,15 +3991,18 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     try {
       // Prefer a live read; fall back to the snapshot the close wrappers
       // stashed — the standard test page is already closed when this auto
-      // fixture tears down.
-      const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
+      // fixture tears down — and, with neither, to the one Playwright took as
+      // a failed `expect` found nothing. The JSON tree goes only with a read
+      // of the fixtures' own.
+      const own = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
+      const snapshot = own ?? expectFailureAria(testInfo);
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: ARIA_SNAPSHOT_CONTENT_TYPE,
           body: snapshot,
         });
 
-        const snapshotJson = (live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = own ? ((live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson) : null;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -3998,7 +4224,7 @@ const runControl: RunControl = {
     if (sink.pause) sink.pause.pause = false;
     skipAtFunctionEnd(sink);
     sink.end.abort(new Error(ENDED_AT_STOP_REASON));
-    const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
+    const title = waiting?.title ? shownTitle(waiting.title) : 'its call';
     const said = endable
       ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
       : `Ended the test while it waited in ${title}: the test is skipped as the call returns.`;
@@ -4019,6 +4245,37 @@ const runControl: RunControl = {
     void armStops(OPEN_CONTEXTS);
   },
 };
+
+/**
+ * Why a CI test whose page was followed through Playwright's call stream takes no Pause: its debugger would stop a call
+ * after the call waited for its element (`followsCallStream`).
+ */
+const FOLLOWED_BEFORE_PAUSE =
+  "This test's page was followed before the project let its controllers pause, so a pause would stop past its call's wait: the worker's next test can pause.";
+
+/**
+ * A controller's Pause of a CI test on the instance's live view: the running test stops at its next call, through the
+ * pause a local run's Pause takes (`PauseState`'s `pause`, the contexts armed), and the stop waits for its controllers
+ * (`showStop`). Dropped before a call took it, the test goes on unstopped. A test whose function ended, or that ends,
+ * takes none.
+ */
+onLiveViewPause({
+  pause() {
+    const sink = currentSink;
+    if (!sink?.testInfo || sink.ended || sink.ending) return PAUSE_DROPPED.noTest;
+    if (sink.functionEnded) return PAUSE_DROPPED.functionEnded;
+    if ([...OPEN_CONTEXTS].some((context) => followsCallStream(context))) return FOLLOWED_BEFORE_PAUSE;
+    sink.pause ??= pauseState(NO_BREAKPOINTS);
+    sink.livePause = true;
+    sink.pause.pause = true;
+    void armStops(OPEN_CONTEXTS);
+    return null;
+  },
+  drop() {
+    const sink = currentSink;
+    if (sink?.livePause && sink.pause) sink.pause.pause = false;
+  },
+});
 
 /** How often the call a Pause waits for is read again, while it waits. */
 const WAITING_WATCH_MS = 250;
@@ -4045,7 +4302,7 @@ function watchWaiting(sink: CaptureSink): void {
         const locatorCall = [...sink.locatorCalls.values()].find((c) => callSiteLine(c.location) === line);
         tellHub({
           type: 'waiting',
-          title: hideSecretsInText(hideTypedText(call.title)).slice(0, MAX_WAITING_TITLE),
+          title: shownTitle(call.title, { max: MAX_WAITING_TITLE }),
           place: { file, line: call.place.line, ...(call.place.column > 0 ? { column: call.place.column } : {}) },
           ms: locatorCall ? Math.max(0, Date.now() - locatorCall.startedAt) : null,
           endable: !!locatorCall?.endable,
@@ -4123,7 +4380,7 @@ export interface PiwiWorkerFixtures {
  * `browser.newContext()`. The calls a test makes through an API request
  * context (the `request` fixture, `playwright.request.newContext()`,
  * `page.request`) are recorded with its network requests. Collected data is
- * attached as `piwi-*` test-info attachments which the Piwi Dashboard reporter
+ * attached as `piwi-*` test-info attachments which the Piwi reporter
  * parses on `onTestEnd`.
  */
 export const piwiFixtures: Fixtures<
@@ -4205,7 +4462,14 @@ export const piwiFixtures: Fixtures<
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
     // now, before the page's context closes.
     const sink = currentSink;
-    if (sink) await holdFailure(sink, page);
+    if (!sink) return;
+    await holdFailure(sink, page);
+    // A context Playwright hands to the next test ends its code reach here, before the `context` fixture keeps it and
+    // this page: still recording, the page would stop that test's reset to `about:blank` at its `beforeunload`
+    // breakpoint, with no session left to resume it. A context that closes ends it as it closes, after every fixture
+    // on it.
+    const context = pageContext(page);
+    if (context && isReusedContext(context)) await stopSinkCodeReach(sink, { page, context });
   },
 
   // Auto, test-scoped: open a capture sink for the running test and flush it
@@ -4233,7 +4497,8 @@ export const piwiFixtures: Fixtures<
         else if (pauseSet.size) logPauseSkipOnce(cannotPause);
       }
       pauseNextTest = false;
-      if (sink.pause || canRecordFromHere()) endStopsWithTestFunction(testInfo, sink);
+      // A CI run's live view may pause the test from its instance (`onLiveViewPause`).
+      if (sink.pause || canRecordFromHere() || liveViewOpen()) endStopsWithTestFunction(testInfo, sink);
       if (channel) tellHub(testBegin(testInfo, cannotPause));
       // While the run connection is open, the test's fetch and XHR answers are kept for Mock a request.
       if (channel && sink.pause) startKeeping();
@@ -4284,11 +4549,15 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
+        // A CI test that failed on a page of its own (`browser.newPage()`, a `beforeAll` page) is held here, while its
+        // live view still shows it: the `page` fixture's teardown holds the others.
+        if (liveViewMayHold() && sink.lastActivePage && !isPageClosed(sink.lastActivePage)) await holdFailure(sink);
         await liveViewTestEnded(liveOutcomeStatus(testInfo));
         showRunChannel();
         currentSink = null;
-        // A pause the editor asked that no call of this test took stops the next test's first call.
-        if (sink.pause?.pause) pauseNextTest = true;
+        // A pause the editor asked that no call of this test took stops the next test's first call; a controller's
+        // Pause of a CI test is that test's alone.
+        if (sink.pause?.pause && !sink.livePause) pauseNextTest = true;
         // Record the probe outcome before flushing the rest of the capture: a
         // failure noticed the fault, a pass did not, and an applied fault whose
         // test was skipped or interrupted, or a fault that never applied, says

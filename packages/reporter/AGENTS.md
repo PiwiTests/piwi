@@ -69,12 +69,19 @@ responsibilities.
      worker answers what the editor asks (`takes` and `features` in its `run-attach`). Three limits hold: a frame
      goes to the editor service alone, never stored nor attached, its secret fields painted over, and a headed stop's
      pause bar where `page-view.ts` can paint it; trusted input plays only while that stop's view, or the lane view
-     showing it, is watched; and every call's and stop's title goes through `hideTypedText` and `hideSecretsInText`
-     ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
+     showing it, is watched; and every call's and stop's title a worker sends goes through `shownTitle`
+     (`lane-layers.ts`: `hideTypedText`, `hideSecretsInText`, then `hideKnownValues` with the values the attempt knows
+     as it is sent) ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
    - with `PIWI_LIVE_VIEW` (set in `onBegin`; outside CI, `none:<why>` for a run without one), each worker's event
      stream to the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): opened in the
      background in a CI run, and outside CI only while the run channel shares the run (**Share live**) or, for a run no
-     run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. Four limits hold:
+     run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. In a CI run, a
+     test that fails while its project holds failing tests (`hold` on the stream) and a controller watches its worker
+     in full waits at its failure, its timeout held, until the hold's length, **Let it go** or no controller watching
+     (`tests/live-view-hold.spec.ts`); with the project's pause setting on too (`hold`'s `pause`), a controller's
+     **Pause** on that stream stops the test at its next call through the local run's pause, until **Resume**, **End
+     the test** (which fails the test there, the stopped call never running) or a hold's ends
+     (`tests/live-view-pause.spec.ts`, `tests/live-view-pause-end.spec.ts`). Four limits hold:
      never a frame while nobody watches, never stored, nothing from a run outside CI unless it is shared; each frame
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and
@@ -155,6 +162,13 @@ responsibilities.
   (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
   `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
   `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A text cut before the attempt's known secrets are hidden in it is cut with `cutText`** (`@piwitests/core/mask`),
+  never `.slice`: its mark makes `hideKnownValues` hide the start of a value the cut left at its end (the call log's
+  title, lines and error, `shownTitle`; `tests/lane-layers.spec.ts`).
+- **The attempt's known values are hidden in a text once, as it is sent, never in a text kept**: kept, a call's title
+  is `keptTitle`'s, shown with `shownTitle` (`lane-layers.ts`); hidden twice, a value that holds one hidden before
+  shows its rest (`tests/lane-layers.spec.ts`, `tests/live-view-worker.spec.ts`). A stop's `locator` and `error` go
+  with them hidden too, so a locator that holds one is not the call's own and matches nothing on the page.
 - **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
   Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
   screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.
@@ -165,10 +179,24 @@ responsibilities.
   its path checked before it is opened, never written through a link nor waited on as a named pipe, read back only
   when this user owns it; on Windows the owner and mode checks are no-ops and only that path check refuses a link
   (`tests/private-file.spec.ts`).
+- **The resource ledger counts the contexts and pages the worker opens, and no other**: a context from the
+  instrumentation's `runAfterCreateBrowserContext`, never `browser.on('context')`, which also reports those another
+  client opens on a browser the worker shares (`browser.bind`, as a stop shares it with Playwright's tools); a page from
+  `context.on('page')` only when it is a popup of a page the ledger counts (`opener()`), has no opener and was not
+  created on `about:blank` (a modifier click's tab: its main frame's first URL, `_initializer.url`, is empty, while its
+  `url()` already reads `about:blank` as it arrives on 1.59), or arrives while a `newPage` call of the worker runs
+  (`onPage`, `internal/capture/resource-ledger.ts`). `tests/resource-ledger.spec.ts` checks both in a real browser, on
+  the floor too (`reporter-floor`).
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor
   (`scripts/playwright-floor.mjs`), and `docs-drift.test.ts` holds the docs' stated minimum to it.
+- **`preprocess` never throws, and reads `testRun` before it returns**: Playwright awaits it unguarded, so an error
+  thrown there fails the run, and its `TestRun` answers only during the call (`readSuiteModes` in
+  `internal/collect/metadata-collector.ts` keeps what it read; `tests/suite-modes-run.spec.ts`).
+- **A shard that cannot read its pass reuse plan runs the whole suite** (`skipSharding` in `runWithoutPlan`,
+  `public/reporter.ts`): Playwright splits a suite holding skipped tests apart from one without, so a shard that skipped
+  none of the plan's tests would not line up with the others (`tests/preprocess-edits-run.spec.ts`).
 
 ## Workflow
 

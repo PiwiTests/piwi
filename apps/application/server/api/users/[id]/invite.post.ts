@@ -34,7 +34,7 @@ export default eventHandler(async (event) => {
   const { html, text } = renderInviteEmail(token, user.username, admin.name || admin.username);
 
   try {
-    await sendEmail({ to: user.email, subject: "You've been invited to Piwi Dashboard", html, text });
+    await sendEmail({ to: user.email, subject: "You've been invited to Piwi", html, text });
     console.info('[users/invite] Invite sent to user %d (%s)', user.id, user.email);
     return { success: true };
   } catch (err) {

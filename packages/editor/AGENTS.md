@@ -75,8 +75,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 - **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
-  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). What it ends
-  of the requests the instance counts as the target's, and the project names it passes on, are in
+  request host carries the target's key alone (`tests/request-host.test.ts`). What it ends of the requests the instance counts as the target's, and the project
+  names it passes on, are in
   [ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy) (`tests/run-target-routes.test.ts`).
 - **The request host tells the shell to forget the key (`onKeyRevoked`) only when the instance says it no longer holds
   it**: on the stream's `revoked` event, or on a 401 with `data.errorCode` `RUN_TARGET_KEY_REVOKED` (or its message,
@@ -91,9 +91,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
-- **A CI session is read-only.** No request acts on a `CiSession` (`piwi/ciWatch` only shows a lane), and its
-  position is never a stop and names a file of the context's folder alone (`workspaceFile`). Checked by
-  `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
+- **A CI session is read-only but for `piwi/ciLetGo` and `piwi/ciControl`, sent on the service's own watch of the lane
+  once its `hello` says controller.** Its position is never a stop and names a file of the context's folder alone
+  (`workspaceFile`). Checked by `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").

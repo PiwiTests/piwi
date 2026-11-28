@@ -56,6 +56,7 @@ vi.mock('../../server/utils/rate-limit', () => ({
 }));
 vi.mock('../../server/utils/extension-connect', () => ({
   CONNECT_RATE_LIMITS: { lookupMiss: { limit: 10, windowMs: 1000 } },
+  targetAbilitiesOf: async () => ({ receive: false, compare: false }),
   decideDeviceConnect: async () => {
     state.acted.push('extension-connect');
     return 'approved';

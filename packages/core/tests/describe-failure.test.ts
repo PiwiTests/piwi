@@ -28,6 +28,7 @@ describe('describeFailure — one line per shape', () => {
     clickIntercepted:
       "getByRole('button', { name: 'Save' }) was covered by another element — click timed out after 5 s",
     fillNotVisible: "getByPlaceholder('Search') never became visible — fill timed out after 5 s",
+    clickInert: "getByRole('button', { name: 'Place order' }) stayed inert — click timed out after 5 s",
     clickChained: "getByRole('button', { name: 'Delete' }) was not found on the page — click timed out after 30 s",
     waitForSelector: "locator('#app-ready') was not found on the page — waitForSelector timed out after 5 s",
     toHaveCount: "Expected 26 rows, found 51 — getByRole('row') toHaveCount",
@@ -36,6 +37,8 @@ describe('describeFailure — one line per shape', () => {
     toBeVisibleHidden: "getByRole('button', { name: 'Export CSV' }) never became visible (5 s)",
     notToBeVisible: "locator('.spinner') stayed visible (5 s)",
     toHaveText: 'Expected text "Welcome back", got "Sign in" — getByRole(\'heading\', { level: 1 }) toHaveText',
+    toHaveTextDescribed:
+      "getByTestId('cart').getByTestId('order-total') was not found on the page — expected text \"$42.00\" (5 s)",
     toHaveAttribute: 'Expected attribute "dark", got "light" — locator(\'html\') toHaveAttribute',
     toHaveURL: 'Expected URL /\\/dashboard$/, got "/login?next=%2Fdashboard" — page toHaveURL',
     toHaveTitle: 'Expected title /Dashboard/, got "Sign in — Acme" — page toHaveTitle',
@@ -158,6 +161,7 @@ describe('describeFailure — parts and detail', () => {
 
   test('the detail carries what the headline left out, and nothing it already says', () => {
     expect(describeFailure(parsePlaywrightError(ERRORS.clickNotEnabled)).detail).toBe('element is not enabled');
+    expect(describeFailure(parsePlaywrightError(ERRORS.clickInert)).detail).toBe('element is inert');
     expect(describeFailure(parsePlaywrightError(ERRORS.clickIntercepted)).detail).toBe(
       '<div class="modal-backdrop"></div> intercepts pointer events',
     );

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { parseErrorContext, consoleLogsFromTrace } from '../../server/utils/import-evidence';
 import { errorContextMarkdown } from '../utils/blob-report-fixture';
-import type { ParsedTraceData } from '../../server/utils/trace-events';
+import { parseTraceTexts, type ParsedTraceData } from '../../server/utils/trace-events';
 
 /** A `ParsedTraceData` carrying only the console entries and context headers a test cares about. */
 function traceWith(
@@ -138,6 +138,41 @@ describe('consoleLogsFromTrace', () => {
 
     expect(logs![0]!.location).toBe('https://app/x.js:3:8');
     expect(logs![1]!.location).toBeNull();
+  });
+
+  test("keeps a trace's uncaught page errors, placed where they were thrown", () => {
+    const stack = 'TypeError: cart is undefined\n    at renderCart (https://app/cart.js:12:5)';
+    const pageError = (params: Record<string, unknown>) =>
+      JSON.stringify({ type: 'event', time: 1_700_000_005_000, class: 'BrowserContext', method: 'pageError', params });
+    const parsed = parseTraceTexts([
+      [
+        // Playwright 1.60 and later record where it was thrown, 0-based.
+        pageError({
+          error: { error: { name: 'TypeError', message: 'cart is undefined', stack } },
+          location: { url: 'https://app/cart.js', line: 11, column: 4 },
+        }),
+        // An older trace has the stack alone.
+        pageError({ error: { error: { name: 'TypeError', message: 'cart is undefined', stack } } }),
+        // A value thrown that is no `Error`.
+        pageError({ error: { value: { s: 'quote failed' } } }),
+      ].join('\n'),
+    ]);
+
+    expect(consoleLogsFromTrace(parsed, null)).toEqual([
+      {
+        type: 'pageerror',
+        text: 'TypeError: cart is undefined',
+        timestamp: 1_700_000_005_000,
+        location: 'https://app/cart.js:11:4',
+      },
+      {
+        type: 'pageerror',
+        text: 'TypeError: cart is undefined',
+        timestamp: 1_700_000_005_000,
+        location: 'https://app/cart.js:11:4',
+      },
+      { type: 'pageerror', text: 'quote failed', timestamp: 1_700_000_005_000, location: null },
+    ]);
   });
 
   test('returns null when the trace has nothing worth storing', () => {

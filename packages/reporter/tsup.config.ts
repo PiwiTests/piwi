@@ -36,7 +36,7 @@ export default defineConfig({
   },
   bundle: true,
   outDir: 'dist',
-  target: 'node20',
+  target: 'node22',
   platform: 'node',
   splitting: false,
   sourcemap: false,

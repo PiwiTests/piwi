@@ -2,11 +2,12 @@ import * as path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import { compressCallLog, MAX_LIVE_CALL_LOG_LINES, type LiveBox, type LiveCallLog } from '@piwitests/core/live-view';
 import {
-  hideKnownValues,
+  cutText,
   hideSecretsInLog,
   hideSecretsInText,
   hideTypedText,
   isSecretLocator,
+  knownValuesHider,
   namesSecretField,
 } from '@piwitests/core/mask';
 import { internalCall } from './quiet-capture.js';
@@ -36,9 +37,10 @@ import { internalCall } from './quiet-capture.js';
  *   call on a frame of the page); a read that fails leaves the last one.
  *
  * Each text has what may be a secret hidden (`hideTypedText`, `hideSecretsInLog`, `hideSecretsInText`) before it is
- * cut, as a view is told it, never before: a call nobody is shown costs no more than its record. As each view is told,
- * the values the attempt knows are secrets (`FollowOptions.secrets`) are hidden in each text too, the ones known then. The log's lines go
- * folded as Playwright folds a failed call's (`compressCallLog`). No hook throws into the call it hears.
+ * cut (`cutText`), as a view is told it, never before: a call nobody is shown costs no more than its record. As each
+ * view is told, the values the attempt knows are secrets (`FollowOptions.secrets`) are hidden in each text too, the
+ * ones known then, with the start of one a cut left at a text's end (`hideKnownValues`). The log's lines go folded as
+ * Playwright folds a failed call's (`compressCallLog`). No hook throws into the call it hears.
  */
 
 /** How long a call runs before the elements its locator matches are read, and how often they are read again. */
@@ -52,7 +54,7 @@ const MAX_TITLE = 500;
 /** The most calls the instrumentation is heard running at once; past it, the ones heard first are forgotten. */
 const MAX_HEARD = 200;
 
-/** One update of Playwright's call stream, as Playwright 1.64 writes it. */
+/** One update of Playwright's call stream, as Playwright 1.64 and 1.65 write it. */
 interface CallUpdate {
   id?: unknown;
   title?: unknown;
@@ -92,7 +94,7 @@ interface HeardCall {
 }
 
 /** The id of the runner's step a call's zone names; null before the runner gave it one. */
-function zoneStepId(zone: { callId?: unknown; stepId?: unknown } | null | undefined): string | null {
+export function zoneStepId(zone: { callId?: unknown; stepId?: unknown } | null | undefined): string | null {
   if (typeof zone?.callId === 'string' && zone.callId) return zone.callId;
   return typeof zone?.stepId === 'string' && zone.stepId ? zone.stepId : null;
 }
@@ -264,16 +266,16 @@ function hearLine(call: Call, line: string): void {
  * since and its error, with what may be a secret hidden, once each.
  */
 function settle(call: Call, titleOf: (id: string) => string | null): void {
-  call.title ??= hideSecretsInText(hideTypedText(titleOf(call.id) ?? call.named)).slice(0, MAX_TITLE);
+  call.title ??= cutText(hideSecretsInText(hideTypedText(titleOf(call.id) ?? call.named)), MAX_TITLE);
   call.secretField ??= call.selector ? isSecretLocator(call.selector) : false;
   for (const line of call.heardLines) {
     call.secretField ||= namesSecretField(line);
-    call.lines.push(hideSecretsInText(hideSecretsInLog(line, call.secretField)).slice(0, MAX_LINE));
+    call.lines.push(cutText(hideSecretsInText(hideSecretsInLog(line, call.secretField)), MAX_LINE));
   }
   call.heardLines = [];
   if (call.lines.length > KEPT_LINES) call.lines.splice(0, call.lines.length - KEPT_LINES);
   if (call.heardError !== null) {
-    call.error = hideSecretsInText(hideSecretsInLog(call.heardError, call.secretField)).slice(0, MAX_LINE);
+    call.error = cutText(hideSecretsInText(hideSecretsInLog(call.heardError, call.secretField)), MAX_LINE);
     call.heardError = null;
   }
 }
@@ -291,6 +293,14 @@ interface ContextCalls {
 }
 
 const followed = new WeakMap<BrowserContext, Promise<ContextCalls | null>>();
+
+/**
+ * Whether a context's calls are followed through Playwright's call stream: once on, it stays on in that context, and
+ * its debugger stops a call before its input rather than before its wait.
+ */
+export function followsCallStream(context: BrowserContext): boolean {
+  return followed.has(context);
+}
 const listened = new WeakMap<BrowserContext, ContextCalls>();
 
 /** Take one update of the call stream into its call. */
@@ -640,8 +650,7 @@ export async function followCallLog(
     settle(shown, calls.titleOf);
     const here = onThisPage();
     // What the attempt knows are secrets now, which a page may show in a line (`locator resolved to <div>…</div>`).
-    const known = secrets();
-    const hidden = (text: string): string => hideKnownValues(text, known);
+    const hidden = knownValuesHider(secrets());
     onLog({
       id: shown.id,
       call: { title: hidden(shown.title!), file: shown.file, line: shown.line },

@@ -1,6 +1,6 @@
 # Security policy
 
-Piwi Dashboard is a self-hosted application that can store sensitive material on your behalf — AI provider API keys, SCM access tokens, webhook secrets, user credentials, and the contents of your test artifacts. We take reports about anything that could expose that data seriously.
+Piwi is a self-hosted application that can store sensitive material on your behalf — AI provider API keys, SCM access tokens, webhook secrets, user credentials, and the contents of your test artifacts. We take reports about anything that could expose that data seriously.
 
 ## Reporting a vulnerability
 
@@ -29,7 +29,7 @@ Out of scope: reports that require an already-compromised host, denial of servic
 
 ## Supported versions
 
-Piwi Dashboard is pre-1.0: fixes land on `main` and ship in the next release. Only the **latest release** is supported — please reproduce on the current version before reporting.
+Piwi is pre-1.0: fixes land on `main` and ship in the next release. Only the **latest release** is supported — please reproduce on the current version before reporting.
 
 ## Hardening your deployment
 

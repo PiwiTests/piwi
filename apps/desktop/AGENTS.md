@@ -27,9 +27,10 @@ shell and are feature-equivalent.
     (`proof_holds`), and a restart's splash text never shows a hidden window.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
-  - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
+  - A run's window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
     `/desktop/run-output` page, stays on the sidecar's origin and holds no IPC grant: the dashboard window feeds it
-    over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
+    over a `BroadcastChannel` (`app/utils/run-output-channel.ts`) and does what it asks there, and the page reads the
+    runs' hub through the routes behind the desktop guard. Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
     IPC. A reload of the dashboard window closes none: its next page asks for them, and closes those no run of it
     shows (`desktop_close_other_output_windows`); the dashboard window's end closes all.
@@ -110,11 +111,13 @@ shell and are feature-equivalent.
 - **A run's environment is read by the shell, never taken from the window** (`src-tauri/src/environments.rs`). The
   window names it by id (`EnvironmentPick`); the shell reads the merged run variables and the environment from its
   server, or from the team instance with the target key for the folder's team project, checks them again, sets them and
-  `PIWI_ENVIRONMENT` on the process, and adds a protected environment's `--grep-invert` itself (never in
-  `ALLOWED_FLAGS`); `piwi flake` refuses a protected one. `tests/unit/environments-shell.test.ts` holds it to core.
+  `PIWI_ENVIRONMENT` on the process, and adds a protected environment's `--grep-invert` itself, the run's own `-G`
+  kept in it, a case-sensitive `/…/` refused as core refuses it (`--grep-invert` never in `ALLOWED_FLAGS`; `validate_args` refuses an option left waiting for its value as
+  the last argument, which would take the shell's); `piwi flake` refuses a protected one. `tests/unit/environments-shell.test.ts` holds it to core.
 - **The instance's key lives in the OS keychain and never reaches the window**: read only while `runTargetInstance` is
   set and handed to the server after each start (`hand_kept_key`), it is forgotten on `key-revoked` only when that
-  names the connected instance (`key_revoked`).
+  names the connected instance (`key_revoked`). The server also asks the team instance with it, for Compare with team
+  instance (`server/utils/desktop-team-comparison.ts`), and the window reads the answer, never the key.
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`,

@@ -20,7 +20,17 @@
  *   connection opens.
  */
 import type { Agent } from 'undici';
-import { assertPublicHttpUrl, publicOnlyLookup } from './safe-fetch';
+import {
+  assertPublicHttpUrl,
+  hostPlace,
+  hostPlaces,
+  isBlockedHostRefusal,
+  placesAllow,
+  PrivateAddressError,
+  privateAddressRefusal,
+  publicOnlyLookup,
+  type HostPlace,
+} from './safe-fetch';
 import { isDesktopRuntime } from './ai-claude-cli';
 import {
   CredentialRefusedError,
@@ -34,6 +44,7 @@ import {
   CI_SERVER_HTTPS_PROBLEM,
   ciServerCheckFinding,
   ciServerCheckPlans,
+  ciServerListPlan,
   ciServerRequestTemplate,
   CI_SERVER_PRESET_REGISTRY,
   isUnderBaseUrl,
@@ -46,12 +57,18 @@ import {
   type CiTemplateValues,
 } from '#shared/ci-server';
 import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
+import { jenkinsRoot, readWhoAmI, userTokenTestUrl, type UserTokenTestResult } from '#shared/credentials';
+import { MAX_CI_JOBS, withoutFreeText, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
 /** How long a CI server has to answer a dispatch. */
 const CI_SERVER_TIMEOUT_MS = 10_000;
 /** The most of an answer read: enough for its link, build number or error message. */
 const MAX_ANSWER_BYTES = 64 * 1024;
+/** The most of a read's answer read (Check, a listing): a CI server's jobs and folders, or a job's parameters. */
+const MAX_READ_ANSWER_BYTES = 2 * 1024 * 1024;
+/** Why a read's answer is not read, for the user. */
+const READ_TOO_LARGE = `The CI server's answer is larger than ${MAX_READ_ANSWER_BYTES / 1024 / 1024} MB, the most Piwi reads.`;
 /** The most of a CI server's error message shown. */
 const MAX_ERROR_MESSAGE = 200;
 
@@ -69,6 +86,8 @@ export interface CiServerCredential {
   allowedInputs: string[] | null;
   /** `action` for the credential the action names, `instance` for the one the environment sets. */
   source: 'action' | 'instance';
+  /** The projects it serves: every project, or these; absent, read as shared with others. */
+  projects?: 'all' | readonly number[];
 }
 
 /** The instance's CI server URL, `PIWI_CI_SERVER_URL`, or null when it sets none. */
@@ -76,48 +95,19 @@ export function instanceCiServerUrl(): string | null {
   return normalizeCiServerBaseUrl(process.env.PIWI_CI_SERVER_URL);
 }
 
-/** A URL's host name, lowercased and without IPv6 brackets, and its port (the scheme's default when absent). */
-function hostAndPort(url: URL): { host: string; port: string } {
-  return {
-    host: url.hostname.replace(/^\[|\]$/g, '').toLowerCase(),
-    port: url.port || (url.protocol === 'https:' ? '443' : '80'),
-  };
-}
-
 /**
  * The places a CI server dispatch may reach on a private address: the host and
  * port of `PIWI_CI_SERVER_URL`, and each `PIWI_CI_SERVER_HOSTS` entry, a host
  * name (any port) or `host:port` (that port only, `:80` included).
  */
-export function ciServerHosts(): Array<{ host: string; port: string | null }> {
-  const places: Array<{ host: string; port: string | null }> = [];
+export function ciServerHosts(): HostPlace[] {
   const instance = instanceCiServerUrl();
-  if (instance) places.push(hostAndPort(new URL(instance)));
-  for (const entry of (process.env.PIWI_CI_SERVER_HOSTS ?? '').split(',')) {
-    const name = entry.trim();
-    // A host or `host:port` alone: an entry with a path, query, fragment, user or empty port allows nothing.
-    if (!name || /[/?#\\@\s]/.test(name) || name.endsWith(':')) continue;
-    try {
-      // `URL` drops a port equal to the scheme's default, so `host:80` reads its port from the entry.
-      const place = hostAndPort(new URL(`http://${name}`));
-      places.push({ host: place.host, port: /:\d+$/.test(name) ? place.port : null });
-    } catch {
-      // An entry that is not a host name allows nothing.
-    }
-  }
-  return places;
+  return [...(instance ? [hostPlace(new URL(instance))] : []), ...hostPlaces(process.env.PIWI_CI_SERVER_HOSTS)];
 }
 
 /** Whether a dispatch to this URL may reach a private address: a listed place, or the desktop app. */
 export function mayReachPrivateAddress(url: string): boolean {
-  if (isDesktopRuntime()) return true;
-  let target: { host: string; port: string };
-  try {
-    target = hostAndPort(new URL(url));
-  } catch {
-    return false;
-  }
-  return ciServerHosts().some((place) => place.host === target.host && (place.port ?? target.port) === target.port);
+  return isDesktopRuntime() || placesAllow(ciServerHosts(), url);
 }
 
 function toCiServerCredential(record: CredentialRecord, source: CiServerCredential['source']): CiServerCredential {
@@ -128,7 +118,14 @@ function toCiServerCredential(record: CredentialRecord, source: CiServerCredenti
     user: record.user,
     allowedInputs: record.allowedInputs,
     source,
+    projects: record.allProjects ? 'all' : record.projectIds,
   };
+}
+
+/** Whether a credential serves a project other than `projectId`: the instance's, or one shared with several. */
+function sharedBeyond(credential: CiServerCredential, projectId: number): boolean {
+  const projects = credential.projects;
+  return !projects || projects === 'all' || projects.some((id) => id !== projectId);
 }
 
 /**
@@ -187,6 +184,8 @@ export interface OutgoingCiRequest {
   custom: boolean;
   /** The action inputs left off because the credential it carries does not allow them. */
   droppedInputs: string[];
+  /** The most of the answer read; absent, {@link MAX_ANSWER_BYTES}. */
+  maxAnswerBytes?: number;
 }
 
 /**
@@ -265,25 +264,34 @@ export function prepareCiServerRequest(input: {
 export interface CiServerAnswer {
   status: number;
   header: (name: string) => string | null;
-  /** The answer's first {@link MAX_ANSWER_BYTES} bytes. */
+  /** The answer's first bytes, up to the request's limit. */
   text: string;
+  /** Whether the answer was longer than the request's limit. */
+  truncated: boolean;
 }
 
 let publicOnlyAgent: Agent | null = null;
 
-async function readLimited(body: ReadableStream<Uint8Array> | null): Promise<string> {
-  if (!body) return '';
+async function readLimited(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<{ text: string; truncated: boolean }> {
+  if (!body) return { text: '', truncated: false };
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (size < MAX_ANSWER_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    size += value.byteLength;
+  let done = false;
+  while (size <= limit) {
+    const chunk = await reader.read();
+    if (chunk.done) {
+      done = true;
+      break;
+    }
+    chunks.push(chunk.value);
+    size += chunk.value.byteLength;
   }
   await reader.cancel().catch(() => {});
-  return Buffer.concat(chunks).subarray(0, MAX_ANSWER_BYTES).toString('utf8');
+  return { text: Buffer.concat(chunks).subarray(0, limit).toString('utf8'), truncated: !done && size > limit };
 }
 
 /**
@@ -293,22 +301,33 @@ async function readLimited(body: ReadableStream<Uint8Array> | null): Promise<str
  */
 export async function sendCiServerRequest(request: OutgoingCiRequest): Promise<CiServerAnswer> {
   const undici = await import('undici');
-  let dispatcher: Agent | undefined;
-  if (!mayReachPrivateAddress(request.url)) {
-    await assertPublicHttpUrl(request.url);
-    publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
-    dispatcher = publicOnlyAgent;
+  let res: Awaited<ReturnType<typeof undici.fetch>>;
+  try {
+    let dispatcher: Agent | undefined;
+    if (!mayReachPrivateAddress(request.url)) {
+      await assertPublicHttpUrl(request.url);
+      publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
+      dispatcher = publicOnlyAgent;
+    }
+    res = await undici.fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body ?? undefined,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
+      ...(dispatcher ? { dispatcher } : {}),
+    });
+  } catch (error) {
+    if (isBlockedHostRefusal(error)) {
+      throw new PrivateAddressError(new URL(request.url), 'a CI server request', 'PIWI_CI_SERVER_HOSTS');
+    }
+    throw error;
   }
-  const res = await undici.fetch(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: request.body ?? undefined,
-    redirect: 'manual',
-    signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
-    ...(dispatcher ? { dispatcher } : {}),
-  });
-  const text = await readLimited(res.body as unknown as ReadableStream<Uint8Array> | null);
-  return { status: res.status, header: (name) => res.headers.get(name), text };
+  const { text, truncated } = await readLimited(
+    res.body as unknown as ReadableStream<Uint8Array> | null,
+    request.maxAnswerBytes ?? MAX_ANSWER_BYTES,
+  );
+  return { status: res.status, header: (name) => res.headers.get(name), text, truncated };
 }
 
 const parseJson = (text: string): unknown => {
@@ -318,6 +337,16 @@ const parseJson = (text: string): unknown => {
     return null;
   }
 };
+
+/**
+ * What a request that got no answer tells the user: a refusal of Piwi's own (the credential's rules, a private
+ * address) as it is, any other failure as a CI server that could not be reached.
+ */
+function unsentRequestMessage(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  if (error instanceof CredentialRefusedError || privateAddressRefusal(error)) return reason;
+  return `The CI server could not be reached: ${reason}.`;
+}
 
 /** The error a non-2xx answer becomes: its status and, for a JSON answer, its `message`, cut short. */
 export function ciServerAnswerError(answer: CiServerAnswer): Error {
@@ -354,7 +383,7 @@ async function sendWithCredential(
   db: DbClient,
   request: OutgoingCiRequest,
   rebuild: (credential: CiServerCredential) => OutgoingCiRequest,
-  use: { projectId: number; feature: 'ci-dispatch' | 'ci-check' } & CiServerUse,
+  use: { projectId: number; feature: 'ci-dispatch' | 'ci-check' | 'ci-list' } & CiServerUse,
 ): Promise<CiServerAnswer> {
   const credential = request.credential;
   if (!credential) return sendCiServerRequest(request);
@@ -375,7 +404,68 @@ async function sendWithCredential(
       return { ...answer, text: maskCredentialAnswer(answer.text, opened) };
     },
     (answer) => (answer.status >= 200 && answer.status < 300 ? null : `The CI server answered ${answer.status}`),
+    { unauthorized: (answer) => answer.status === 401 },
   );
+}
+
+/**
+ * Test a person's token for a per-user CI server credential: Jenkins' `whoAmI`
+ * at the root of the credential's destination, with the token they typed
+ * (`candidate`) or the one they saved, through `withCredential`, which checks,
+ * masks and logs it. The answer names the account, or only why it failed: never
+ * the CI server's text, so the test cannot be used to read what a guessed
+ * password gets.
+ */
+export async function testCiServerUserToken(
+  db: DbClient,
+  credential: { id: number; destination: string },
+  actor: CredentialActor,
+  candidate?: { user: string; secret: string },
+): Promise<UserTokenTestResult> {
+  const url = userTokenTestUrl(credential.destination);
+  // A token goes only where a dispatch would send it: over https, or to a place the operator listed.
+  const problem = ciServerBaseUrlProblem(jenkinsRoot(credential.destination));
+  if (problem) throw new CredentialRefusedError(problem);
+  let answer: CiServerAnswer;
+  try {
+    answer = await withCredential(
+      db,
+      {
+        credentialId: credential.id,
+        feature: 'credential-test',
+        projectId: null,
+        url,
+        custom: false,
+        actor,
+        ...(candidate ? { candidate } : {}),
+      },
+      (opened) =>
+        sendCiServerRequest({
+          method: 'GET',
+          url,
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Basic ${Buffer.from(`${opened.user ?? ''}:${opened.secret}`, 'utf8').toString('base64')}`,
+          },
+          body: null,
+          credential: null,
+          custom: false,
+          droppedInputs: [],
+          maxAnswerBytes: MAX_ANSWER_BYTES,
+        }),
+      (sent) => {
+        if (sent.status < 200 || sent.status >= 300) return `The CI server answered ${sent.status}`;
+        return readWhoAmI(parseJson(sent.text)).ok ? null : 'The CI server named no signed-in user';
+      },
+    );
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) throw e;
+    return { ok: false, reason: privateAddressRefusal(e) ? 'private-address' : 'unreachable' };
+  }
+  if (answer.status === 401 || answer.status === 403) return { ok: false, reason: 'refused' };
+  if (answer.status < 200 || answer.status >= 300) return { ok: false, reason: 'unreachable' };
+  const json = parseJson(answer.text);
+  return json === null ? { ok: false, reason: 'unreachable' } : readWhoAmI(json);
 }
 
 /**
@@ -428,7 +518,16 @@ export function prepareCiServerCheck(input: {
   const headers: Record<string, string> = { Accept: 'application/json' };
   const header = credential ? authHeader(auth, credential) : null;
   if (header) headers[header[0]] = header[1];
-  return { method: 'GET', url: input.url, headers, body: null, credential, custom: false, droppedInputs: [] };
+  return {
+    method: 'GET',
+    url: input.url,
+    headers,
+    body: null,
+    credential,
+    custom: false,
+    droppedInputs: [],
+    maxAnswerBytes: MAX_READ_ANSWER_BYTES,
+  };
 }
 
 /** What a non-2xx answer to Check means, for the user. */
@@ -500,6 +599,10 @@ export async function checkCiServerTarget(
         });
         continue;
       }
+      if (answer.truncated) {
+        results.push({ kind: plan.kind, ok: false, missing: [], message: READ_TOO_LARGE });
+        continue;
+      }
       const finding = ciServerCheckFinding(
         notSent.length > 0 ? { ...plan, required: plan.required.filter((name) => !notSent.includes(name)) } : plan,
         parseJson(answer.text),
@@ -516,14 +619,162 @@ export async function checkCiServerTarget(
             },
       );
     } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      results.push({
-        kind: plan.kind,
-        ok: false,
-        missing: [],
-        message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.`,
-      });
+      results.push({ kind: plan.kind, ok: false, missing: [], message: unsentRequestMessage(e) });
     }
   }
   return results;
+}
+
+/** The base URL and credential a target's requests use, or why it has none, for the user. */
+async function ciServerReadContext(
+  db: DbClient,
+  target: CiServerTarget,
+): Promise<{ credential: CiServerCredential | null; baseUrl: string } | { message: string }> {
+  let credential: CiServerCredential | null;
+  try {
+    credential = await ciServerCredential(db, target);
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e) };
+  }
+  const baseUrl = ciServerBaseUrl(target, credential);
+  const problem = ciServerBaseUrlProblem(baseUrl);
+  if (problem || !baseUrl) return { message: problem ?? 'No CI server is configured for this project.' };
+  return { credential, baseUrl };
+}
+
+/** What a non-2xx answer to a listing read means, for the user; `notFound` for a 404. */
+function listingAnswerMessage(answer: CiServerAnswer, sentCredential: boolean, notFound: string): string {
+  if (answer.status === 404) return notFound;
+  if (answer.status === 401) {
+    return sentCredential
+      ? 'The CI server refused the credential (401): check its user and secret.'
+      : 'The CI server asks for a credential (401): pick one for this action.';
+  }
+  if (answer.status === 403) {
+    return sentCredential
+      ? 'The CI server answered 403: the credential’s user cannot read it.'
+      : 'The CI server answered 403 to a request without a credential: pick a credential.';
+  }
+  return `${ciServerAnswerError(answer).message}.`;
+}
+
+/**
+ * Read `url` under a target's base URL with the credential a dispatch under it
+ * would carry, logged as a listing use: the answer's JSON and whose credential
+ * the read carried (`instance` for the one every project shares), or why it
+ * could not be read, for the user. Nothing is started.
+ */
+async function readForListing(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+  credential: CiServerCredential | null,
+  url: string,
+  use: CiServerUse,
+  notFound: string,
+): Promise<{ json: unknown; carried: CiServerCredential | null } | { message: string }> {
+  try {
+    const prepare = (withSecret: CiServerCredential | null) =>
+      prepareCiServerCheck({ target, url, credential: withSecret });
+    const request = prepare(credential);
+    const answer = await sendWithCredential(db, request, prepare, { projectId, feature: 'ci-list', ...use });
+    if (answer.status < 200 || answer.status >= 300) {
+      return { message: listingAnswerMessage(answer, !!request.credential, notFound) };
+    }
+    if (answer.truncated) return { message: READ_TOO_LARGE };
+    const json = parseJson(answer.text);
+    return json === null ? { message: 'The CI server did not answer JSON.' } : { json, carried: request.credential };
+  } catch (e) {
+    return { message: unsentRequestMessage(e) };
+  }
+}
+
+/**
+ * The jobs under a CI server target's base URL, for the action editor: read
+ * with the credential a dispatch would carry, and logged. Nothing is started.
+ */
+export async function listCiServerJobs(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+  use: CiServerUse,
+): Promise<CiJobListing> {
+  const none = (message: string): CiJobListing => ({ jobs: null, truncated: false, message });
+  const context = await ciServerReadContext(db, target);
+  if ('message' in context) return none(context.message);
+  const plan = ciServerListPlan(target, context.baseUrl);
+  if ('error' in plan) return none(plan.error);
+  const read = await readForListing(
+    db,
+    projectId,
+    target,
+    context.credential,
+    plan.url,
+    use,
+    'Nothing at the base URL lists jobs (404): use the CI server’s root, such as https://ci.example.com/.',
+  );
+  if ('message' in read) return none(read.message);
+  const found = plan.jobs(read.json);
+  if (!found) return none('The answer lists no jobs: is the base URL the CI server’s root?');
+  return {
+    jobs: found.jobs,
+    truncated: found.truncated,
+    message: found.truncated
+      ? `Folders more than three levels deep, and jobs past the first ${MAX_CI_JOBS}, are not listed: type the job’s path.`
+      : null,
+  };
+}
+
+/**
+ * The parameters a CI server target's job declares, for the action editor: the
+ * job Check reads (a multibranch job on its default branch), with the same
+ * credential, logged as a listing. Nothing is started.
+ */
+export async function readCiServerJobFields(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+  use: CiServerUse,
+): Promise<CiJobFieldListing> {
+  const context = await ciServerReadContext(db, target);
+  if ('message' in context) return { fields: null, message: context.message };
+  const [plan] = ciServerCheckPlans(target, context.baseUrl);
+  if (!plan) return { fields: null, message: 'This target names no job to read.' };
+  if ('error' in plan) return { fields: null, message: plan.error };
+  const read = await readForListing(
+    db,
+    projectId,
+    target,
+    context.credential,
+    plan.url,
+    use,
+    'No job at this path, or the credential’s user cannot see it (404).',
+  );
+  if ('message' in read) return { fields: null, message: read.message };
+  const fields = plan.fields(read.json);
+  if (!fields) {
+    return {
+      fields: null,
+      message: 'The answer does not describe a job: is the path a folder, or a multibranch pipeline without /{branch}?',
+    };
+  }
+  if (fields.length === 0) {
+    return {
+      fields,
+      message:
+        'The job declares no parameters. A Pipeline job declares those of its Jenkinsfile on its first build: run it once.',
+    };
+  }
+  // A credential other projects share reads for them too: what a parameter's free text holds stays with the CI server.
+  if (read.carried && sharedBeyond(read.carried, projectId)) {
+    const which =
+      read.carried.source === 'instance'
+        ? 'the instance’s CI server credential, which every project shares'
+        : `“${read.carried.name}”, which other projects share`;
+    return {
+      fields: withoutFreeText(fields),
+      message: `Read with ${which}: a parameter’s free-text default and its description are left out.`,
+    };
+  }
+  return { fields, message: null };
 }

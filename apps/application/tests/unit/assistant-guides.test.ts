@@ -17,7 +17,7 @@ import type { AssistantGuidePlan, AssistantPageContext } from '#shared/assistant
 
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, appVersion: '0.59.0', public: {} }));
 
 const guides = await import('../../server/utils/assistant/guides');
 const tools = await import('../../server/utils/assistant/tools');

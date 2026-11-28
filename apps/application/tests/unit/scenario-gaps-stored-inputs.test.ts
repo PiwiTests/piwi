@@ -178,7 +178,7 @@ describe('resolveCatalogMethodReach', () => {
 });
 
 describe('passedWithErrorsDetail', () => {
-  test('names the 5xx responses, the backend errors and the console errors, in that order', () => {
+  test('names the 5xx responses, the backend errors, the console errors and the page errors, in that order', () => {
     expect(
       gaps.passedWithErrorsDetail({
         runId: 7,
@@ -190,14 +190,17 @@ describe('passedWithErrorsDetail', () => {
         ],
         backendErrors: ['POST /api/audit', 'GET /api/c'],
         consoleErrors: 2,
+        pageErrors: 1,
       }),
     ).toBe(
-      'run #7 · POST /api/audit returned 500 · GET /api/a returned 503 · 1 more 5xx · the backend logged an error on POST /api/audit and 1 more · the page logged 2 console errors',
+      'run #7 · POST /api/audit returned 500 · GET /api/a returned 503 · 1 more 5xx · the backend logged an error on POST /api/audit and 1 more · the page logged 2 console errors · the page threw 1 uncaught error',
     );
   });
 
   test('is null when the execution reported nothing', () => {
-    expect(gaps.passedWithErrorsDetail({ runId: 1, serverErrors: [], backendErrors: [], consoleErrors: 0 })).toBeNull();
+    expect(
+      gaps.passedWithErrorsDetail({ runId: 1, serverErrors: [], backendErrors: [], consoleErrors: 0, pageErrors: 0 }),
+    ).toBeNull();
   });
 });
 
@@ -679,6 +682,38 @@ describe('computeScenarioGaps — passed with errors', () => {
     await gaps.computeScenarioGaps(db, 1);
     const raised = await gaps.listScenarioGaps(db, 1, { detector: 'passed-with-errors' });
     expect(raised.map((g) => g.title)).toEqual(['own passed with errors']);
+  });
+
+  test('an uncaught error the page’s own script threw is an error of the application', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'own' },
+      { id: 2, projectId: 1, filePath: 'a.spec.ts', title: 'third party' },
+    ]);
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'GET /api/report', firstSeenRunId: 1, lastSeenRunId: 1 });
+    const requests = [{ method: 'GET', path: '/api/report', status: 200 }];
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests,
+      console: [{ type: 'pageerror', text: 'TypeError: rows is undefined', location: `${ORIGIN}/assets/app.js:4:2` }],
+    });
+    await execution({
+      id: 2,
+      runId: 1,
+      testCaseId: 2,
+      requests,
+      console: [{ type: 'pageerror', text: 'Error: widget', location: 'https://widget.other/w.js:1:1' }],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'passed-with-errors' });
+    expect(raised.map((g) => [g.title, g.evidence[0]])).toEqual([
+      ['own passed with errors', expect.stringContaining('the page threw 1 uncaught error')],
+    ]);
   });
 });
 

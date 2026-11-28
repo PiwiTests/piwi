@@ -8,6 +8,7 @@
  * linked folder.
  */
 import { classifyInstalledSkill, readSkillStamp, type InstalledSkillState } from '@piwitests/core/skill-stamp';
+import type { ProjectMenuItem } from '~~/types/api';
 
 interface ServedSkill {
   slug: string;
@@ -39,9 +40,9 @@ const rows = ref<Row[]>([]);
 const busy = ref(false);
 
 async function loadProjects() {
-  const menu = await $fetch<Array<{ id: number; name: string; label: string | null }>>('/api/projects/menu');
+  const menu = await $fetch<{ items: ProjectMenuItem[] }>('/api/projects/menu');
   const linked: Array<{ id: number; label: string }> = [];
-  for (const project of menu) {
+  for (const project of menu.items) {
     const link = await getDesktopProjectLink(project.id);
     if (link?.exists) linked.push({ id: project.id, label: project.label || project.name });
   }

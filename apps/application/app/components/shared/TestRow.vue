@@ -32,6 +32,7 @@ import { ENDED_AT_STOP_BADGE, badgesFromTestCase } from '~/utils/test-row-badges
 import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { testLabel } from '#shared/utils/test-label';
 import { shownWorkerNumber } from '#shared/worker-lane';
+import { testStop } from '~/utils/stop-words';
 
 const props = withDefaults(
   defineProps<{
@@ -151,11 +152,13 @@ const liveShows = computed(() =>
   liveRowShows({ liveWorker: !!props.liveWorker, desktopWorker: !!props.desktopWorker, note: props.liveNote }),
 );
 /**
- * Where the row's test stands stopped, as text, from a run outside CI whose reporter told it (`test-stopped`): shown
- * unless the run's live view or the desktop app's own hub shows the stop.
+ * Where the row's test stands stopped, from the run's live view and from its reporter (`test-stopped`), as `testStop`
+ * reads the two; none while the desktop app's own hub shows the stop.
  */
-const toldStop = computed(() =>
-  tc.value?.liveStop && !props.liveWorker?.paused && liveShows.value !== 'pause-and-watch' ? tc.value.liveStop : null,
+const shownStop = computed(() =>
+  liveShows.value === 'pause-and-watch'
+    ? null
+    : testStop(props.liveWorker?.paused, tc.value?.liveStop, props.liveWorker),
 );
 /** The row's test stands at a stop: in the run's live view, in a run the desktop app started, or as its reporter told. */
 const stopped = computed(
@@ -163,10 +166,7 @@ const stopped = computed(
 );
 /** Whether the row has a live line under its title: the step, where it is paused, or the run's note. */
 const liveLine = computed(
-  () =>
-    (!!props.liveStep && !stopped.value) ||
-    !!toldStop.value ||
-    (liveShows.value === 'watch' ? !!props.liveWorker?.paused : !!liveShows.value),
+  () => (!!props.liveStep && !stopped.value) || !!shownStop.value || (liveShows.value !== 'watch' && !!liveShows.value),
 );
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
 const liveResourcesTitle = computed(() => {
@@ -390,17 +390,13 @@ const clusterLabel = computed(() =>
           <!-- A stopped test shows where it is paused in place of its last step. -->
           <TestRowLiveStep v-if="liveStep && !stopped" :step="liveStep" class="max-w-full" />
           <TestRowLivePause
-            v-if="liveWorker?.paused && liveShows === 'watch'"
-            :reason="liveWorker.paused.reason"
-            :call="liveWorker.paused.call"
-            :project-key="projectKey"
-            :project-name="projectName"
-          />
-          <TestRowLivePause
-            v-else-if="toldStop"
-            :reason="toldStop.reason"
-            :call="toldStop"
-            :since="toldStop.since"
+            v-if="shownStop"
+            :reason="shownStop.reason"
+            :call="shownStop.call"
+            :since="shownStop.since"
+            :until="shownStop.held?.until"
+            :held-for="shownStop.held?.heldFor"
+            :ci-pause="shownStop.ciPause"
             :project-key="projectKey"
             :project-name="projectName"
           />

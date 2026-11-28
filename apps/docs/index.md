@@ -1,13 +1,13 @@
 ---
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
-title: "Piwi: self-hosted Playwright dashboard"
+title: "Piwi: free, self-hosted Playwright dashboard"
 titleTemplate: false
 
 hero:
-  name: "Piwi Dashboard"
+  name: "Piwi"
   text: "Your Playwright results, kept and explained"
-  tagline: "CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry."
+  tagline: "Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used."
 
   actions:
     - theme: brand
@@ -122,6 +122,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 ### Something is red right now
 
 - [Is this test failing because of my change, or is it flaky?](/recipes/regression-or-flaky)
+- [Why does my Playwright test fail on CI but pass on my machine?](/recipes/fails-on-ci)
 - [Forty tests are red: where do I start?](/recipes/mass-failure)
 - [A locator broke after a UI change: what should I use instead?](/recipes/broken-locator)
 - [Our suite is unreliable and I have one afternoon](/recipes/flaky-cleanup)

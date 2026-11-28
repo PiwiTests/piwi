@@ -36,6 +36,21 @@ async function githubError(res: Response, action: string): Promise<Error> {
   return new Error(`GitHub ${action} failed (${res.status}): ${body.message ?? res.statusText}`);
 }
 
+/**
+ * The run a workflow dispatch created, from the `200` answer a request with
+ * `return_run_details` gets: its id and its page, or null when the answer names
+ * no run, or a page that is not a run of the repository (`runsUrl`).
+ */
+async function readDispatchedRun(res: Response, runsUrl: string): Promise<{ runId: string; url: string } | null> {
+  const body = (await res.json().catch(() => null)) as { workflow_run_id?: unknown; html_url?: unknown } | null;
+  const id = body?.workflow_run_id;
+  const runId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? String(id) : null;
+  const url = typeof body?.html_url === 'string' ? body.html_url : null;
+  // GitHub may spell the repository in another case than the project pinned it.
+  if (!runId || !url?.toLowerCase().startsWith(runsUrl.toLowerCase())) return null;
+  return { runId, url };
+}
+
 /** A changed file as the compare and commit endpoints list it; `sha` is the file's blob id at the head. */
 interface GitHubChangedFile {
   filename: string;
@@ -609,19 +624,29 @@ export class GitHubProvider extends ScmProvider {
     const inputs: Record<string, string> = { ...request.inputs, [target.argsInput]: playwrightArgs };
     if (target.dispatchIdInput && request.dispatchId) inputs[target.dispatchIdInput] = request.dispatchId;
 
-    const res = await fetch(
-      `https://api.github.com/repos/${this.repoPath}/actions/workflows/${encodeURIComponent(target.workflow)}/dispatches`,
-      {
-        method: 'POST',
-        headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref, inputs }),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      },
-    );
+    const send = (body: Record<string, unknown>) =>
+      fetch(
+        `https://api.github.com/repos/${this.repoPath}/actions/workflows/${encodeURIComponent(target.workflow)}/dispatches`,
+        {
+          method: 'POST',
+          headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
+      );
+    let res = await send({ ref, inputs, return_run_details: true });
+    // A GitHub that does not know the parameter refuses the whole request, and dispatched nothing.
+    if (res.status === 422) {
+      const refusal = await githubError(res, 'dispatch workflow');
+      if (!refusal.message.includes('return_run_details')) throw refusal;
+      res = await send({ ref, inputs });
+    }
     if (!res.ok) throw await githubError(res, 'dispatch workflow');
 
-    // workflow_dispatch answers 204 with no run id, so link to the workflow's
-    // runs page filtered to the branch instead of a specific run.
+    const created =
+      res.status === 200 ? await readDispatchedRun(res, `https://github.com/${this.repoPath}/actions/runs/`) : null;
+    if (created) return { url: created.url, ref, runId: created.runId };
+    // A 204 names no run: link to the workflow's runs on the branch.
     const runs = new URL(`https://github.com/${this.repoPath}/actions/workflows/${target.workflow}`);
     runs.searchParams.set('query', `branch:${ref}`);
     return { url: runs.toString(), ref };

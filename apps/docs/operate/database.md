@@ -1,6 +1,6 @@
 ---
 title: Database
-description: "SQLite by default or PostgreSQL for a shared instance, how to switch between them, and where retention and backups are covered."
+description: "SQLite by default or PostgreSQL for a shared instance, how to switch between them, what happens to a database another build ran, and where retention and backups are covered."
 lang: en-US
 ---
 
@@ -89,6 +89,30 @@ turn off for Piwi's database alone:
 ```sql
 ALTER DATABASE piwi_dashboard SET jit = off;
 ```
+
+## A database that ran another build
+
+Releases only ever add migrations, in date order. A database that also ran a build from outside the
+releases (a development branch, a preview image) can hold migrations this version does not ship, and
+be missing some it does. On startup Piwi logs `The migration history of this database does not match
+this build`, lists what differs, and repairs it in a single transaction:
+
+- the migrations the database lacks are applied, including any dated before the latest one it ran;
+- tables, columns, indexes and constraints the other build already created are kept, completed with
+  the columns this version declares, and indexes are rebuilt from this version's definition;
+- a unique index this version does not declare is dropped, since it would reject rows Piwi writes;
+- the result is checked against the schema this version expects, then the migrations the other build
+  recorded are removed from the history.
+
+The log ends with `Migration history repaired` and the next start is a normal one. If the result would
+still differ from the expected schema — a column only the other build has, `NOT NULL` without a
+default, for instance — nothing is changed, and it fails like any migration
+([what that does](./upgrading#what-happens-when-a-new-version-starts)) with `Migration
+history repair failed` and the difference it found: restore a backup, or start from an empty database.
+
+A database that is only **ahead** of this version, as after starting an older version on it, gets a
+single warning, `applied migration(s) are not in this build`, and nothing else: see
+[Downgrading is not supported](./upgrading#downgrading-is-not-supported).
 
 ## Switching backends
 

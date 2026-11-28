@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
+import { PerformanceObserver, performance } from 'node:perf_hooks';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { PageReader, WorkerMetrics } from '../src/internal/capture/worker-metrics.js';
+import { PageReader, WorkerMetrics, loopShare } from '../src/internal/capture/worker-metrics.js';
 import { ProcFs } from '../src/internal/support/system-readers.js';
 
 let dir: string;
@@ -70,6 +71,31 @@ describe('WorkerMetrics', () => {
     expect(result.roles).toBeUndefined();
     expect(result.worker.fds).toBeNull();
     expect(result.worker.heapUsedMb).toBeGreaterThan(0);
+    expect(result.worker.gcReported).toBe(true);
+  });
+
+  it('reads a window with no idle and no active time as an event loop not measured', () => {
+    expect(loopShare({ idle: 0, active: 0, utilization: 0 })).toBeNull();
+    expect(loopShare({ idle: 75, active: 25, utilization: 0.25 })).toBe(0.25);
+    expect(loopShare({ idle: 100, active: 0, utilization: 0 })).toBe(0);
+  });
+
+  it('measures neither the event loop nor the heap after garbage collection on a runtime that reports neither', () => {
+    // Bun's: every event loop reading is zero, and no `gc` entry type.
+    const loop = vi.spyOn(performance, 'eventLoopUtilization').mockReturnValue({ idle: 0, active: 0, utilization: 0 });
+    const types = vi.spyOn(PerformanceObserver, 'supportedEntryTypes', 'get').mockReturnValue(['mark', 'measure']);
+    try {
+      const metrics = new WorkerMetrics(new ProcFs(path.join(dir, 'missing')), process.pid, 'darwin');
+      metrics.start();
+      const result = metrics.end()!;
+      metrics.dispose();
+      expect(result.worker.loopUtilization).toBeNull();
+      expect(result.worker.heapAfterGcMb).toBeNull();
+      expect(result.worker.gcReported).toBe(false);
+    } finally {
+      loop.mockRestore();
+      types.mockRestore();
+    }
   });
 });
 
@@ -94,7 +120,41 @@ describe('PageReader', () => {
     expect(await reader.read(page)).toEqual({ cpuMs: 1250, heapMb: 3, nodes: 420, listeners: 12 });
     await reader.read(page);
     expect(newCDPSession).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith('Performance.enable', { timeDomain: 'threadTicks' });
+    expect(send).toHaveBeenCalledWith('Performance.enable', { timeDomain: 'threadTicks' }, { timeout: 5000 });
+    expect(send).toHaveBeenCalledWith('Performance.getMetrics', undefined, { timeout: 5000 });
+  });
+
+  it('ends a DevTools call that does not answer within its deadline, and reads null', async () => {
+    vi.useFakeTimers();
+    try {
+      // A Playwright older than 1.65 ignores the timeout: the call stays open, and the read gives up on it.
+      const send = vi.fn((method: string) =>
+        method === 'Performance.getMetrics' ? new Promise<never>(() => {}) : Promise.resolve({}),
+      );
+      const page = { context: () => ({ newCDPSession: async () => ({ send }) }) };
+      const read = new PageReader().read(page);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await read).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up on a page whose Performance.enable never answers, once', async () => {
+    vi.useFakeTimers();
+    try {
+      const send = vi.fn(() => new Promise<never>(() => {}));
+      const newCDPSession = vi.fn(async () => ({ send }));
+      const page = { context: () => ({ newCDPSession }) };
+      const reader = new PageReader();
+      const read = reader.read(page);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await read).toBeNull();
+      expect(await reader.read(page)).toBeNull();
+      expect(newCDPSession).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('gives up on a page whose browser has no CDP, once', async () => {

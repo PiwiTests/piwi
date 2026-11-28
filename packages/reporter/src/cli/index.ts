@@ -26,13 +26,13 @@ import { runRerun } from './rerun.js';
 import { findTemplatesDir, runSkills } from './skills.js';
 
 const USAGE = `
-piwi — companion commands for the Piwi Dashboard reporter
+piwi — companion commands for the Piwi reporter
 
 Usage:
   npx @piwitests/reporter <command> [options]
 
 Commands:
-  init      Wire a Playwright project up to a Piwi Dashboard
+  init      Wire a Playwright project up to a Piwi server
   skills    Install the Piwi agent skills into this project
   gate      Fail a CI job on the dashboard's analysis of a run
   report    Print a quality report (Markdown, PDF, HTML, CSV or JSON)

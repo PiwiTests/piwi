@@ -14,7 +14,7 @@ import { DESKTOP_MCP_TOOL_DEFS, MCP_TOOL_DEFS, toolPermissions, type McpToolDef 
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
 
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, appVersion: '0.59.0', public: {} }));
 
 const tools = await import('../../server/utils/assistant/tools');
 const schema = await import('../../server/database/schema.sqlite');

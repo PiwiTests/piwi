@@ -1,8 +1,8 @@
 # PiwiTests.Instrumentation.AspNetCore
 
-ASP.NET Core integration for [Piwi Dashboard](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header.
+ASP.NET Core integration for [Piwi](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi reporter via the `X-Piwi-Logs` response header.
 
-During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in the Piwi Dashboard, and are included in the AI diagnosis context.
+During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then shown with that request on the test's execution page in Piwi, and are included in the AI diagnosis context.
 
 **Active in Development and Test by default.** No header is emitted in Production unless you opt in — see [Choosing the environments](#choosing-the-environments) for recette tiers with their own environment names.
 
@@ -148,7 +148,7 @@ With no exception handling at all (outside Development, a `WebApplication` witho
 - .NET 8, 9, or 10
 - `Microsoft.AspNetCore.App` framework reference (included automatically in ASP.NET Core projects)
 
-## How it works with Piwi Dashboard
+## How it works with Piwi
 
 ```
 Playwright test

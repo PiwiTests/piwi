@@ -1,92 +1,74 @@
-import type { MaybeRefOrGetter } from 'vue';
+import type { CiDispatchView } from '#shared/ci-dispatches';
+import type { CiDispatchSourceInput, CiOffered } from '#shared/ci-dispatch-request';
 
-/** A CI re-run's availability and last dispatch, from a cluster's or an execution's `/rerun`. */
+/** A place's CI re-run as the failure pages read it: whether its default action can be sent, and its last dispatch. */
 export interface RerunInfo {
   available: boolean;
   reason: string | null;
-  provider: string | null;
   /** The CI action a dispatch would run, or null when none can. */
-  action?: { id: string; name: string } | null;
-  enabled: boolean;
-  hasToken: boolean;
-  lastDispatch: {
-    provider: string;
-    /** The CI server preset, for a `ci-server` dispatch. */
-    preset?: string;
-    url: string;
-    args: string;
-    at: number;
-    byName: string | null;
-    /** How many tests it re-ran. */
-    tests?: number;
-    /** The CI action it ran. */
-    actionId?: string;
-  } | null;
+  action: { id: string; name: string } | null;
+  /** The last dispatch the provider took, with the run that answered it. */
+  lastDispatch: CiDispatchView | null;
 }
 
-const DISPATCH_TARGETS: Record<string, string> = {
-  github: 'GitHub Actions',
-  gitlab: 'GitLab CI',
-  bitbucket: 'Bitbucket Pipelines',
-  jenkins: 'Jenkins',
-  custom: 'the CI server',
-};
-
-/** Where a re-run was dispatched, for its "dispatched to Jenkins" line. */
-export function rerunDispatchTarget(dispatch: NonNullable<RerunInfo['lastDispatch']>): string {
-  const key = dispatch.provider === 'ci-server' ? (dispatch.preset ?? 'custom') : dispatch.provider;
-  return DISPATCH_TARGETS[key] ?? 'CI';
+/** A place that dispatches to CI: its project and its source, as `POST /api/projects/:id/ci-dispatches` takes it. */
+export interface CiRerunPlace {
+  projectId: number;
+  source: CiDispatchSourceInput;
 }
 
-/** What a last re-run ran, for its "Last re-run of 3 tests" line: ` of N tests`, or nothing when it was not recorded. */
-export function lastRerunScope(dispatch: RerunInfo['lastDispatch']): string {
-  const n = dispatch?.tests;
-  return n ? ` of ${n} test${n === 1 ? '' : 's'}` : '';
+/** The `RerunInfo` of what a place is offered: its default action's readiness, and its last dispatch. */
+export function rerunInfoFromOffered(offered: CiOffered): RerunInfo {
+  const action = offered.actions.find((a) => a.id === offered.defaultActionId) ?? null;
+  return {
+    available: offered.enabled && Boolean(action?.available),
+    reason: action?.reason ?? null,
+    action: action ? { id: action.id, name: action.name } : null,
+    lastDispatch: offered.lastDispatch,
+  };
 }
 
 /**
- * Dispatch a CI re-run through a `/rerun` route (a cluster's affected tests, or
- * one execution's test). The failure pages fetch the `RerunInfo` themselves
- * (their SSR strategies differ) but share this POST and its toasts, which say
- * what re-runs (`started`, one sentence) and link to the provider's runs; the
- * caller refreshes the info afterwards.
+ * A place's `RerunInfo`. A viewer who may dispatch (`run:control`) reads what
+ * the place is offered; any other reads only its cluster's last dispatch the
+ * provider took (`state=taken`), from the project's dispatches.
  */
-export function useCiRerun(
-  endpoint: MaybeRefOrGetter<string | null | undefined>,
-  refreshRerun: () => unknown,
-  started: MaybeRefOrGetter<string> = 'The affected tests are re-running in CI.',
-) {
-  const toast = useToast();
-  const rerunning = ref(false);
-
-  async function triggerRerun() {
-    const url = toValue(endpoint);
-    if (!url || rerunning.value) return;
-    rerunning.value = true;
-    try {
-      const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string } }>(url, {
-        method: 'POST',
-      });
-      if (res.ok && res.dispatch) {
-        toast.add({
-          title: 'CI re-run dispatched',
-          description: toValue(started),
-          color: 'success',
-          actions: [
-            { label: 'Watch it', to: res.dispatch.url, target: '_blank', color: 'neutral', variant: 'outline' },
-          ],
-        });
-        await refreshRerun();
-      } else {
-        toast.add({ title: 'CI re-run not started', description: res.message ?? 'Not available.', color: 'warning' });
-      }
-    } catch (e: unknown) {
-      const message = (e as { data?: { message?: string }; message?: string })?.data?.message ?? 'Dispatch failed.';
-      toast.add({ title: 'CI re-run failed', description: message, color: 'error' });
-    } finally {
-      rerunning.value = false;
-    }
+export async function loadRerunInfo(
+  /** `$fetch`, or the `useRequestFetch()` that carries the request's cookies on the server. */
+  fetcher: typeof $fetch,
+  place: RerunInfoPlace,
+): Promise<RerunInfo> {
+  if (place.mayDispatch) {
+    const offered = await fetcher<CiOffered>(`/api/projects/${place.projectId}/ci-actions/offered`, {
+      query: place.source,
+    });
+    return rerunInfoFromOffered(offered);
   }
+  const unavailable = { available: false, reason: null, action: null };
+  if (place.clusterId == null) return { ...unavailable, lastDispatch: null };
+  const { items } = await fetcher<{ items: CiDispatchView[] }>(`/api/projects/${place.projectId}/ci-dispatches`, {
+    query: { clusterId: place.clusterId, state: 'taken', limit: 1 },
+  });
+  return { ...unavailable, lastDispatch: items[0] ?? null };
+}
 
-  return { rerunning, triggerRerun };
+/** A place whose `RerunInfo` a page reads: its project and source, its cluster, and whether the viewer may dispatch. */
+export type RerunInfoPlace = CiRerunPlace & { clusterId: number | null; mayDispatch: boolean };
+
+/**
+ * A place's `RerunInfo`, loaded with the page under `key` (through
+ * `useRequestFetch`, so the server render carries the request's cookies),
+ * null when the place is not known yet or cannot be read.
+ */
+export async function useRerunInfo(key: string, place: () => RerunInfoPlace | null) {
+  const requestFetch = useRequestFetch();
+  const { data, refresh } = await useAsyncData<RerunInfo | null>(
+    key,
+    () => {
+      const target = place();
+      return target ? loadRerunInfo(requestFetch, target).catch(() => null) : Promise.resolve(null);
+    },
+    { default: (): RerunInfo | null => null },
+  );
+  return { rerunInfo: data, refreshRerun: refresh };
 }

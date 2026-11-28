@@ -243,7 +243,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 13,
     intro:
       'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection, and `PIWI_ZEPHYR_API_TOKEN` one for Zephyr Scale Cloud; otherwise connections are managed from **Settings → Integrations**.',
-    note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Jira Cloud](/operate/integrations).',
+    note: 'A Jira site or an AI base URL set in Settings reaches a private address only on a host the environment sets or `PIWI_PRIVATE_HOSTS` lists. See [Private hosts](/operate/production-checklist#private-hosts).',
   },
   clustering: {
     title: 'Failure clustering',
@@ -446,6 +446,15 @@ export const PIWI_ENV_VARS = {
     default: 'local',
     notes: 'Only the exact value `s3` selects S3; any other value falls back to local storage.',
   },
+  PIWI_STORAGE_QUOTA_BYTES: {
+    description:
+      'The stored bytes the administrators are warned against: at 80% and then 95% of it, Piwi emails every administrator and shows them a banner, and Settings → Storage shows the usage against it. It counts what Settings → Storage totals, the stored files and the traces. Unset, there is no quota and no warning.',
+    category: 'storage',
+    type: 'number',
+    min: 1024 * 1024,
+    since: '0.79.0',
+    notes: 'Warnings only: nothing is refused once the quota is reached.',
+  },
   PIWI_STORAGE_PATH: {
     description: 'Directory for local file storage (when PIWI_STORAGE_TYPE is "local").',
     category: 'storage',
@@ -521,6 +530,17 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     since: '0.55.1',
   },
+  PIWI_OPERATOR_TOKEN: {
+    description:
+      "A token that opens the operator routes to whoever runs the instance without an account in it, such as a hosting provider or a deployment script: GET /api/operator/usage (the instance's usage and what it is doing now, in counts only), /api/operator/notice (the banner signed-in users see) and POST /api/operator/admin-invite (an administrator account for an address, whose one-time link goes to that address only). Sent as a Bearer token; never accepted as a session or an API key. Unset, the operator routes answer 404.",
+    category: 'auth',
+    secret: true,
+    example: 'a 64-char random hex string',
+    since: '0.79.0',
+    docs: 'operate/upgrading',
+    notes:
+      "At least 32 characters, with no space: a token it cannot take leaves the routes closed, and the first request to them logs a warning. The right token always passes; a client network that sends ten wrong tokens in 15 minutes is refused until the window ends, the network being the reverse proxy's unless PIWI_TRUST_PROXY is set. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
+  },
   PIWI_METRICS_ENABLED: {
     description:
       'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
@@ -548,6 +568,16 @@ export const PIWI_ENV_VARS = {
     max: 3650,
     relevantWhen: { PIWI_SHARE_LINKS_ENABLED: 'true' },
     since: '0.26.0',
+  },
+  PIWI_MCP_CLIENT_METADATA_DOCUMENTS: {
+    description:
+      'Set to "true" to accept MCP clients that sign in with a client ID metadata document: an HTTPS URL as their `client_id`, naming the JSON document that describes them, which the server then fetches from a public address when the client asks for authorization, and advertises in the authorization server metadata. Off by default: the instance then makes no such request, and clients register on their own (dynamic client registration), which stays on either way. Turn it on only for an instance that can reach the internet: a client that sees it advertised signs in through it alone.',
+    category: 'auth',
+    type: 'boolean',
+    default: 'false',
+    relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
+    since: '0.75.0',
+    docs: 'features/mcp#authentication',
   },
   PIWI_TRUST_PROXY: {
     description:
@@ -1374,7 +1404,7 @@ export const PIWI_ENV_VARS = {
   PIWI_SMTP_FROM_NAME: {
     description: 'Display name for the from address (optional).',
     category: 'smtp',
-    default: 'Piwi Dashboard',
+    default: 'Piwi',
     relevantWhen: { PIWI_SMTP_HOST: '*' },
   },
   PIWI_SMTP_SECURE: {
@@ -1404,7 +1434,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://jenkins.example.com/',
     since: '0.67.0',
-    docs: 'features/ci-rerun',
+    docs: 'features/ci-actions',
   },
   PIWI_CI_SERVER_USER: {
     description:
@@ -1424,13 +1454,22 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CI_SERVER_HOSTS: {
     description:
-      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) a CI re-run may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL. A name without a port allows every port of that host. Any other host must resolve to public addresses only. A listed host may also be reached over http.',
+      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) that every request to a CI server may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL: a re-run or Flake Lab dispatch, a CI action’s Check and job listings, and a per-user token test. A name without a port allows every port of that host. Any other host must resolve to public addresses only, or the request is refused before it is sent; the desktop app reaches any host. A listed host may also be reached over http.',
     category: 'integrations',
     destination: 'Your CI server',
     type: 'list',
     example: 'jenkins.internal:8080',
     since: '0.67.0',
-    docs: 'features/ci-rerun',
+    docs: 'features/ci-actions',
+  },
+  PIWI_PRIVATE_HOSTS: {
+    description:
+      'Hosts (comma-separated, e.g. ollama:11434,jira.lan) a Jira site or an AI base URL set in Settings may reach on a private address: a loopback, private, link-local or reserved one. A name without a port allows every port of that host. The host of an address the environment sets (PIWI_JIRA_BASE_URL, PIWI_AI_BASE_URL and the AI roles’ base URLs) is allowed without being listed, and so is any address in the desktop app. Any other address must resolve to public addresses only.',
+    category: 'integrations',
+    type: 'list',
+    example: 'ollama:11434,jira.lan',
+    since: '0.79.0',
+    docs: 'operate/production-checklist#private-hosts',
   },
   PIWI_CI_SERVER_ALLOWED_INPUTS: {
     description:
@@ -1440,7 +1479,7 @@ export const PIWI_ENV_VARS = {
     example: 'TARGET_ENV,SUITE',
     since: '0.70.0',
     relevantWhen: { PIWI_CI_SERVER_URL: '*' },
-    docs: 'features/ci-rerun',
+    docs: 'features/ci-actions',
   },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',

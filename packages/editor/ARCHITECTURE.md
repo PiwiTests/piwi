@@ -165,7 +165,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/debug-run.ts`: a run that debugs a failure (**Debug in my editor**): its test, its one-shot stop and the
   suggested locator outlined there.
 - `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
-- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
+- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces and each request's era (legacy or `2026-07-28`), shared with the
+  instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/shell-runs.ts`, `src/shell-run-events.ts`: the hub of the runs a desktop shell starts, built on it, which the
   desktop app's server and Piwi Runner's host run, and what its window reads and sends.
@@ -229,7 +230,7 @@ the custom messages of `src/protocol.ts`:
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`, `piwi/environments`, `piwi/setEnvironment`;
-  - CI runs: `piwi/ciWatch`;
+  - CI runs: `piwi/ciWatch`, `piwi/ciLetGo`, `piwi/ciControl`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
@@ -286,8 +287,9 @@ a test's action list (`piwi.copyAgentContext`) names once picked.
 
 `piwi/failures` says which state the view is in, with its sentence (`view`, `failuresView`): failures; none in a run
 read (`clear`); an instance that does not answer (`unreachable`); a desktop app that did not prove it holds the token
-(`desktop-unproven`); an instance named and not read yet (`loading`); no run for a connected context, the project's or
-the baseline chosen (`norun`); no connection (`disconnected`), in that order, so a workspace with one context down still
+(`desktop-unproven`); an instance that refused the key or asked for one (`refused`); an instance named and not read yet
+(`loading`); no run for a connected context, the project's or the baseline chosen (`norun`); no project chosen or found
+(`no-project`); no connection (`disconnected`), in that order, so a workspace with one context down still
 reads clear when another read its run. Both clients show the sentence and link their actions for the state.
 
 Each item of `piwi/failures` carries:
@@ -505,11 +507,17 @@ its nodes (`configTree` in `src/test-tree.ts`), folders, specs, describe blocks,
 test that runs in several, then the **Not in this checkout** group. A node's id holds no URI: a spec's is its config's
 folder and its path, so an id stays whichever source gave the node, and in both editors' spellings of a URI.
 
-**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list` with the project's own
-Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests Playwright lists
-(`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe blocks with their
-lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `TestListings` keeps each
-config's last listing:
+**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list --project=*` with the
+project's own Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests
+Playwright lists (`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe
+blocks with their lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `--project=*`
+lists every project, one with `default: false` (Playwright 1.64) too. Each listed test says whether its project runs
+only when `--project` names it (`onlyNamed`): `default: false`, read from the config's internals under its
+`configInternalSymbol` as `FullProject` has none (no project is where they cannot be read), and no project a run without
+`--project` runs depends on it or has it as its teardown, which Playwright would run with that one. The reporter tells
+the projects apart, not their names, so of two projects of one name only the tests of the one left out are named; the
+tree keeps their Playwright ids (`onlyNamedIds`). A config with `projects: []`, which `--project=*` fails ("No projects
+matched"), is listed without it. `TestListings` keeps each config's last listing:
 
 - the first `piwi/testItems` of the whole tree lists every config not listed yet; a config nobody asked the tree of is
   never listed;
@@ -533,9 +541,11 @@ config's last listing:
 whose text differs from the file's, line endings aside: `sameText`), listed since it last changed on disk, and loading. Its tests are then one per
 title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
 spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
-`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, a title
-written on the call's line or on the first line of code below it, with the titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
-are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
+`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a `test.skip(…)`, `test.fixme(…)` or
+`test.fail(…)` only with an argument after its title (`test.skip('reason')` marks the test it is in), a line starting
+with `//` read as blank, a title written on the call's line or on the first line of code below it, with the titled
+`test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests are one
+test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
 (`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
 `specTests` in `src/server.ts`.
 
@@ -561,14 +571,27 @@ nodes are not `runnable`.
 `RunTestsArgs`, read from the tree as it stands (`nodeRuns` in `src/test-tree.ts`). Each node runs by the narrowest
 filter Playwright takes for it, so a run needs no instance and a group is one argument, not its tests':
 
-| Node | Filter |
-| --- | --- |
-| A config | none (`RunTestsArgs.all`): `npx playwright test` |
-| A folder | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax |
-| A spec | its whole path (`^/repo/e2e/tests/cart.spec.ts`) |
-| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
-| A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
-| A project's node | its test's, in that project alone (`--project`) |
+| Node             | Filter                                                                                                                                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A config         | none (`RunTestsArgs.all`): `npx playwright test`                                                                                                                                                                                                                                            |
+| A folder         | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax                                                                                                                                           |
+| A spec           | its whole path (`^/repo/e2e/tests/cart.spec.ts`)                                                                                                                                                                                                                                            |
+| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text)                                                                                                                                     |
+| A test           | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
+| A project's node | its test's, in that project alone (`--project`)                                                                                                                                                                                                                                             |
+
+A test runs only when named when the listing names it so in every project it runs in (`onlyNamedIds`; a test the
+listing gives no project, one written since, goes by its spec's other tests). A node holding only such tests runs with
+`--project` naming their projects (a config whole too), `--project=` for an unnamed one, which Playwright reads as the
+projects with no name. A node holding both runs as Playwright runs it without `--project`, a test of both kinds of
+projects in the others, and the named-only tests under it run apart, in a run per set of projects, each by the widest
+node holding none of the others: a spec of such a project whole, else the test's own filter. So no picked test is left
+to a command that does not run it, which the Testing view, counting a test with no result as passed on a 0 exit, would
+show green. A setup or teardown project with `default: false` that a default project depends on is no such project:
+without `--project` Playwright runs it whole beside a project that depends on it, else the tests of it a filter takes,
+so it never runs in a second command. A project's node of a named-only project reads `(only with --project)` after its
+name (`ONLY_NAMED`). The clients start the runs of one pick at once (VS Code's `executeTask` resolves as the task
+starts, JetBrains starts each), so a node holding both kinds runs two Playwright processes in one folder side by side.
 
 A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
 Every location is written by `locationArg`, from the config's folder as the file system spells it: its whole path,
@@ -641,7 +664,9 @@ A run in progress is `live` in `piwi/runStatus` when it runs on the branch the c
 branch, or when it is the editor's own, wherever it runs. It is counted through its own stream
 (`GET /api/test-runs/:id/stream`). The client hears of it at most once every 300 ms, and that notification places no
 failure again (`progressed` in `RunWatchOptions`). `live` goes back to null in the notification that brings the
-failures read once the run ended.
+failures read once the run ended. A run the editor did not start says where it comes from, by its origin's kind
+(`LiveRun.from`, `FROM_WORDS` in `src/run-watch.ts`: `from the desktop app`, `on a developer's machine`), which both
+clients put in the status item's tooltip; a CI run and one that names no origin say nothing.
 
 Until then, the tests its stream begins (`test-begin`) and ends (`test-completed`) are kept in
 `PiwiContext.liveTests`. An event names its test by its id, else by its title and suite path in its spec, looked up in
@@ -713,7 +738,8 @@ once per stop while it is out of sight.
 
 A CI run of the branch a context reads, or of the checked-out branch, is a read-only session while it runs
 (`src/ci-sessions.ts`, `piwi/ciSessionChanged`): the clients list it beside their own runs, and mark the call each of
-its running tests is at as a CI position, never as a stop. No request acts on it: no control, share or hold.
+its running tests is at as a CI position, never as a stop. No request acts on it but **Let it go** on a test held at
+its failure ([Watching a CI lane](#watching-a-ci-lane)): no control, share or hold.
 
 - **Found** as the instance's stream announces it (`RunWatchOptions.runStarted`), and as the context reads it in
   progress: its latest run (`origin` `ci` or `ci-rerun`), its run in progress (`LiveRun.ci`). A run is a CI run's by its
@@ -730,7 +756,8 @@ its running tests is at as a CI position, never as a stop. No request acts on it
   500 ms, only when it differs from the last one sent.
 - **Read** from the run's stream, shared with the context's run in progress: `test-begin` and `test-completed` (a
   time-out as `timedOut` live and `timedout` from the catch-up), `live-view` (`watchable`: the project's live view is
-  on and the run holds a key), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
+  on and the run holds a key), `live-worker` (a worker's test held at its failure for the project's controllers,
+  `readCiHold` of `@piwitests/run-model/ci`), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
   the stream needs what opening the run needs (`project:read`, a run that is not another person's private one).
 - **Positions** come from the steps the run's reporter streams while someone has the run's stream open, the service
   among them (`step-begin`, `step-end`): each worker's innermost open step, a fixture's left out. A step names its file
@@ -740,6 +767,20 @@ its running tests is at as a CI position, never as a stop. No request acts on it
 - **Watch**: a running test of a `watchable` run can be watched in the client's worker panel, read-only
   ([Watching a CI lane](#watching-a-ci-lane)), and carries its lane's view on the run's page (`watch`,
   `?watch=<shard>.<lane>`), which the clients offer beside it.
+- **Held**: a running test whose lane's worker holds it at its failure (`ciHoldOf`: by its lane, else its worker)
+  carries `held`, in the run page's words (`ciHoldWords`: `Failed, held at its line`, `Held for Ana · until 12:05` in
+  the person's clock, the error, its place, `The CI job’s own timeout still runs.`), and `letGo` while the client's
+  watch shows its lane as a controller's (`watching`, `offersLetGo`); the session is pushed again as the watch changes
+  (`watchChanged`). A hold is its own worker's test's alone, and its `id` (`ciHoldKey`) and the button's words
+  (`letGoLabel`, `letGoTitle`) come with it, so neither client writes them. The holds heard go at each `init`: a stream
+  opened again names only the workers connected now, never one that left meanwhile.
+- **Paused**: each connected worker's latest `live-worker` event (`states`, forgotten at each `init`, a test's only from
+  its own worker: `ciWorkerStateOf`) gives its running test `paused` (`readCiPause`, `ciPauseWords`: `Paused by Ana ·
+  until 12:05`, the call, its place, the job's timeout), `pauseAsk` (`ciPauseAskWords`: `Pause asked by Ana`, or why a
+  Pause was dropped), and, while the client's watch shows its lane as a controller's, `controls`: what
+  `ciControlsOffered` decides, each with its label and title in the run page's words, and the state they follow
+  (`ciControlStateKey`: the worker, its test and the instance's `pauseSeq`, so a state that comes back reads as
+  another), which a client asks one of once.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
   place: the last notification says `ended`, and the run's stream is let go.
@@ -778,8 +819,20 @@ instance's bound of watches per person).
 - **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
   instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
   follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
+- **Counts** on the instance as a full view of the lane, a controller's when the key's owner may control the project's
+  runs (`run:control`), which its `hello` says (`controller`): a test that fails in the lane then waits for its
+  controllers when the project holds failing CI tests.
+- **Let it go** (`piwi/ciLetGo { root?, runId, shard, lane }`, `CiWatch.letGo`) goes on this watch alone
+  (`PiwiClient.letGo`, `POST …/live-view/let-go` with the watch's id and the held worker, `CiSessions.heldWorker`), and
+  only once its `hello` said it counts as a controller's: refused before asking the instance for another lane, a watch
+  of someone who may not control the run, or a lane that holds nothing; then in the instance's own words.
+- **Pause, Resume, End the test** (`piwi/ciControl { root?, runId, shard, lane, command }`, `CiWatch.control`) go on
+  this watch the same way (`PiwiClient.liveControl`, `POST …/live-view/control` with the watch's id, the lane's worker,
+  `CiSessions.laneWorker`, and the command): refused before asking the instance for another lane, a watch of someone
+  who may not control the run, or a lane naming no worker; then in the instance's own words.
 
-Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POST.
+Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POSTs, and
+`tests/ci-sessions.test.ts`.
 
 ### The editor's own run
 
@@ -1341,7 +1394,7 @@ would open on the machine the run runs on, not this one.").
   `src/` folders, following links, and reads them as a live trace, an unfinished call shown running. An
   `<attempt>.json` on disk is served in place of that listing.
   The viewer reads it once, as it stands when it loads: its service worker keeps a trace by its URL, so neither its
-  live poll nor a reload shows what came since (Playwright 1.59 to 1.64; a `.trace` file opened alone does not load,
+  live poll nor a reload shows what came since (Playwright 1.59 to 1.65; a `.trace` file opened alone does not load,
   being no archive). One viewer for each attempt at a time: a second ask while it is open says so, and to close it to
   see the trace as it stands then.
 - **The launcher** (`startTraceViewer`): the Playwright CLI of the run's folder (`resolvePlaywrightCli`) with the
@@ -1501,7 +1554,12 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
 
 `src/agent-server.ts` (`AgentServer`) serves the runs the service built to the agents of this machine as an MCP
 server of its own, over MCP's streamable HTTP transport (one POST per request, answered with JSON; a notification
-alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`). It listens only once the
+alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`): a legacy client opens
+with `initialize` and names its version in the `MCP-Protocol-Version` header, a `2026-07-28` client names it in each
+request's `_meta` and its headers, and `checkMcpRequest` refuses with a 400 a version none serves or headers that do
+not match the body. A modern `subscriptions/listen` gets a stream (`openListenStream`) that acknowledges no
+notification, since the server sends none, and stays open until its client closes it or the server closes:
+`MAX_AGENT_LISTENS` at once, apart from the requests answered. It listens only once the
 client turns it on, as the service starts (`InitializationOptions.agents.enabled`) or later (`piwi/agents { enabled }`,
 answered with its address and token), and closes as the client turns it off or the service stops.
 
@@ -1892,6 +1950,14 @@ holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project nam
 requests and in its describe answer (`projects`) reach the window through `onProjectNames`; a request object never
 carries one, as the parser refuses fields it does not know.
 
+The target's key holds `run:receive`, and the desktop app's also `project:read`, which opens Compare with team instance:
+`compare` reads `GET /api/run-targets/projects/:id/test-comparison` for the project a linked folder belongs to
+(`compareWithTeam` in `src/run-target.ts`). A refusal there refuses that comparison alone, and its `data.errorCode`
+says why (`RUN_TARGET_KEY_CANNOT_COMPARE` for a key made before it, `TEAM_COMPARISON_OFF` for a decline). The describe
+answer's `compares` says whether the key may compare, and reaches the window as the connection's `compares`. `projects`
+reads `GET /api/run-targets/projects`, the projects the key's owner reads (`teamProjects`), which the desktop app
+offers to link a folder to without a request; the shell keeps that link with the ones requests make.
+
 The request host tells the shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the
 instance's 401 for a key it no longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance
 that sends no code). The instance's stream sends `revoked` as the key or its owner is deleted, and when its own check of
@@ -1959,13 +2025,13 @@ or when the config's options are not read within 3 s; whole otherwise.
 3. Forks the launcher in the config's folder (`sessions.ts`).
 
 The options reader and the launcher both run with the project's Node (`node.ts`): under an editor's Electron, the first
-`node` on the service's `PATH` when it is Node 20 or later, run without `ELECTRON_RUN_AS_NODE`; else the service's own
+`node` on the service's `PATH` when it is Node 22 or later, run without `ELECTRON_RUN_AS_NODE`; else the service's own
 runtime.
 
 The launcher (`launcher.ts`):
 
 - resolves the project's Playwright at run time, never bundled (`playwright.ts`: in the project's own `node_modules`,
-  the test runner's package first, as for the CLI);
+  a package linked there from elsewhere included, the test runner's package first, as for the CLI);
 - opens the browser with the project's options (`context-options.ts`): `headless: false` unless
   `PIWI_RECORDER_HEADLESS=1`, Chromium's translation feature disabled, an explicit allowlist of context options, and a
   missing `storageState` file left out and said so;
@@ -2069,13 +2135,13 @@ The session (`attach` in `sessions.ts`):
 JetBrains plugin in its `server/`. The service finds the other files next to its own bundle, or in `PIWI_EDITOR_DIST`
 (the `distDir` option of `startServer` in tests).
 
-| File                         | What                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
-| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
+| File                         | What                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.                           |
+| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                                             |
 | `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options, and its tests for the listing (`src/recorder/use-reporter.ts`). |
-| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
-| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
+| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens.               |
+| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                                        |
 
 The first three are bundled by esbuild, as CommonJS for Node 20 and later. `build.mjs` writes the service's version
 into the bundle (`SERVICE_VERSION` in `src/server.ts`, `0.0.0-dev` unbundled), which the discovery file and the hub's
@@ -2103,6 +2169,14 @@ Each argument is checked, then quoted (`shellWord`: bare when no shell changes i
 test filter, or an option of `PLAYWRIGHT_OPTIONS`, none of which names a file Playwright loads or a folder it writes to.
 An argument that is anything else, or that a shell would expand, refuses the whole command, and the clients run only
 what the service built.
+
+The arguments are read as Playwright's command line (commander) reads them (`readArgs`): an option's value after `=`,
+or the next word whatever it is; an optional value (`--shuffle [seed]`, `--debug [mode]`) the next word unless it reads
+as an option (a negative number does not); a variadic one (`--project <name...>`) every next word up to one that reads
+as an option, so a filter written after `--project x` is a project. `--debug` takes `inspector` or `cli` alone
+(`OPTION_CHOICES`, Playwright 1.63), and refuses the command for any other word after it, a test filter included, as
+Playwright does. A command whose options are taken out (`repeatArgs`, `withRequiredTags`) is written with its test
+filters first (`writtenArgs`), so no option left before a filter takes it as its value.
 
 ### Run variables
 
@@ -2140,7 +2214,10 @@ environment's run variables merged (`parseRunVariables` with `RUN_VARIABLE_LIMIT
 **Allow** question covers each new set: the merged variables with the environment's key. A protected environment asks
 before every run instead (`confirmProtected`), and its arguments keep to the tests carrying one of its required tags:
 the run's own `--grep-invert` merged into one with `requiredTagsGrepInvert` (`withRequiredTags`), which `shellWord`
-double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). Playwright applies a
+double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). The merged pattern is a
+plain one, which Playwright matches ignoring case: an own pattern written `/source/flags` with `i` is kept as its
+source, and one without `i`, which matches letters in their case, refuses the run with a notice saying so
+(`requiredTagsGrepInvertProblem`), as the desktop app's shell refuses it. Playwright applies a
 CLI filter before it adds the projects a run's projects depend on, so their setup and teardown tests run whole: every
 sentence that states the rule says so (`requiredTagsWords`). On Windows such a run starts the project's Playwright CLI
 with `node` (`playwrightNodeCommand`), since PowerShell hands `npx.cmd` the filter bare and cmd would read its `^` and
@@ -2186,10 +2263,13 @@ computed once per index (`callSitesOf`, `stabilityOf` in `src/analysis.ts`).
 
 What belongs to one file (a spec's cases, a file's stored alternatives) or to one failure (its healing, fix plan, linked
 issues, evidence) is fetched once, when first needed, and kept: a file's for five minutes and until the next refresh, a
-failure's healing, fix plan and issues while the latest run stays the same. Only the diagnostics or the quick fix that
-need it wait for it, and a quick fix or a hover waits 1.5 s at most (`within`, `LOOKUP_WAIT_MS`); the fetch goes on for
-the next ask. A fetch that failed without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again
-next time (`once` in `src/context.ts`). A canceled quick fix or hover is not answered further.
+spec's cases also until a run the service had not read (the baseline or a run laid over it), whose results change the
+catalog's statuses (`dropCatalog`: a read on its way then keeps nothing, and the reads after it share no read asked
+before, on its way or answered, `PiwiClient.forgetCatalog`), and a failure's healing, fix plan and issues while the
+latest run stays the same. Only the diagnostics or the quick fix that need it wait for it, and a quick fix or a hover
+waits 1.5 s at most (`within`, `LOOKUP_WAIT_MS`); the fetch goes on for the next ask. A fetch that failed without the
+instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in `src/context.ts`). A
+canceled quick fix or hover is not answered further.
 
 Other reads:
 
@@ -2253,6 +2333,8 @@ The shared answers give way as follows:
 - A read that failed is shared only by the callers that joined it.
 - A run as it moves (`runDetails`, `latestRunByRef`, a desktop job) keeps no answer, and the read after a run ended
   takes none (`refreshRun(true)`); an answer with an `ETag` is asked with it all the same.
+- A context that reads a run it had not read drops the project's catalog reads, on their way or answered
+  (`forgetCatalog`): a test's status there is its latest result.
 - The map keeps 16 indexes and 64 plain answers at most; the plain answers past their time without an `ETag` go first
   (`trim`).
 

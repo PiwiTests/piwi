@@ -42,7 +42,8 @@ export type CapabilityId =
   | 'agent-write-log'
   | 'assistant'
   | 'machine-runs'
-  | 'pass-reuse';
+  | 'pass-reuse'
+  | 'team-comparison';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -340,6 +341,19 @@ export const CAPABILITIES: CapabilityDef[] = [
     optIn: true,
     since: '0.68.0',
     doc: 'features/reuse-forecast',
+  },
+  {
+    // Compare with team instance: a connected desktop app reads how a test does in the team's CI, to tell a failure
+    // of its own machine from one the team sees too. On by default; a decline holds over a connected app's key.
+    id: 'team-comparison',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: ['desktop'],
+    detection: 'team-comparison',
+    passiveData: true,
+    hiddenOnDesktop: true,
+    since: '0.77.0',
+    doc: 'features/compare-with-team',
   },
 ];
 

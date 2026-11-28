@@ -1,0 +1,1 @@
+DROP INDEX `idx_ci_dispatches_provider_run`;

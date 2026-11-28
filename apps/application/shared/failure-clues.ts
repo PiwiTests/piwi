@@ -26,6 +26,7 @@ import type { PageStateLike } from '#shared/page-state';
 import { ariaTextPreferJson } from '#shared/aria-json';
 import { intervalsOverlap } from '#shared/lock-overlap';
 import { requestRouteKey } from '#shared/utils/route';
+import { isConsoleErrorType, isPageErrorType } from '#shared/console-entries';
 
 /** The environment-diff facts the engine reads — the pure subset of the server result. */
 export interface FailureClueEnvironmentDiff {
@@ -317,7 +318,7 @@ const RULE_ORDER: FailureClueRule[] = [
 const STRENGTH_RANK: Record<FailureClueStrength, number> = { strong: 0, medium: 1, weak: 2 };
 
 /** Call-log states that mean the element resolved but could not be acted on. */
-const BLOCKED_STATES = new Set<CallLogState>(['not-enabled', 'hidden', 'not-visible', 'intercepts-pointer']);
+const BLOCKED_STATES = new Set<CallLogState>(['not-enabled', 'hidden', 'not-visible', 'inert', 'intercepts-pointer']);
 
 /** Path prefixes that mean the test ended somewhere other than the app it drives. */
 const WRONG_PAGE_PATHS = ['/login', '/signin', '/auth', '/error', '/404', '/not-found'];
@@ -604,7 +605,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   }
 
   // ── console-mentions-target (strong error / medium warning) ────────────────
-  // A console entry in the window that names the failing locator or route.
+  // A console entry in the window that names the failing locator or route; an uncaught page error is an error.
   const target = readLocatorTarget(parsed);
   const routePath = pathOf(input.appState?.url) ?? pathOf(parsed?.url);
   const needles = [target.name, target.testId, routePath].filter((n): n is string => Boolean(n && n.length >= 3));
@@ -618,8 +619,9 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       });
     if (match) {
       const type = str(match.entry.type).toLowerCase();
-      const isError = type === 'error';
+      const isError = isConsoleErrorType(type);
       const isWarning = type === 'warning' || type === 'warn';
+      const what = isPageErrorType(type) ? 'Uncaught page error' : isError ? 'Console error' : 'Console warning';
       if (isError || isWarning) {
         const ledBy = match.at != null && failureAt != null && failureAt - match.at > 0;
         facts.consoleLeadSec = ledBy ? seconds(failureAt! - match.at!) : null;
@@ -628,8 +630,8 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
           id: 'console-mentions-target',
           rule: 'console-mentions-target',
           strength: isError ? 'strong' : 'medium',
-          title: `Console ${isError ? 'error' : 'warning'} names the failing target`,
-          detail: `A console ${isError ? 'error' : 'warning'} in the failure window mentions ${
+          title: `${what} names the failing target`,
+          detail: `${isPageErrorType(type) ? 'An uncaught page error' : `A ${what.toLowerCase()}`} in the failure window mentions ${
             target.name ? `"${target.name}"` : (target.testId ?? routePath)
           }: "${str(match.entry.text).slice(0, 140)}".`,
           citations: [{ section: 'console', index: match.index }],
@@ -762,6 +764,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
         'not-enabled': 'disabled',
         hidden: 'hidden',
         'not-visible': 'not visible',
+        inert: 'inert',
         'intercepts-pointer': 'covered by another element',
       };
       const label = stateLabel[parsed.lastState] ?? parsed.lastState;

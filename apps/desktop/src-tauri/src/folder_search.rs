@@ -242,14 +242,18 @@ fn guarded(folder: &Path) -> bool {
 }
 
 /// The root of the git working tree `folder` is in: the nearest folder holding
-/// `.git`, below the home folder (a home tracked for its dotfiles is no
-/// project's repository).
+/// `.git`, below the home folder ([`git_root_below`]).
 pub(crate) fn git_root(folder: &Path) -> Option<PathBuf> {
-    let home = home_folder();
+    git_root_below(folder, home_folder().as_deref())
+}
+
+/// The nearest folder holding `.git` from `folder` up, below `home`: a home
+/// tracked for its dotfiles is no project's repository.
+pub(crate) fn git_root_below(folder: &Path, home: Option<&Path>) -> Option<PathBuf> {
     folder
         .ancestors()
         .take(MAX_GIT_ROOT_WALK)
-        .take_while(|dir| home.as_deref() != Some(*dir))
+        .take_while(|dir| home != Some(*dir))
         .find(|dir| dir.join(".git").exists())
         .map(Path::to_path_buf)
 }

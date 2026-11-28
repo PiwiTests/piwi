@@ -95,7 +95,7 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 | Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                                 |
 | Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                                      |
 | CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                                                |
-| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
+| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `storage_totals` (the stored bytes, kept by triggers), `test_functions`, `test_selections`, `project_url_patterns`                        |
 | Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
 | Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
 | Integrations         | `integration_connections`, `project_integrations`, `project_test_management`, `test_management_cases`, `test_management_catalog_reads`, `integration_actions`                                                |
@@ -221,7 +221,7 @@ Each entry names folders under `server/api/`.
     `[id]/resource-timeline`.
   - CI: `[id]/gate` (a gate policy's verdict) and `[id]/incident` (an environment incident).
 - **`test-cases/`**: one test across runs: detail, history, stability trend, coverage reach, path variation, merge,
-  and the Flake Lab (`flake-plan`, `flake-experiments`, `flake-lab-ci`, `flake-profile`).
+  and the Flake Lab (`flake-plan`, `flake-experiments`, `flake-profile`).
 - **`test-run-cases/`**: one execution: detail, steps, timeline, the trace views, DOM snapshots, page and visual
   diffs, the attempt diff, clues, coverage and its divergence, suspect lines, execution-scoped diagnosis (`diagnose`,
   `diagnosis`, `diagnosis-context`), locator healing (`locator-healing`, `locator-pick`, `locators`), the export, the
@@ -229,12 +229,15 @@ Each entry names folders under `server/api/`.
 - **`projects/`**: the list with stats (`projects.get.ts`), `menu` (the sidebar's short list, one SELECT),
   `overview` (per-project trends), create, detail, update, delete. Under `projects/[id]/`: members, flaky and slow
   tests, failure clusters, the test catalog, coverage, the locator index, the Test Map (`graph`, `feature-map`,
-  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, and the families
-  listed below.
+  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, CI dispatches
+  (`ci-dispatches` to send one and list them, `ci-actions/offered` and an action's `branches`, through
+  `server/utils/ci-rerun.ts`; an action's `check` through `server/utils/ci-actions.ts`; the action editor's `ci-actions/jobs` and `ci-actions/fields`, what a target declares,
+  through `server/utils/ci-jobs.ts` and the readers of `shared/ci-job-fields.ts`; each kind of target's provider in
+  `server/utils/ci-providers/`), and the families listed below. The top-level `ci-dispatches/[id]` reads one dispatch.
 - **`failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/`**: cluster list, detail and triage
   (status, assignee, snooze, bulk, quarantine, extract cases), AI diagnosis (`diagnose`, `context`, `commits`,
   `commit-diff`, `base-commit`), the diagnosis version history (`diagnoses`), suspect lines, fix plan, fixed-before
-  matches, occurrence trend, rerun, bisect, export; semantic merge suggestions (approve, reject); diagnosis feedback.
+  matches, occurrence trend, bisect, export; semantic merge suggestions (approve, reject); diagnosis feedback.
 - **`widgets/`, `dashboards/`**: the cross-project analytics behind `/analytics`.
   - `widgets/[widget]` answers one widget; `widgets/preview` answers the editor's unsaved widget. `analytics/[widget]`
     is the former path of `widgets/[widget]`, kept for scripts: ad blockers refuse an address containing "analytics".
@@ -312,9 +315,14 @@ Each entry names folders under `server/api/`.
   (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
   `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and the layer's `DesktopRunOutputPane` a run's output in its ANSI colors,
-  with its filter, first error and Copy, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
+  with its filter, first error and Copy, `DesktopRunsPanel` the tray's list beside the run shown, as in Piwi Runner's
+  window, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
   page or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
-  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). An ended run lists what
+  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`, and do what it asks).
+  That window shows the run whole: its workers live from the hub it reads itself, its Hold failures
+  (`useDesktopRunHold`), what it failed on (`useDesktopLocalRunRows`), and Run again, which moves the window to the run
+  it starts (`moveWindow`, `windowNames`). A worker's window (`pages/desktop/run-worker.vue`) says how its run came out
+  once it ended, and asks the dashboard window over the same channel to show the run in the tray. An ended run lists what
   it failed on (`DesktopLocalRunResults`: its Piwi runs, else its output's summary), each test to open or run again
   (`rerunTests`). A run's state and count
   come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs
@@ -343,19 +351,23 @@ Each entry names folders under `server/api/`.
 
 ### Other routes
 
-- **`server/routes/mcp.post.ts`**: the MCP server endpoint. Tool definitions in `shared/mcp-tools.ts`, handlers in
-  `server/utils/mcp/`. In the desktop build it also serves the tools for the runs the shell starts
-  (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of those runs (`DesktopRuns.agent`),
-  its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
+- **`server/routes/mcp.post.ts`**: the MCP server endpoint, for legacy and `2026-07-28` clients alike through the
+  editor service's `mcp-protocol.ts` (`server/utils/mcp/protocol.ts`); `mcp.get.ts` answers an MCP client's GET
+  (`Accept: text/event-stream`) with 405 and sends any other to the MCP settings page, and `mcp.delete.ts` answers 405.
+  Tool definitions in `shared/mcp-tools.ts`, handlers in `server/utils/mcp/`. In the desktop build it also serves the
+  tools for the runs the shell starts (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of
+  those runs (`DesktopRuns.agent`), its answers passed on as they are, the code it makes sent to the window to copy.
+  `describe_piwi` and
   `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
   server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
   `shared/piwi-ecosystem.ts`. `server/utils/bundled-assets.ts` reads the bundled CHANGELOG for that tool and for
   `GET /api/changelog`, which pages it (`changelogPage`) for the Changelog window (`ChangelogModal`); the demo build
   copies the file beside its seed and pages it the same way.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
-  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
-  redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
-  rotation) and `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
+  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration or a client ID metadata document
+  (fetched at `authorize`, `mcp-oauth-client-metadata.ts`), `authorize` (stores the request and redirects to the
+  `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh rotation) and
+  `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
   `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`.
 - **`server/routes/share/`**: the public page of a share link (an execution or a cluster rendered as the offline
   export, a report snapshot, a live dashboard), with its badge and chart image.
@@ -486,13 +498,13 @@ The main files of `server/utils/`, by area.
 
 Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTasks`):
 
-| Schedule        | Tasks                                                                                                                                           |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
-| Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
-| Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
-| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)              |
-| Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
+| Schedule        | Tasks                                                                                                                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync`, `storage:watch` (the storage quota's warnings) |
+| Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                                                                          |
+| Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                                                                            |
+| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)                                                              |
+| Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows), `storage:reconcile` (recounts the stored bytes)                           |
 
 ### Code the server and the demo share
 
@@ -539,7 +551,7 @@ The files of `app/pages/`:
 - `/settings/*`: the settings pages, from `SETTINGS_PAGES`. Its Setup section holds `/settings/connect` (the connect
   wizard), `/settings/capabilities` (the optional capabilities), `/settings/mcp` (the MCP server and its tools),
   `/settings/api` (the in-app API reference) and `/settings/companion-tools`; `/settings/desktop` is the desktop
-  build's own wiring. `/setup`, `/mcp` and `/docs` redirect to them (`pages:extend` in `nuxt.config.ts`).
+  build's own wiring, and `/settings/team-instance` its connection to a team instance. `/setup`, `/mcp` and `/docs` redirect to them (`pages:extend` in `nuxt.config.ts`).
 - `/extension/connect` and `/oauth/consent`: where a signed-in user answers a connection request.
 - `/login`, `/forgot-password`, `/reset-password`: public pages with no layout.
 
@@ -577,21 +589,22 @@ On the execution page:
 - A test that did not run gives its reason as Most likely instead (`DidNotRunLine`, from `describeDidNotRun` in
   `shared/did-not-run.ts`), and its Next opens the blocking failure or the run (`open-blocker`, `open-run`).
 
-**Under the block.**
+**Under the block.** The evidence card comes last on both pages: it is long, so nothing follows it.
 
-- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its
-  Source tab's frame where the failure enters the test's code, `failurePlace`, offers Debug in my editor,
-  `DebugInEditorButton`), the `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step
-  points at open) and the history (`HistoryStrip`).
+- The execution page's block carries the test's history as its History line (`ExecutionHistoryLine`: the
+  `HistoryStrip`, each square opening its execution, then the failing streak and the last pass). Under the block, the
+  `Toolbox` (More ways to fix: one line, one button per way to fix, each opening its section in a side panel), then
+  `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its Source tab's frame where the
+  failure enters the test's code, `failurePlace`, offers Debug in my editor, `DebugInEditorButton`).
 - The cluster page shows, in order:
-  - the section the next step points at, as a card of its own (`Toolbox` with `lead`; the sections, their order and
-    the step each serves are in `app/utils/fix-sections.ts`);
+  - the history, each folded to one line: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`, opened by the
+    occurrence sparkline) and `ClusterActivity`;
+  - the section the next step points at, as a card of its own, then More ways to fix with the other sections
+    (`Toolbox` with `lead`; the sections, their order and the step each serves are in `app/utils/fix-sections.ts`);
   - `ClusterInvestigation` when there is a diff to browse, with the cluster's suspect lines in `SuspectLinesList`,
     marked in its diff;
   - `ClusterAffectedTests`, when the cluster has several tests: its selection picks the execution the evidence shows;
-  - `EvidenceTabs`, then More ways to fix with the other sections folded;
-  - the history, each folded to one line: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`, opened by the
-    occurrence sparkline) and `ClusterActivity`.
+  - `EvidenceTabs`.
 
 **Shared by both pages.**
 
@@ -713,8 +726,8 @@ rule):
     block's identity kicker.
   - `StoryLine` (Most likely) and `NextStepLine` (the one recommended step; it emits its actions as ids the page
     handles through `useNextStepActions`).
-  - `Toolbox` (More ways to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a
-    row of squares).
+  - `Toolbox` (More ways to fix, one button per way, each opening a side panel) and `HistoryStrip` (a test's recent
+    executions as a row of squares, each opening its execution, one keyboard stop).
 
 ### Composables
 
@@ -912,6 +925,17 @@ Where to add things in subsystems whose wiring spans several files:
   `import/check.post.ts`; the page `projects/[id]/import.vue` with `useBlobReportImport`.
 - **Trace-file import**: `server/utils/trace-import.ts` rebuilds an execution from a trace's `context-options` and
   `error` events. The `importGroup` field of `test-runs/import.post.ts` gathers several traces into one run.
+- **A kind of CI target** (a CI action dispatches to it):
+  - its type in `CiActionTarget` (`shared/ci-actions.ts`), its listing target in `CiListingTarget`, and the
+    `provider` a dispatch records in `CiRerunProvider` (`shared/ci-rerun.ts`);
+  - its definition in `CI_TARGETS` (`shared/ci-targets.ts`): label, summary, the names it sends, the posted target and
+    listing target it reads, its default branch, its branch mode and the preset a dispatch records;
+  - its provider in `CI_PROVIDERS` (`server/utils/ci-providers/`): readiness, dispatch, repository branches, Check, the
+    job and field listings (a repository host's builds on `repositoryHostProvider`);
+  - the run id a dispatch of its kind is matched by, in `matchCiDispatch` (`shared/ci-dispatches.ts`);
+  - the editor's draft in `app/utils/ci-action-form.ts` (`CI_ACTION_TARGET_ITEMS`, and what it posts to read the
+    target in `ciListingRequestsOfDraft`), its fields in `CiActionEditor.vue`, and the demo's answers in
+    `app/demo/api/ci-rerun.ts`.
 - **Quality report language**:
   - its code in `shared/reports/languages.ts`;
   - the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks);

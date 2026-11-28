@@ -425,6 +425,10 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // Another's run says where it comes from in the tooltip alone.
+        val desktop = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0, from = "from the desktop app")))
+        assertEquals("Piwi: run #124 · 4 of 9", desktop.text)
+        assertEquals(true, desktop.tooltip.contains("\nRun #124 (from the desktop app) is running: 4 of 9\n"))
         // Another's run names its branch, the developer's own the short form.
         val ci = Glue.statusView(connected, live(failed, inProgress.copy(own = false, ci = true, failed = 0, branch = "feature-x")))
         assertEquals("Piwi: CI run #124 on feature-x · 4 of 9", ci.text)
@@ -1083,6 +1087,33 @@ class GlueTest {
             assertEquals(case.get("name").asString, expected, rows)
             val workers = case.getAsJsonArray("workers").map { it.asString }
             assertEquals(case.get("name").asString, workers, Glue.workersNowText(sessions.associateBy { it.ref ?: "" })?.split("\n").orEmpty())
+        }
+    }
+
+    /**
+     * The tool window's empty text in each state of the failures view, as the golden fixture both editors read holds it
+     * (`packages/editor/tests/golden/failures-view.json`), with the baseline that found no run as the window reads it:
+     * the service's sentence and the actions it links, as VS Code's view shows them. Beside failures, the tree shows
+     * them, and no empty text.
+     */
+    @Test
+    fun `the tool window says each state of the failures view as VS Code's view does`() {
+        val gson = com.google.gson.Gson()
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val name = case.get("name").asString
+            val view = gson.fromJson(case.get("view"), FailuresView::class.java)
+            if (view.state == "failures") continue
+            val shown = case.getAsJsonObject("shown")
+            val baseline = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
+                ?.takeUnless { it.isJsonNull }?.asString
+            val noRun = Glue.baselineLine(baseline)?.takeIf { it.endsWith("(no run)") }
+            val empty = Glue.failuresEmpty(view, noRun, null)
+            assertEquals(name, shown.get("text").asString, empty.text)
+            assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, empty.links.map { it.label })
+            assertEquals(name, view.links.map { it.jetbrains }, empty.links.map { it.actionId })
         }
     }
 
@@ -2493,14 +2524,22 @@ class GlueTest {
         val compare = FailuresViewLink("Compare with…", "piwi.compareWith", "Piwi.CompareWith")
         val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet.", listOf(compare)), null, null)
         assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.Link("Compare with…", "Piwi.CompareWith"))), none)
-        assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
+        val baseline = "Baseline: run #9 (no run). Compare with another run."
+        assertEquals(baseline, Glue.failuresEmpty(FailuresView("norun", baseline), "Baseline: run #9 (no run)", null).text)
+        assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun"), "Baseline: run #9 (no run)", null).text)
+        assertEquals(
+            "No failure in the latest run of main.",
+            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), "Baseline: run #9 (no run)", null).text,
+        )
         assertEquals(Glue.EmptyText("Not connected to a Piwi instance"), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         val refresh = FailuresViewLink("Refresh the latest run", "piwi.refreshRun", "Piwi.RefreshRun")
         assertEquals(
-            Glue.EmptyText("No failure in run #41", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
-            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main.", listOf(refresh)), null, 41),
+            Glue.EmptyText("No failure in run #41 of main.", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
+            Glue.failuresEmpty(FailuresView("clear", "No failure in run #41 of main.", listOf(refresh)), null, 41),
         )
+        // A service that says no sentence: the run read.
+        assertEquals("No failure in run #41", Glue.failuresEmpty(FailuresView("clear"), null, 41).text)
     }
 
     @Test
@@ -3894,6 +3933,18 @@ class GlueTest {
     }
 
     @Test
+    fun `a burst of changes queues one call to the listeners, and a call left waiting is queued again`() {
+        val queued = Glue.QueuedOnce(staleMillis = 1_000)
+        assertTrue(queued.take(10_000))
+        assertFalse(queued.take(10_500))
+        // The call waiting since 10 000 never ran: a change a second later queues another.
+        assertTrue(queued.take(11_000))
+        assertFalse(queued.take(11_200))
+        queued.ran()
+        assertTrue(queued.take(11_300))
+    }
+
+    @Test
     fun `a file summary is asked once per text, until the service pushes a change or it gets old`() {
         val cache = Glue.SummaryCache(ttlMillis = 5_000, max = 2)
         var asked = 0
@@ -4315,6 +4366,113 @@ class GlueTest {
         // No Watch while the run cannot be watched.
         val unwatched = ci(78).copy(watchable = false, tests = ci(78).tests.orEmpty().map { it.copy(watch = null) })
         assertTrue(Glue.ciRows(listOf(unwatched)).none { it.kind == "ci-watch" || it.kind == "watch" })
+    }
+
+    @Test
+    fun aHeldCiFailureReadsAsTheServiceSendsItAndSaysItInTheRunPagesWordsWithLetItGoWhereOffered() {
+        val json = """{"title":["checkout","pays"],"uri":null,"line":null,"project":"","status":"running","retry":0,
+            "lane":2,"shard":null,"at":null,"watch":"https://piwi.example/test-runs/78?watch=2","held":{"id":":4:1","state":"Failed, held at its line",
+            "heldFor":"Held for Ana · until 12:05","error":"Expected \"Paid\"","place":"tests/checkout.spec.ts:7",
+            "at":{"uri":"$spec","line":6},"note":"The CI job’s own timeout still runs.","letGo":true,
+            "letGoLabel":"Let it go","letGoTitle":"End the hold"}}"""
+        val test = Gson().fromJson(json, CiTest::class.java)
+        val held = test.held!!
+        assertEquals(CiHeldAt(spec, 6), held.at)
+        assertEquals("Let it go", held.letGoLabel)
+        assertEquals("End the hold", held.letGoTitle)
+        assertEquals(":4:1", held.id)
+        val kept = Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test)))
+        val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
+        val stop = Glue.ciLaneStop(kept, lane)!!
+        assertEquals(":4:1", stop.id)
+        assertEquals(listOf(Glue.CiButton("let-go", "Let it go", "End the hold")), stop.buttons)
+        assertEquals(null, Glue.ciLaneStop(kept, lane.copy(lane = 1)))
+        assertEquals("CI run #78 · worker 2 · Failed, held at its line: checkout › pays", Glue.ciLaneCaption(kept, lane))
+        // The place is a line of its own, which opens the failing line.
+        val shown = Glue.ciStopShown(stop, asking = false)
+        assertEquals(
+            listOf(
+                "Failed, held at its line · Held for Ana · until 12:05",
+                "Expected \"Paid\"",
+                "The CI job’s own timeout still runs.",
+            ),
+            shown.lines,
+        )
+        assertEquals("tests/checkout.spec.ts:7", shown.place)
+        assertTrue(shown.placeOpens)
+        assertTrue(shown.held)
+        assertEquals(CiHeldAt(spec, 6), stop.at)
+        assertEquals(CiLetGoParams("/work/shop", 78, null, 2), Glue.ciLetGoParams(lane))
+        // The CI Runs tab marks the held test, and its Watch, where it lists them.
+        val rows = Glue.ciRows(kept.values)
+        assertEquals("worker 2 · Failed, held at its line", rows.single { it.kind == "test" }.detail)
+        assertEquals("worker 2 · Failed, held at its line", rows.single { it.kind == "ci-watch" }.detail)
+    }
+
+    @Test
+    fun aPausedCiTestReadsAsTheServiceSendsItWithItsControlsAndAPauseAsked() {
+        val json = """{"title":["checkout","pays"],"uri":null,"line":null,"project":"","status":"running","retry":0,
+            "lane":2,"shard":null,"at":null,"watch":"https://piwi.example/test-runs/78?watch=2",
+            "paused":{"state":"Paused","pausedBy":"Paused by Ana · until 12:05","call":"Click","place":"tests/checkout.spec.ts:7",
+            "at":{"uri":"$spec","line":6},"note":"The CI job’s own timeout still runs."},
+            "controls":{"id":":4:paused:1","offered":[{"command":"resume","label":"Resume","title":"Go on"},
+            {"command":"end","label":"End the test","title":"End it"}]}}"""
+        val test = Gson().fromJson(json, CiTest::class.java)
+        val kept = Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test)))
+        val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
+        val stop = Glue.ciLaneStop(kept, lane)!!
+        assertEquals(":4:paused:1", stop.id)
+        assertEquals(listOf(Glue.CiButton("resume", "Resume", "Go on"), Glue.CiButton("end", "End the test", "End it")), stop.buttons)
+        val shown = Glue.ciStopShown(stop, asking = true)
+        assertEquals(listOf("Paused by Ana · until 12:05", "Click", "The CI job’s own timeout still runs."), shown.lines)
+        assertFalse(shown.held)
+        assertTrue(shown.asking)
+        assertEquals("CI run #78 · worker 2 · Paused: checkout › pays", Glue.ciLaneCaption(kept, lane))
+        assertEquals(CiControlParams("/work/shop", 78, null, 2, "end"), Glue.ciControlParams(lane, "end"))
+        val rows = Glue.ciRows(kept.values)
+        assertEquals("worker 2 · Paused", rows.single { it.kind == "test" }.detail)
+        // A Pause waiting: no box, Resume, and the words under the buttons.
+        val asked = test.copy(paused = null, pauseAsk = "Pause asked by Ana", controls = CiControls(":4:asked", listOf(CiControl("resume", "Resume", "Take it back"))))
+        val waiting = Glue.ciStopShown(Glue.ciLaneStop(Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(asked))), lane)!!, asking = false)
+        assertEquals(emptyList<String>(), waiting.lines)
+        assertEquals("Pause asked by Ana", waiting.ask)
+        assertEquals(listOf(Glue.CiButton("resume", "Resume", "Take it back")), waiting.buttons)
+        // Nothing held, paused, asked or offered: nothing to show.
+        assertEquals(null, Glue.ciLaneStop(Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test.copy(paused = null, controls = null)))), lane))
+    }
+
+    @Test
+    fun aCiLanesControlIsAskedOnceInEachStateAgainAfterARefusalOrAChange() {
+        val asks = Glue.CiAsks()
+        val two = Glue.CiLane("/work/shop", 78, null, 2, null)
+        val three = two.copy(lane = 3)
+        assertTrue(asks.ask(two, "a"))
+        assertFalse(asks.ask(two, "a"))
+        assertTrue(asks.asked(two, "a"))
+        assertFalse(asks.asked(three, "a"))
+        assertTrue(asks.ask(three, "b"))
+        asks.refused(three, "b")
+        assertFalse(asks.asked(three, "b"))
+        assertTrue(asks.asked(two, "a"))
+        assertTrue(asks.ask(two, "c"))
+        asks.refused(two, "a")
+        assertTrue(asks.asked(two, "c"))
+        // The lane's state changed, then came back: asked anew.
+        asks.seen(two, "d")
+        assertFalse(asks.asked(two, "c"))
+        assertTrue(asks.ask(two, "c"))
+        // An ask the instance took goes once the lane shows anything new, whatever its state.
+        asks.seen(two, "c", "shown-1")
+        asks.took(two, "c", "shown-1")
+        asks.seen(two, "c", "shown-1")
+        assertTrue(asks.asked(two, "c"))
+        asks.seen(two, "c", "shown-2")
+        assertFalse(asks.asked(two, "c"))
+        // What a button came to stands in the state it was asked in alone.
+        assertTrue(Glue.ciNoteStands("c", "c"))
+        assertFalse(Glue.ciNoteStands("c", "d"))
+        assertFalse(Glue.ciNoteStands("c", null))
+        assertTrue(Glue.ciNoteStands(null, "d"))
     }
 
     @Test

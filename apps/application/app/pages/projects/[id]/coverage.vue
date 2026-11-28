@@ -114,7 +114,7 @@ const linkContext = computed<CoverageLinkContext>(() => ({
 
 useHead(
   computed(() => ({
-    title: `Coverage of ${fileName.value} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Coverage of ${fileName.value} — ${project.value?.label || project.value?.name || 'Project'} — Piwi`,
   })),
 );
 

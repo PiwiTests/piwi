@@ -207,9 +207,21 @@ test('writes an order', { lock: 'database' }, async ({ page }) => { /* … */ })
 test.describe('payments', { lock: ['database', 'external-api'] }, () => { /* every test inside inherits both */ })
 ```
 
+Playwright 1.65 adds one built-in lock, `-exclusive-`: a test that holds it runs only while no other test runs, whatever
+locks the others declare.
+
+```typescript
+test('rebuilds the search index', { lock: '-exclusive-' }, async ({ page }) => { /* … */ })
+```
+
+Piwi shows it as **Runs alone** wherever it shows a lock. Within a sharded run, Playwright holds it in each shard's own
+run: a test that holds it runs alone in its shard, while the other shards run their tests on other machines. Piwi's
+[lock-aware sharding](/features/test-selection#print-shard-and-reorder) places its holders as it places tests without a
+lock, and never warns about it.
+
 The reporter reads the lock names and sends them as `locks`, stored on the execution (`test_runs_cases.locks`) and
 denormalized onto the test case (`test_cases.locks`, the latest declaration) — the same treatment as tags. They power
-the [Timeline tab's lock lanes and *Locks* table](/features/ui-overview#test-run-detail), the `lock:` search qualifier on
+the [Timeline tab's lock lanes and *Locks* table](/features/slow-tests#the-run-s-timeline), the `lock:` search qualifier on
 the Tests tabs and *Group by lock* on a run's, lock badges on every test row, and two [clues](/features/evidence#clues) (a lock's previous holder failed;
 a lock was held on two shards at once).
 
@@ -465,8 +477,10 @@ is written `<hidden>`:
 - a credential's shape wherever it stands, colored or not: a JWT, a bearer token, a service's key such as `sk_live_…`,
   `ghp_…` or `AKIA…`, a key or a token Piwi issues such as `pd_…`.
 
-Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. The dashboard hides
-them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
+Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. A step's subtitle
+and its `url` param, where Playwright writes the address of a navigation or an API request (in its title up to
+Playwright 1.62), and the params of a `test.step` have a credential in a URL, a cookie or a JSON field hidden too, and a credential's shape, on the live
+timeline as in the stored steps. The dashboard hides them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
 [failure cluster](/features/failure-clusters) it did. An error stored before the dashboard hid a credential's shape
 has it hidden at the first start of the version that does, its failure cluster kept.
 
@@ -481,10 +495,15 @@ its stack and the place it was thrown, named relative to the Playwright config's
 - a worker fixture whose teardown threw, with the tests the worker ran;
 - the failure budget (`maxFailures`) that stopped the run.
 
+An error a worker reported, as a worker fixture's teardown, also names that worker, as Playwright 1.60 and later give
+it: its [lane](#worker-lanes), with its shard in a sharded run, and its Playwright project. The run page shows it under
+the error (**Worker 2 · Shard 3 · Playwright project webkit**).
+
 The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
 be a secret hidden as in a [test's error](#test-errors), and also a credential in a URL, a cookie or a JSON field, and a
 value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
-and the MCP `get_run` tool returns them as `runErrors`. **Collapse** folds them there to one line, the first error's
+and the MCP `get_run` tool returns them as `runErrors`, an error's worker as `worker`, `shardIndex` and
+`playwrightProject`. **Collapse** folds them there to one line, the first error's
 first line, so a long stack leaves its height to the tab below, the Video tab's video among them; **Expand** shows them
 again, and the browser remembers which you chose. A [blob report you import](/guide/importing-runs) keeps them
 the same way.

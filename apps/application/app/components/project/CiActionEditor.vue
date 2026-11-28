@@ -5,6 +5,11 @@
  * request), the inputs it sends beside the Playwright arguments, what it
  * accepts, its environment, and which kinds it is the default for. Saving hands
  * the action to the list; nothing is stored until the settings are saved.
+ *
+ * The target's jobs and the picked job's fields are read from the target
+ * (`useCiJobListing`) and offered as choices; any name can still be typed.
+ * Picking a job here fills what it declares: the arguments input it names,
+ * and the inputs GitHub requires with no default.
  */
 import {
   CI_ACTION_KIND_LABELS,
@@ -14,11 +19,23 @@ import {
   type CiAction,
   type CiActionKind,
 } from '#shared/ci-actions';
+import { missingRequiredFields, undeclaredNames } from '#shared/ci-job-fields';
 import {
   CI_ACTION_TARGET_ITEMS,
   ciActionDraft,
   ciActionFromDraft,
+  ciListingRequestsOfDraft,
+  draftJob,
+  draftSentNames,
+  fieldItem,
+  fieldsToAdd,
+  fieldSummary,
+  fillFromDeclared,
+  inputDraftFromField,
+  jobItem,
   newInputDraft,
+  previewInputPairs,
+  requiredFieldsToAdd,
   type CiActionDraft,
 } from '~/utils/ci-action-form';
 
@@ -30,6 +47,8 @@ const props = defineProps<{
   /** The names the project's other actions have. */
   otherNames: string[];
   instanceUrl: string | null;
+  /** The action inputs a request carrying the instance's credential may send; null when unknown. */
+  instanceAllowedInputs?: string[] | null;
   /** The project the action belongs to, whose credentials a CI server target picks from. */
   projectId: number;
   /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
@@ -64,16 +83,120 @@ watch(
     if (current === previous && type !== previousType) current.scmCredentialId = null;
   },
 );
+// The CI server form draws the preset it holds: it follows the target type, and Customize the request makes it Custom.
+watch(
+  () => draft.value.type,
+  (type) => {
+    if (type === 'jenkins' || type === 'custom') draft.value.ciServer.preset = type;
+  },
+);
+watch(
+  () => draft.value.ciServer.preset,
+  (preset) => {
+    if (isCiServer.value && draft.value.type !== preset) draft.value.type = preset;
+  },
+);
 const sendsInputs = computed(() => draft.value.type !== 'custom');
+
+const listing = useCiJobListing(
+  () => props.projectId,
+  () => (open.value ? ciListingRequestsOfDraft(draft.value) : null),
+  () => draft.value.name,
+  () => draft.value.id,
+);
+const jobItems = computed(() => listing.jobs.value?.map(jobItem) ?? null);
+/** The picked workflow's file, beside its label, when the menu shows it by its name. */
+const workflowFile = computed(() => {
+  const workflow = draft.value.github.workflow.trim();
+  const job = listing.jobs.value?.find((j) => j.id === workflow);
+  return job && job.label !== job.id ? workflow : undefined;
+});
+const fieldItems = computed(() => listing.fields.value?.map(fieldItem) ?? null);
+/** The fields of the job the draft names now: none while they are being read, so no warning reads another job's. */
+const currentFields = computed(() => (listing.fieldsLoading.value ? null : listing.fields.value));
+const declaredByName = computed(() => new Map((currentFields.value ?? []).map((f) => [f.name, f])));
+const listingLoading = computed(() => listing.jobsLoading.value || listing.fieldsLoading.value);
+/** What the listing says, for the line under the target: what is being read, or why something is not listed. */
+const listingMessage = computed(() => {
+  if (listingLoading.value) return 'Reading what the target declares…';
+  return [...new Set([listing.jobsMessage.value, listing.fieldsMessage.value].filter(Boolean))].join(' ') || null;
+});
+const fieldsToPick = computed(() =>
+  currentFields.value ? fieldsToAdd(draft.value, currentFields.value).map(fieldItem) : [],
+);
+/** The declared input the add menu shows as picked, cleared once the row is added so the next pick is seen. */
+const declaredPick = ref<string | undefined>(undefined);
+/** What the target calls its job, by the targets that declare their names; GitLab takes any variable. */
+const JOB_NOUN: Partial<Record<CiActionDraft['type'], string>> = {
+  github: 'workflow',
+  bitbucket: 'custom pipeline',
+  jenkins: 'job',
+};
+/** What happens to a name the job does not declare, where the CI says. */
+const UNDECLARED_EFFECT: Partial<Record<CiActionDraft['type'], string>> = {
+  github: 'GitHub rejects a dispatch that sends an input the workflow does not declare.',
+  jenkins: 'Jenkins drops a parameter its job does not declare.',
+};
+/** What the target calls one of the names a dispatch sends. */
+const INPUT_NOUN: Record<CiActionDraft['type'], string> = {
+  github: 'input',
+  gitlab: 'variable',
+  bitbucket: 'variable',
+  jenkins: 'parameter',
+  custom: 'input',
+};
+const undeclared = computed(() =>
+  currentFields.value && JOB_NOUN[draft.value.type]
+    ? undeclaredNames(currentFields.value, draftSentNames(draft.value))
+    : [],
+);
+const requiredMissing = computed(() =>
+  currentFields.value && draft.value.type === 'github'
+    ? missingRequiredFields(currentFields.value, draftSentNames(draft.value))
+    : [],
+);
+/** The required inputs the draft can add: a name Piwi cannot send stays in the warning only. */
+const requiredToAdd = computed(() =>
+  currentFields.value && draft.value.type === 'github' ? requiredFieldsToAdd(draft.value, currentFields.value) : [],
+);
+
+function addField(name: unknown) {
+  const field = currentFields.value?.find((f) => f.name === name);
+  if (field) draft.value.inputs.push(inputDraftFromField(field));
+  void nextTick(() => (declaredPick.value = undefined));
+}
+
+function addRequired() {
+  for (const field of requiredToAdd.value) draft.value.inputs.push(inputDraftFromField(field));
+}
+
+// The job picked in this editor fills what it declares once its own fields are read: never an action opened as saved,
+// nor a job that a change of target type brings back.
+const pickedJob = ref<string | null>(null);
+watch(
+  () => [draft.value, draft.value.type, draftJob(draft.value)] as const,
+  ([current, type, job], [previous, previousType, previousJob]) => {
+    if (current !== previous || type !== previousType) pickedJob.value = null;
+    else if (job !== previousJob) pickedJob.value = job || null;
+  },
+);
+watch(listing.fieldsLoading, (loading) => {
+  if (loading || !pickedJob.value) return;
+  const fields = listing.fields.value;
+  if (fields && pickedJob.value === draftJob(draft.value)) fillFromDeclared(draft.value, fields);
+  pickedJob.value = null;
+});
 
 const KIND_HELP: Partial<Record<CiActionKind, string>> = {
   tests: 'Re-run the failed tests of a cluster or one test',
+  tags: 'Run the tests carrying the tags picked on the project page, as one --grep',
   flakeLab: 'Run a Flake Lab experiment for a flaky test',
 };
 const kindItems = CI_ACTION_KINDS.map((kind) => ({ kind, label: CI_ACTION_KIND_LABELS[kind], help: KIND_HELP[kind] }));
 const defaultLabels: Record<CiActionKind, string> = {
   tests: 'Default for re-runs',
   suite: `Default for ${CI_ACTION_KIND_LABELS.suite}`,
+  tags: 'Default for tagged tests',
   flakeLab: 'Default for Flake Lab',
 };
 
@@ -89,13 +212,7 @@ function setAccepts(kind: CiActionKind, on: boolean) {
   if (!on) toggle(draft.value.defaultFor, kind, false);
 }
 
-const inputPairs = computed<[string, string][]>(() =>
-  draft.value.inputs.flatMap((row) => {
-    const name = row.name.trim();
-    if (!name) return [];
-    return [[name, row.kind === 'fixed' ? row.value.trim() : (row.options.split('\n')[0] ?? '').trim()]];
-  }),
-);
+const inputPairs = computed(() => previewInputPairs(draft.value));
 
 function submit() {
   if (isCiServer.value && credentialProblem.value) {
@@ -153,51 +270,87 @@ function submit() {
           </UFormField>
         </div>
 
-        <div v-if="draft.type === 'github'" class="grid gap-2 sm:grid-cols-3">
-          <UInput
-            v-model="draft.github.workflow"
-            placeholder="workflow file, e.g. e2e.yml"
-            aria-label="GitHub workflow file"
-            class="font-mono"
-            data-testid="ci-action-github-workflow"
-          />
-          <UInput v-model="draft.github.ref" placeholder="ref, e.g. main" aria-label="GitHub ref" class="font-mono" />
-          <UInput
-            v-model="draft.github.argsInput"
-            placeholder="arguments input, e.g. args"
-            aria-label="GitHub arguments input"
-            class="font-mono"
-          />
-          <UInput
-            v-model="draft.github.dispatchIdInput"
-            placeholder="dispatch id input (optional)"
-            aria-label="GitHub dispatch id input"
-            class="font-mono sm:col-span-3 sm:max-w-xs"
-          />
+        <div v-if="draft.type === 'github'" class="grid gap-3 sm:grid-cols-2">
+          <UFormField label="Ref" name="ciActionGithubRef">
+            <UInput
+              v-model="draft.github.ref"
+              placeholder="e.g. main"
+              aria-label="GitHub ref"
+              class="w-full font-mono"
+            />
+          </UFormField>
+          <UFormField label="Workflow" name="ciActionGithubWorkflow" :hint="workflowFile">
+            <CiDeclaredValueInput
+              v-model="draft.github.workflow"
+              :items="jobItems"
+              :loading="listing.jobsLoading.value"
+              placeholder="file, e.g. e2e.yml"
+              aria-label="GitHub workflow file"
+              data-testid="ci-action-github-workflow"
+            />
+          </UFormField>
+          <UFormField label="Arguments input" name="ciActionGithubArgs">
+            <CiDeclaredValueInput
+              v-model="draft.github.argsInput"
+              :items="fieldItems"
+              placeholder="e.g. args"
+              aria-label="GitHub arguments input"
+            />
+          </UFormField>
+          <UFormField label="Dispatch id input" name="ciActionGithubDispatchId" hint="Optional">
+            <CiDeclaredValueInput
+              v-model="draft.github.dispatchIdInput"
+              :items="fieldItems"
+              optional
+              placeholder="e.g. dispatch_id"
+              aria-label="GitHub dispatch id input"
+            />
+          </UFormField>
         </div>
-        <div v-else-if="draft.type === 'gitlab'" class="grid gap-2 sm:grid-cols-2">
-          <UInput v-model="draft.gitlab.ref" placeholder="ref, e.g. main" aria-label="GitLab ref" class="font-mono" />
-          <UInput
-            v-model="draft.gitlab.argsVariable"
-            placeholder="arguments variable, e.g. PIWI_RERUN_ARGS"
-            aria-label="GitLab arguments variable"
-            class="font-mono"
-          />
+        <div v-else-if="draft.type === 'gitlab'" class="grid gap-3 sm:grid-cols-2">
+          <UFormField label="Ref" name="ciActionGitlabRef">
+            <UInput
+              v-model="draft.gitlab.ref"
+              placeholder="e.g. main"
+              aria-label="GitLab ref"
+              class="w-full font-mono"
+            />
+          </UFormField>
+          <UFormField label="Arguments variable" name="ciActionGitlabArgs">
+            <CiDeclaredValueInput
+              v-model="draft.gitlab.argsVariable"
+              :items="fieldItems"
+              :loading="listing.fieldsLoading.value"
+              placeholder="e.g. PIWI_RERUN_ARGS"
+              aria-label="GitLab arguments variable"
+            />
+          </UFormField>
         </div>
-        <div v-else-if="draft.type === 'bitbucket'" class="grid gap-2 sm:grid-cols-2">
-          <UInput
-            v-model="draft.bitbucket.pipeline"
-            placeholder="custom pipeline name, e.g. rerun"
-            aria-label="Bitbucket custom pipeline"
-            class="font-mono"
-          />
-          <UInput
-            v-model="draft.bitbucket.argsVariable"
-            placeholder="arguments variable, e.g. PIWI_RERUN_ARGS"
-            aria-label="Bitbucket arguments variable"
-            class="font-mono"
-          />
+        <div v-else-if="draft.type === 'bitbucket'" class="grid gap-3 sm:grid-cols-2">
+          <UFormField label="Custom pipeline" name="ciActionBitbucketPipeline">
+            <CiDeclaredValueInput
+              v-model="draft.bitbucket.pipeline"
+              :items="jobItems"
+              :loading="listing.jobsLoading.value"
+              placeholder="e.g. rerun"
+              aria-label="Bitbucket custom pipeline"
+            />
+          </UFormField>
+          <UFormField label="Arguments variable" name="ciActionBitbucketArgs">
+            <CiDeclaredValueInput
+              v-model="draft.bitbucket.argsVariable"
+              :items="fieldItems"
+              placeholder="e.g. PIWI_RERUN_ARGS"
+              aria-label="Bitbucket arguments variable"
+            />
+          </UFormField>
         </div>
+        <CiListingStatus
+          v-if="repositoryHost"
+          :message="listingMessage"
+          :loading="listingLoading"
+          @refresh="listing.refresh()"
+        />
         <FormFieldGroup
           v-if="repositoryHost"
           label="Credential"
@@ -213,6 +366,7 @@ function submit() {
             :repository-url="repositoryUrl ?? null"
             none-label="The project’s SCM credential, else the instance’s"
             label="Dispatch credential"
+            per-user
           />
         </FormFieldGroup>
         <div v-if="isCiServer" class="rounded-md border border-default p-3">
@@ -220,10 +374,20 @@ function submit() {
             v-model="draft.ciServer"
             v-model:problem="credentialProblem"
             :instance-url="instanceUrl"
+            :instance-allowed-inputs="instanceAllowedInputs ?? null"
             :project-id="projectId"
             :inputs="inputPairs"
+            :job-items="jobItems"
+            :field-items="fieldItems"
+            :jobs-loading="listing.jobsLoading.value"
           />
         </div>
+        <CiListingStatus
+          v-if="draft.type === 'jenkins'"
+          :message="listingMessage"
+          :loading="listingLoading"
+          @refresh="listing.refresh()"
+        />
 
         <fieldset v-if="sendsInputs" class="space-y-2" data-testid="ci-action-inputs">
           <legend class="text-sm text-highlighted">Inputs</legend>
@@ -284,18 +448,73 @@ function submit() {
               :aria-label="`Remove input ${index + 1}`"
               @click="draft.inputs.splice(index, 1)"
             />
+            <p
+              v-if="declaredByName.get(row.name.trim())"
+              class="text-xs text-muted sm:col-span-4"
+              data-testid="ci-action-input-declared"
+            >
+              {{ fieldSummary(declaredByName.get(row.name.trim())!) }}
+            </p>
           </div>
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="xs"
-            icon="i-lucide-plus"
-            data-testid="ci-action-add-input"
-            @click="draft.inputs.push(newInputDraft())"
-          >
-            Add an input
-          </UButton>
+          <div class="flex flex-wrap items-center gap-2">
+            <USelectMenu
+              v-if="fieldsToPick.length > 0"
+              v-model="declaredPick"
+              :items="fieldsToPick"
+              value-key="value"
+              :placeholder="`Add a declared ${INPUT_NOUN[draft.type]}`"
+              :search-input="{ placeholder: 'Search the declared names…' }"
+              icon="i-lucide-plus"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              class="w-full sm:w-64"
+              data-testid="ci-action-add-declared-input"
+              @update:model-value="addField"
+            />
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="xs"
+              icon="i-lucide-plus"
+              data-testid="ci-action-add-input"
+              @click="draft.inputs.push(newInputDraft())"
+            >
+              {{ fieldsToPick.length > 0 ? 'Add another input' : 'Add an input' }}
+            </UButton>
+          </div>
+          <div role="status" class="space-y-1">
+            <template v-if="undeclared.length > 0 || requiredMissing.length > 0">
+              <div data-testid="ci-action-declared-warnings" class="space-y-1">
+                <p v-if="undeclared.length > 0" class="text-xs text-warning">
+                  The {{ JOB_NOUN[draft.type] }} does not declare {{ undeclared.join(', ') }}.
+                  {{ UNDECLARED_EFFECT[draft.type] }}
+                </p>
+                <p v-if="requiredMissing.length > 0" class="flex flex-wrap items-center gap-2 text-xs text-warning">
+                  The workflow requires {{ requiredMissing.map((f) => f.name).join(', ') }}, with no default: GitHub
+                  rejects a dispatch without {{ requiredMissing.length > 1 ? 'them' : 'it' }}.
+                  <UButton
+                    v-if="requiredToAdd.length > 0"
+                    color="neutral"
+                    variant="link"
+                    size="xs"
+                    class="p-0"
+                    @click="addRequired"
+                  >
+                    Add {{ requiredToAdd.map((f) => f.name).join(', ') }}
+                  </UButton>
+                </p>
+              </div>
+            </template>
+          </div>
         </fieldset>
+        <p
+          v-else-if="draft.inputs.some((row) => row.name.trim())"
+          class="text-xs text-warning"
+          data-testid="ci-action-custom-inputs"
+        >
+          A Custom request sends no inputs: this action's inputs are not saved with it.
+        </p>
 
         <fieldset class="space-y-2">
           <legend class="text-sm text-highlighted">Accepts</legend>

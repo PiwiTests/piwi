@@ -38,6 +38,19 @@ dropping any, and `--budget 5m` caps its total time. Shard with `piwi run --shar
 `--shard`, which would split a lock: `piwi run --shard` jobs merge into one run that still covers the whole selection.
 Every flag and the output formats are in the [CLI reference](/reference/cli#select-run).
 
+### Balanced Playwright shards
+
+A suite sharded with Playwright's own `--shard` can be split by duration too: turn on the reporter's
+[`balanceShards`](/reference/reporter-options#balanceshards) option. With Playwright 1.62 or later, each shard lists the
+suite before Playwright splits it and asks the dashboard for shards of even recorded duration (a test with none weighs
+the median), keeping in one shard the tests that share a lock, a serial describe, and a file that is not fully
+parallel. The first shard to ask stores the split for 24 hours, keyed by commit, shard count and the tests listed, and
+the others read it, so every shard agrees. The option stands aside for `--last-failed`, `--only-changed`, `--test-list`
+and `--test-list-invert`, whose selection differs per machine. When the dashboard does not answer within 10 seconds, or
+its answer does not cover the listed tests, the reporter logs one line and Playwright splits the run as usual. A
+shard that falls back lines up with the others only if they fell back too; otherwise some tests run twice and others
+not at all.
+
 ## Built-in selections
 
 Two selections exist for every project with no setup:

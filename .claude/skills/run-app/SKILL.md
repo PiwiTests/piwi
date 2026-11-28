@@ -23,8 +23,8 @@ npm run app:screens -- --route /test-run-cases/37 --expand --height 2400
 ```
 
 - `--expand` unfolds the collapsed cards first (console, network, test source and the other evidence cards
-  start folded). It leaves the More ways to fix sections as they are: they open one at a time, so open
-  the one you want in a scene's `run`.
+  start folded). It leaves the More ways to fix sections as they are: each opens in a side panel from its
+  button, so open the one you want in a scene's `run`.
 - `--height` is how you see more of a page: the dashboard scrolls inside a panel, so a full-page
   screenshot of the document only ever shows one viewport. Use 2000–3000 for a detail page.
 - `--width` sets the viewport width (default 1280; the height defaults to 860), `--name` the file stem.
@@ -90,10 +90,10 @@ npm run app:measure -- --json                             # one object per route
 cluster page (`/failure-clusters/:id`) after hydration, a bounded settle and the page's last API
 answer. Inside the detail panel it reports:
 
-- the scroll offset of each named block, from the header and the situation block's lines through
-  evidence, the fix sections and what changed to the cluster's affected tests, occurrences trend,
-  activity and the history (the list is `POSITION_LABELS` in the script), and the panel's total
-  scroll height;
+- the scroll offset of each named block, in reading order: the header and the situation block's lines
+  (the history among them), the cluster's occurrences trend and activity, the fix the next step points
+  at, More ways to fix, what changed and the affected tests, then the evidence, last (the list is
+  `POSITION_LABELS` in the script), and the panel's total scroll height;
 - the controls of the navbar and the situation block, and the interactive controls above the fold,
   split into navbar, situation block and below;
 - the solid primary buttons and help hints above the fold, the open code blocks and their height,
@@ -101,16 +101,17 @@ answer. Inside the detail panel it reports:
 - the active evidence tab, the Most likely grade, the Next step's action and how far below its
   button the content it copies sits, and the text styles of the situation block.
 
-A control counts when the reader sees it: one shown on hover or focus only (the chooser beside an
-Open in IDE link) does not.
+A control counts when the reader sees it and Tab reaches it: one shown on hover or focus only (the
+chooser beside an Open in IDE link) does not, nor does a disabled one, and a row with one keyboard stop
+(the History strip, a tab list) counts once.
 
 Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
 at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution
-page's block and 13 on the cluster page's, at most 25 controls in the navbar and the situation
-block, at most one solid primary button above the fold, and a Next step that copies a code change
+page's block and 13 on the cluster page's, at most 28 controls in the navbar and the situation
+block on the execution page and 25 on the cluster page's, at most one solid primary button above the fold, and a Next step that copies a code change
 (`copy-git-apply`, `copy-locator`) shows that change in the block. The controls below the block
-that reach the fold (the evidence card's tabs, the affected tests, the history) are reported, not
-budgeted. The script finds the action by `data-next-action` and the content by `data-copies`, never
+that reach the fold (More ways to fix, the evidence card's tabs, the affected tests) are reported, not
+budgeted; the History line's strip (one keyboard stop) and its last-pass link are in the block and count. The script finds the action by `data-next-action` and the content by `data-copies`, never
 by a label. The report ends with every breach; `--check` exits 1 when there is one, and a route that
 answers an error fails it too. CI runs `--build .output --check` on the shared build (`Failure page
 budgets`).
@@ -143,7 +144,7 @@ use the same ones and are the reference when in doubt.
 | A run with insights, failure clusters and a workers timeline | `/test-runs/2` |
 | A project with flaky tests, quarantine and performance tabs | `/projects/1` |
 | A test case's history across runs | `/test-cases/1` |
-| An execution's History block | `/test-run-cases/229` |
+| An execution's History line | `/test-run-cases/37` |
 | An execution that passed on retry | `/test-run-cases/768` |
 | A test that did not run (the run hit its max failures) | `/test-run-cases/748` |
 

@@ -313,7 +313,7 @@ export const RUNS_ANCHORS = [
     reveal: [{ query: { tab: 'timeline' } }],
     describes:
       'The Timeline tab: each worker’s tests on one time axis, then the slowest executions and how the tests spread across the workers.',
-    doc: 'features/ui-overview#test-run-detail',
+    doc: 'features/slow-tests#the-run-s-timeline',
     sample: { route: '/test-runs/63?tab=timeline', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {

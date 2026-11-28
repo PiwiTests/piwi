@@ -1,4 +1,4 @@
-import { hideTypedStepTitle } from '@piwitests/core/step-analysis';
+import { hideStepTextSecrets, hideTypedStepTitle } from '@piwitests/core/step-analysis';
 import { liveWorkerKey } from '#shared/live-view';
 import type { StreamEventPayload } from '#shared/types';
 
@@ -84,7 +84,7 @@ function stepBeginRunEvent(tc: StreamEventPayload): StepRunEvent {
       type: 'step-begin',
       data: {
         title: hideTypedStepTitle(tc.title, tc.stepCategory),
-        subtitle: tc.subtitle ?? null,
+        subtitle: typeof tc.subtitle === 'string' ? hideStepTextSecrets(tc.subtitle) : null,
         parentTitle: tc.parentTitle,
         stepCategory: tc.stepCategory ?? null,
         location: tc.location,
@@ -114,7 +114,7 @@ function stepEndRunEvent(tc: StreamEventPayload): StepRunEvent {
       type: 'step-end',
       data: {
         title: hideTypedStepTitle(tc.title, tc.stepCategory),
-        subtitle: tc.subtitle ?? null,
+        subtitle: typeof tc.subtitle === 'string' ? hideStepTextSecrets(tc.subtitle) : null,
         parentTitle: tc.parentTitle,
         stepCategory: tc.stepCategory ?? null,
         status: tc.status,

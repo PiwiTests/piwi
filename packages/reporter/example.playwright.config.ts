@@ -25,7 +25,7 @@ export default defineConfig({
     ['list'],
     ['html'],
 
-    // Piwi Dashboard Reporter
+    // Piwi reporter
     ['@piwitests/reporter', {
       serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
       projectName: process.env.PIWI_PROJECT_NAME || 'my-test-project',

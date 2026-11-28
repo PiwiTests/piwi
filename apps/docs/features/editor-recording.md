@@ -106,7 +106,7 @@ puts it in a new scratch file. A locator picked at a stop of a run Piwi starts r
 ## Limits
 
 - The browser is the one your tests use, installed by Playwright (`npx playwright install chromium`).
-- Your project's Playwright runs with the first `node` on the editor's `PATH` in VS Code (when it is Node 20 or later,
+- Your project's Playwright runs with the first `node` on the editor's `PATH` in VS Code (when it is Node 22 or later,
   else with the editor's own runtime), and with the project's Node.js interpreter in a JetBrains IDE.
 - The recording does not start your `webServer`: start the application first.
 - It records the top-level page: clicks inside an iframe, and steps in a popup or a new tab, are not recorded yet. The

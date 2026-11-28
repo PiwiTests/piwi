@@ -29,7 +29,7 @@ env:
   # without `io.artifacthub.package.readme-url` (a raw Markdown file, here the
   # Docker Hub overview at the commit the image was built from).
   ANNOTATIONS: |
-    org.opencontainers.image.title=Piwi Dashboard
+    org.opencontainers.image.title=Piwi
     org.opencontainers.image.url=https://piwitests.dev
     org.opencontainers.image.documentation=https://piwitests.dev/operate/deployment
     org.opencontainers.image.licenses=FSL-1.1-MIT

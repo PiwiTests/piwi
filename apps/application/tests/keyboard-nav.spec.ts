@@ -1,6 +1,6 @@
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { waitForHydration, retryPost } from './utils';
+import { pressChord, waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 import { PROJECT_MENU_PAGES, PROJECT_TABS } from '#shared/app-places';
 
@@ -40,21 +40,6 @@ test.describe('Keyboard navigation & tab URL sync', () => {
   }
 
   const findProjectId = (request: APIRequestContext) => reportProject(request, PROJECT.KEYBOARD_NAV);
-
-  /**
-   * Presses a two-key chord with the page's clock paused, then lets it run again. A chord's second key counts only
-   * until a timer its first key starts runs out (800 ms in Nuxt UI's `defineShortcuts`), and each press waits for the
-   * page to take its key before the next is sent, so a busy page takes the two further apart than a person's keys.
-   * `pauseAt` only moves the clock forward, and the page's clock runs until the call reaches it, so it pauses a minute
-   * past the page's time.
-   */
-  async function pressChord(page: Page, first: string, second: string) {
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 60_000);
-    await page.keyboard.press(first);
-    await page.keyboard.press(second);
-    await page.clock.resume();
-  }
 
   test('the g-h and g-p chords navigate', async ({ page }) => {
     // The page's clock runs in real time, but for the chords `pressChord` presses.

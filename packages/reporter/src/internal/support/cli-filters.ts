@@ -4,7 +4,9 @@
  * positional file and path filters (`playwright test tests/login.spec.ts auth/`),
  * the flags that run a subset, and the grep patterns, which Playwright hands to
  * its runner rather than to `config.grep`. A value an option takes is never a
- * file filter, and `--flag=value` forms consume no extra token.
+ * file filter, and `--flag=value` forms consume no extra token. Each reader
+ * takes the runner's command line (`runnerArgv` of `run-mode.ts`: Playwright's
+ * `config.argv`, else `process.argv`), `process.argv` by default.
  */
 
 /** Options that take a value. */

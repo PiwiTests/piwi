@@ -30,9 +30,16 @@ const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() ||
 // channel flows the suite exercises can save.
 process.env.PIWI_SECRET_KEY ||= 'test-encryption-secret-key-not-for-production';
 
+// The mock Jira and AI servers the suite starts listen on the loopback address, which an address set in Settings
+// reaches only when the operator allows it.
+process.env.PIWI_PRIVATE_HOSTS ||= '127.0.0.1,localhost';
+
 // Share links are off by default; the suite exercises minting and the public
 // share route, so every test server opts in (inherited via process.env).
 process.env.PIWI_SHARE_LINKS_ENABLED = 'true';
+
+// The operator routes answer 404 without a token; the suite calls them with this one.
+process.env.PIWI_OPERATOR_TOKEN ||= 'test-operator-token-not-for-production-0123456789';
 
 // `PIWI_AUTH_*` is resolved into `runtimeConfig` when the Nuxt config is
 // evaluated, which for a production build is build time. Nitro maps the
@@ -189,6 +196,24 @@ const baseConfig = defineConfig({
                   PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'notif-test-storage'),
                   NITRO_PORT: '3097',
                   PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-notif'),
+                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
+                  // (inherited via process.env) can't repoint this server's backend.
+                  PIWI_DATABASE_URL: '',
+                  PIWI_STORAGE_TYPE: 'local',
+                },
+                reuseExistingServer: false,
+                timeout: 90 * 1000,
+              },
+              // Operator notice server used by operator-notice.spec.ts: a notice shows on every page its server
+              // renders, so the spec has a server and a database of its own, and no other spec meets its banner.
+              {
+                command: serverCommand,
+                url: 'http://localhost:3095/api/health',
+                env: {
+                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'notice-test.db'),
+                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'notice-test-storage'),
+                  NITRO_PORT: '3095',
+                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-notice'),
                   // Pin to isolated SQLite + local storage so the CI storage/db matrix
                   // (inherited via process.env) can't repoint this server's backend.
                   PIWI_DATABASE_URL: '',

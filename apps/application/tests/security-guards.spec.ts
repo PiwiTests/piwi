@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { resolveE2ETarget } from './desktop-target';
 
 test.describe('request guards', () => {
   test('a state-changing request a browser sends from another site is refused', async ({ request }) => {
@@ -27,6 +28,17 @@ test.describe('request guards', () => {
       data: { entityType: 'test_case', entityId: 1, url: 'javascript:alert(document.domain)' },
     });
     expect(res.status()).toBe(400);
+  });
+
+  test('a Jira site on a private address the operator did not allow is never reached', async ({ request }) => {
+    test.skip(resolveE2ETarget().desktop, 'the desktop app reaches any address');
+    const res = await request.post('/api/integrations/connections/check', {
+      data: { provider: 'jira', baseUrl: 'http://169.254.169.254' },
+    });
+    expect(res.ok()).toBe(true);
+    const { site } = (await res.json()) as { site: { ok: boolean; error: string; hint: string | null } };
+    expect(site).toMatchObject({ ok: false, hint: null });
+    expect(site.error).toContain('PIWI_PRIVATE_HOSTS');
   });
 
   test('no other site may frame a dashboard page or an API response', async ({ request }) => {

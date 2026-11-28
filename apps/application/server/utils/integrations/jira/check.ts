@@ -1,6 +1,8 @@
 import type { ConnectionCheckResult } from '#shared/integrations/types';
 import { JIRA_NO_PROJECTS_HINT, jiraFailureHint, type JiraCheckFailure } from '#shared/integrations/jira-setup';
 import { JiraClient, JiraError } from './client';
+import { connectionFetch } from '../../connection-fetch';
+import { PrivateAddressError } from '../../safe-fetch';
 
 /** The site probe answers from public endpoints, so it gets a shorter budget than REST calls. */
 const SITE_PROBE_TIMEOUT_MS = 8_000;
@@ -42,7 +44,7 @@ async function fetchServerInfo(siteUrl: string): Promise<{ status: number; info:
   // REST v3 is Cloud-only; a Server or Data Center site answers on v2.
   let status = 0;
   for (const version of ['3', '2']) {
-    const response = await fetch(`${siteUrl}/rest/api/${version}/serverInfo`, {
+    const response = await connectionFetch(`${siteUrl}/rest/api/${version}/serverInfo`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(SITE_PROBE_TIMEOUT_MS),
     });
@@ -60,7 +62,7 @@ async function fetchServerInfo(siteUrl: string): Promise<{ status: number; info:
 
 async function fetchCloudId(siteUrl: string): Promise<string | null> {
   try {
-    const response = await fetch(`${siteUrl}/_edge/tenant_info`, {
+    const response = await connectionFetch(`${siteUrl}/_edge/tenant_info`, {
       signal: AbortSignal.timeout(SITE_PROBE_TIMEOUT_MS),
     });
     if (!response.ok) return null;
@@ -86,7 +88,7 @@ export async function probeJiraSite(siteUrl: string): Promise<ConnectionCheckRes
       reachable: false,
       ok: false,
       error: `Could not reach ${siteUrl}: ${errorText(err)}`,
-      hint: jiraFailureHint('site', { status: null }),
+      hint: err instanceof PrivateAddressError ? null : jiraFailureHint('site', { status: null }),
     };
   }
 

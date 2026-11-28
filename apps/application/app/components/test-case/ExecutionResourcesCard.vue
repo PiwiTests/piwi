@@ -3,7 +3,8 @@
  * What one execution cost, as its worker measured it at the end of the test:
  * the CPU of the worker and of the browser processes it started, the largest
  * of those processes, the worker's event loop, the pages already open when the
- * test started and what it left open, and the artifacts it wrote.
+ * test started and what it left open, and the artifacts it wrote. A runtime that
+ * does not measure the event loop's busy time (Bun) shows none.
  */
 import type { WireExecutionResources } from '#shared/types';
 import type { HelpTopicKey } from '~/utils/help-content';
@@ -52,8 +53,12 @@ const openAtStart = computed(() => props.resources.openAtStart ?? null);
         />
         <StatTile
           label="Event loop"
-          :value="`${Math.round(resources.loopUtilization * 100)}% busy`"
-          :hint="`p99 delay ${Math.round(resources.loopDelayP99Ms)} ms`"
+          :value="resources.loopUtilization !== null ? `${Math.round(resources.loopUtilization * 100)}% busy` : null"
+          :hint="
+            resources.loopUtilization !== null
+              ? `p99 delay ${Math.round(resources.loopDelayP99Ms)} ms`
+              : `busy time not measured · p99 delay ${Math.round(resources.loopDelayP99Ms)} ms`
+          "
         />
         <StatTile
           v-if="openAtStart"

@@ -2007,7 +2007,8 @@ export const FAILURE_STORIES = [
         {
           type: 'warning',
           text: '[checkout] price quote still pending after 20s — Pay stays disabled',
-          location: 'https://shop.example.com/assets/checkout-D4kXqz.js:1:48211',
+          // 0-based, as the capture fixtures store a console message's place: line 1, column 48211 in an editor.
+          location: 'https://shop.example.com/assets/checkout-D4kXqz.js:0:48210',
           // The page's own timer, 20 s into the quote request.
           intoSlowRequestMs: 20040,
         },
@@ -2324,9 +2325,10 @@ export const FAILURE_STORIES = [
     evidence: {
       consoleOnFail: [
         {
-          type: 'error',
-          text: "Uncaught TypeError: Cannot read properties of undefined (reading 'activate')\n    at ModalController.open (https://design.example.com/assets/modal-C7hQx2.js:2:1381)",
-          location: 'https://design.example.com/assets/modal-C7hQx2.js:2:1381',
+          // The exception the page threw and nothing caught, as the capture fixtures record it, placed 0-based.
+          type: 'pageerror',
+          text: "TypeError: Cannot read properties of undefined (reading 'activate')",
+          location: 'https://design.example.com/assets/modal-C7hQx2.js:1:1380',
         },
       ],
     },
@@ -3122,7 +3124,7 @@ export const DEMO_PROJECTS = [
       {
         type: 'log',
         text: '[analytics] page view: /checkout',
-        location: 'https://shop.example.com/assets/analytics-Bh2kQ9.js:1:2210',
+        location: 'https://shop.example.com/assets/analytics-Bh2kQ9.js:0:2209',
       },
     ],
     webVitals: true,
@@ -3421,7 +3423,7 @@ export const DEMO_PROJECTS = [
       {
         type: 'warning',
         text: '[Vue warn]: Extraneous non-props attributes (variant) were passed to component',
-        location: 'https://design.example.com/assets/components-Bq7Yz.js:1:8412',
+        location: 'https://design.example.com/assets/components-Bq7Yz.js:0:8411',
       },
     ],
     webVitals: true,
@@ -3679,7 +3681,7 @@ export const DEMO_PROJECTS = [
       {
         type: 'log',
         text: '[telemetry] session started (sampled)',
-        location: 'https://admin.example.com/assets/app-Cw1pR7.js:4:1022',
+        location: 'https://admin.example.com/assets/app-Cw1pR7.js:3:1021',
       },
     ],
     webVitals: true,

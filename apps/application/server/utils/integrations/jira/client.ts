@@ -26,6 +26,7 @@ import { isTransientImageStatus } from '../../public-image';
 import { IntegrationHttpError, parseRetryAfter } from '../http-error';
 import { createHash } from 'node:crypto';
 import type { CredentialWriteGate } from '../../credentials';
+import { connectionFetch } from '../../connection-fetch';
 
 const JIRA_TIMEOUT_MS = 10_000;
 
@@ -71,7 +72,9 @@ const scopedCloudIds = new Map<string, string>();
  */
 async function resolveCloudId(siteBaseUrl: string, timeoutMs: number): Promise<string | null> {
   try {
-    const response = await fetch(`${siteBaseUrl}/_edge/tenant_info`, { signal: AbortSignal.timeout(timeoutMs) });
+    const response = await connectionFetch(`${siteBaseUrl}/_edge/tenant_info`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!response.ok) return null;
     const data = (await response.json()) as { cloudId?: string };
     return typeof data.cloudId === 'string' && data.cloudId.length > 0 ? data.cloudId : null;
@@ -197,8 +200,9 @@ async function toJiraError(response: Response, what: string): Promise<JiraError>
 
 /**
  * Jira Cloud client (REST v3, Basic `email:apiToken`). Reads and writes go
- * through the one interface every tracker implements; the base URL is
- * administrator-supplied and therefore trusted.
+ * through the one interface every tracker implements, and every request
+ * through `connectionFetch`, which keeps the site off a private address the
+ * operator did not allow.
  */
 export class JiraClient implements IssueTracker {
   readonly provider = 'jira' as const;
@@ -262,14 +266,14 @@ export class JiraClient implements IssueTracker {
 
   /** {@link apiFetch} without the gate. */
   private async sendApi(path: string, build: () => RequestInit): Promise<Response> {
-    let response = await fetch(`${this.apiBase()}${path}`, build());
+    let response = await connectionFetch(`${this.apiBase()}${path}`, build());
     if (response.status === 401 && !this.cloudId) {
       const key = this.credentialKey();
       const cloudId = scopedCloudIds.get(key) ?? (await resolveCloudId(this.baseUrl, this.timeoutMs));
       if (cloudId) {
         this.cloudId = cloudId;
         scopedCloudIds.set(key, cloudId);
-        response = await fetch(`${this.apiBase()}${path}`, build());
+        response = await connectionFetch(`${this.apiBase()}${path}`, build());
       }
     }
     return response;

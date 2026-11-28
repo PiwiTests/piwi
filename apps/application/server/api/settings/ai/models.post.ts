@@ -5,6 +5,7 @@ import { CLAUDE_CLI_MODELS } from '../../../utils/claude-cli-models';
 import { AI_ROLES } from '../../../utils/ai-settings';
 import type { AiModelRole, ModelInfo } from '~~/types/api';
 import { requestCredentialActor } from '../../../utils/credentials';
+import { connectionFetch } from '../../../utils/connection-fetch';
 
 /** Convert per-token pricing string to per-million-tokens, keeping larger values as-is. */
 function normalizePricing(v: string | undefined): string | undefined {
@@ -89,7 +90,7 @@ export default eventHandler(async (event) => {
     const headers: Record<string, string> = {};
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
     try {
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+      const res = await connectionFetch(url, { headers, signal: AbortSignal.timeout(10000) });
       if (!res.ok) return { models: [] };
 
       // OpenAI-compatible: { data: [{ id, owned_by, context_length?, ... }] }
@@ -137,7 +138,7 @@ export default eventHandler(async (event) => {
     // Honour a configured baseUrl (proxy override) like the diagnosis calls do.
     const root = (baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
     try {
-      const res = await fetch(`${root}/v1/models`, {
+      const res = await connectionFetch(`${root}/v1/models`, {
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         signal: AbortSignal.timeout(10000),
       });

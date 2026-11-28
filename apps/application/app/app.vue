@@ -22,7 +22,7 @@ useHead({
   },
 });
 
-const title = 'Piwi Dashboard';
+const title = 'Piwi';
 const description = 'Your Playwright results, kept and explained.';
 
 // The public demo's title, description and link-preview cards live in its

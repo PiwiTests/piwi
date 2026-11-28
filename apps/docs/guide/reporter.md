@@ -16,8 +16,8 @@ command, `npx @piwitests/reporter init`; this page covers manual setup.
 npm install --save-dev @piwitests/reporter
 ```
 
-It needs `@playwright/test` 1.59 or later and Node.js 20 or later. A feature needing a later Playwright names the
-version on its page.
+It needs `@playwright/test` 1.59 or later and Node.js 22 or later, or [Bun](./bun). A feature needing a later
+Playwright names the version on its page.
 
 ### Try it without editing your config
 

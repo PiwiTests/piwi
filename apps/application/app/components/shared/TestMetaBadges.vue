@@ -8,11 +8,12 @@
  * common case — the row must not reserve space it isn't using.
  */
 import { TEST_PRIORITIES, type TestMetadata } from '@piwitests/core/test-meta';
+import { lockDescription, lockLabel } from '#shared/test-locks';
 
 const props = withDefaults(
   defineProps<{
     tags?: string[] | null;
-    /** Lock names this test held — a shared resource the runner serializes holders of. */
+    /** Lock names this test held: a shared resource the runner serializes holders of, or `-exclusive-` to run alone. */
     locks?: string[] | null;
     meta?: TestMetadata | null;
     /** Cap the tags shown; the rest collapse into a `+N` badge. 0 = no cap. */
@@ -73,10 +74,10 @@ const hasAnything = computed(
       variant="soft"
       size="xs"
       class="shrink-0 gap-1"
-      :title="`Lock ${lock}: only one holder runs at a time`"
+      :title="lockDescription(lock)"
     >
       <UIcon name="i-lucide-lock" class="size-2.5 shrink-0" />
-      {{ lock }}
+      {{ lockLabel(lock) }}
     </UBadge>
 
     <UBadge v-if="meta?.owner" color="neutral" variant="soft" size="xs" class="shrink-0 gap-1">

@@ -1,5 +1,12 @@
 import { describe, test, expect } from 'vitest';
-import { isBlockedAddress, assertPublicHttpUrl } from '../../server/utils/safe-fetch';
+import {
+  assertPublicHttpUrl,
+  BlockedHostError,
+  isBlockedAddress,
+  isBlockedHostRefusal,
+  PrivateAddressError,
+  privateAddressRefusal,
+} from '../../server/utils/safe-fetch';
 
 describe('isBlockedAddress', () => {
   test('blocks private / loopback / link-local / reserved addresses', () => {
@@ -23,6 +30,24 @@ describe('isBlockedAddress', () => {
       'not-an-ip',
     ]) {
       expect(isBlockedAddress(ip)).toBe(true);
+    }
+  });
+
+  test('blocks the documentation, protocol-assignment, relay, discard and Teredo ranges', () => {
+    for (const ip of [
+      '192.0.0.8',
+      '192.0.2.1',
+      '198.51.100.7',
+      '203.0.113.9',
+      '192.88.99.1',
+      '2001:db8::1',
+      '2001::1',
+      '100::1',
+    ]) {
+      expect(isBlockedAddress(ip), ip).toBe(true);
+    }
+    for (const ip of ['192.0.1.1', '198.51.101.1', '203.0.114.1', '2001:4860::8888', '100:1::1']) {
+      expect(isBlockedAddress(ip), ip).toBe(false);
     }
   });
 
@@ -103,6 +128,29 @@ describe('assertPublicHttpUrl', () => {
     await expect(assertPublicHttpUrl('http://[::127.0.0.1]/x')).rejects.toThrow();
     await expect(assertPublicHttpUrl('http://[64:ff9b::169.254.169.254]/latest/meta-data')).rejects.toThrow();
     await expect(assertPublicHttpUrl('http://[fe90::1]/x')).rejects.toThrow();
+  });
+
+  test('refuses a private host with an error the callers recognize, however it is wrapped', async () => {
+    const error = await assertPublicHttpUrl('http://10.0.0.5/x').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(BlockedHostError);
+    expect((error as Error).message).toBe('URL host is not allowed');
+    expect(isBlockedHostRefusal(new TypeError('fetch failed', { cause: error }))).toBe(true);
+    expect(isBlockedHostRefusal(new Error('URL host is not allowed'))).toBe(false);
+  });
+
+  test('explains a refusal with the host and its port, said as Piwi knows it', () => {
+    const said = (url: string) => new PrivateAddressError(new URL(url), 'a request', 'PIWI_X_HOSTS').message;
+    expect(said('https://jenkins.example.com/job/e2e/')).toBe(
+      'jenkins.example.com:443 resolves to a private address, which a request may not reach. The operator allows it by listing the host in PIWI_X_HOSTS.',
+    );
+    expect(said('http://[fd00::1]:8080/')).toMatch(/^\[fd00::1\]:8080 is a private address, /);
+    expect(said('http://jenkins.internal/')).toMatch(
+      /^jenkins\.internal:80 is a name reserved for private addresses, /,
+    );
+    const wrapped = new TypeError('fetch failed', {
+      cause: new PrivateAddressError(new URL('http://10.0.0.5/'), 'a', 'B'),
+    });
+    expect(privateAddressRefusal(wrapped)?.message).toMatch(/^10\.0\.0\.5:80 is a private address/);
   });
 
   test('accepts a public literal IP without a DNS lookup', async () => {

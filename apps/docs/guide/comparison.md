@@ -1,12 +1,13 @@
 ---
 title: Why Piwi?
-description: "How Piwi compares with the Playwright HTML report, Allure, ReportPortal, Currents and Fault0, and when another tool fits better."
+titleTemplate: "Playwright dashboards compared: :title | Piwi"
+description: "How Piwi, a free, self-hosted Playwright dashboard, compares with the HTML report, Allure, ReportPortal, Currents and Fault0, and when another tool fits better."
 lang: en-US
 ---
 
 # Why Piwi?
 
-Piwi Dashboard gives your Playwright results a permanent, self-hosted home — with live streaming, failure clustering, flaky-test analytics, and optional AI diagnosis on top. This page explains how it relates to tools you may already use, and answers the questions we hear most.
+Piwi gives your Playwright results a permanent, self-hosted home — with live streaming, failure clustering, flaky-test analytics, and optional AI diagnosis on top. This page explains how it relates to tools you may already use, and answers the questions we hear most.
 
 ## The landscape
 
@@ -62,7 +63,7 @@ Start with SQLite; switch to PostgreSQL when you want concurrent write headroom 
 
 ### Which Node version does the dashboard need?
 
-Node 22 or newer, and only for `npx @piwitests/server`: the Docker image and the desktop app bundle their own runtime. The reporter in your test project needs Node 20 or later.
+Node 22 or newer, and only for `npx @piwitests/server`: the Docker image and the desktop app bundle their own runtime. The reporter in your test project needs Node 22 or later too.
 
 ### Can I use it with Cypress / Jest / other frameworks?
 
@@ -88,4 +89,4 @@ Modest; see [resource requirements](/operate/deployment#resource-requirements). 
 
 ---
 
-<sub>Product names are used for identification only. Piwi Dashboard is an independent project, not affiliated with, endorsed by, or connected to Microsoft Corporation (Playwright), Qameta Software (Allure), EPAM Systems (ReportPortal), Currents Software, or Fault0. Details about third-party products reflect their publicly documented open-source/free tiers and may change — corrections welcome.</sub>
+<sub>Product names are used for identification only. Piwi is an independent project, not affiliated with, endorsed by, or connected to Microsoft Corporation (Playwright), Qameta Software (Allure), EPAM Systems (ReportPortal), Currents Software, or Fault0. Details about third-party products reflect their publicly documented open-source/free tiers and may change — corrections welcome.</sub>

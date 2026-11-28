@@ -214,7 +214,7 @@ async function latestRunId(request: APIRequestContext, project: number): Promise
 
 type Workers = {
   enabled: boolean;
-  workers: Array<{ worker: number }>;
+  workers: Array<{ worker: number; paused?: unknown }>;
   viewers: number;
   received: Record<string, number>;
 };
@@ -235,6 +235,8 @@ async function playWorkers(
 ): Promise<{
   runId: number;
   key: string;
+  /** The run's stream token, for the events its reporter posts. */
+  streamToken: string;
   workers: Array<ReturnType<typeof holdWorkerStream>>;
   shots: Buffer[];
   /** The workers send no frame from now on, as a test with no page, once the frames on their way came. */
@@ -303,6 +305,7 @@ async function playWorkers(
   return {
     runId,
     key: liveView.key,
+    streamToken,
     workers,
     shots,
     stopFrames: async () => {
@@ -644,7 +647,7 @@ test.describe('Live view of a run', () => {
       await page.setViewportSize(wide);
       await unshared.getByRole('button', { name: 'Help: Not shared live' }).click();
       const hint = page.getByRole('dialog');
-      await expect(hint).toContainText('Tools → Piwi → Share the run live on the team instance');
+      await expect(hint).toContainText('Tools → Piwi → Run control → Share the run live on the team instance');
       await expect(hint).toContainText('Piwi: Share the run live on the team instance');
       await page.screenshot({ path: testInfo.outputPath('live-view-unshared-hint.png') });
       await page.keyboard.press('Escape');
@@ -874,6 +877,114 @@ test.describe('Live view of a run', () => {
       worker.close();
       await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
       await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
+    }
+  });
+
+  test('the lane panel says its test’s stop in its row’s words, and the call’s running time once it goes on', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const title = 'pays on a slow page';
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(request, [{ title, lane: true, row: true }], shot);
+    const id = { shard: null, worker: 0, slot: 0 };
+    const post = async (message: Record<string, unknown>) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}` },
+        data: { ...id, test: title, ...message },
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    const call = {
+      title: "Check getByRole('checkbox', { name: 'I accept the terms' })",
+      file: 'tests/live.spec.ts',
+      line: 4,
+    };
+    const stop: LiveStop = { reason: 'pause', call, test: title };
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(1);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      await post({
+        type: 'call-log',
+        log: {
+          id: 'call@4',
+          call,
+          status: 'running',
+          lines: ["- waiting for getByRole('checkbox', { name: 'I accept the terms' })"],
+          point: null,
+          target: { count: 0, enabled: null },
+          viewport: null,
+          ms: 3_000,
+          error: null,
+        },
+      });
+      const state = panel.getByTestId('live-call-state');
+      await expect(state).toContainText('Running for');
+      await expect(panel.getByTestId('live-call-target')).toBeVisible();
+
+      // Paused from the editor: the panel says it as the row does, with no running time for the call it waits at.
+      await post({ type: 'stop', stop });
+      const paused = page.getByTestId('live-paused');
+      await expect(paused).toContainText('Paused');
+      await expect(state).toHaveText('Paused');
+      await expect(state).toHaveAttribute('data-stop', 'pause');
+      await expect(panel.getByTestId('live-call-target')).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath('lane-panel-paused.png') });
+
+      // It goes on: the call's running time again.
+      await post({ type: 'stop', stop: null });
+      await expect(paused).toBeHidden({ timeout: 10_000 });
+      await expect(state).toContainText('Running for');
+      await expect(state).not.toHaveAttribute('data-stop');
+
+      // The reporter tells the same stop too, with when it began: the row and the panel say the same words and the
+      // same time, whichever of the two comes first.
+      const attempt = { title, location: 'tests/live.spec.ts:3:1', workerIndex: 0, parallelIndex: 0, retries: 0 };
+      const report = async (event: Record<string, unknown>) => {
+        const response = await request.post(`/api/test-runs/${run.runId}/events`, {
+          data: { streamToken: run.streamToken, testCases: [{ ...attempt, ...event }] },
+        });
+        expect(response.ok(), await response.text()).toBeTruthy();
+      };
+      // Past two minutes by more than the stop clock's tick, so both read 2 minutes on any tick of it.
+      const since = Date.now() - 2 * 60_000 - 15_000;
+      const tell = () =>
+        report({ type: 'test-stopped', stop: { ...call, reason: 'pause', bar: true, since, pausedMs: 0 } });
+      const resume = () => report({ type: 'test-resumed', pausedMs: 1_000 });
+      const both = async (what: string) => {
+        await expect(paused, what).toContainText('Paused');
+        await expect(paused, what).toContainText('for 2 minutes');
+        await expect(state, what).toHaveText('Paused · for 2 minutes');
+      };
+      const goneOn = async () => {
+        await expect(paused).toBeHidden({ timeout: 10_000 });
+        await expect(state).toContainText('Running for');
+      };
+
+      await post({ type: 'stop', stop });
+      await tell();
+      await both('the live view’s stop, then the told one');
+      await post({ type: 'stop', stop: null });
+      await resume();
+      await goneOn();
+
+      await tell();
+      await post({ type: 'stop', stop });
+      await both('the told stop, then the live view’s');
+      // The live view’s stop ends before the reporter tells the test went on: the told stop still stands.
+      await post({ type: 'stop', stop: null });
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers[0]?.paused ?? null).toBeNull();
+      // The page hears it within a moment; nothing shows that it did, as the told stop still stands.
+      await page.waitForTimeout(2_000);
+      await both('the told stop, once the live view’s ended');
+      await resume();
+      await goneOn();
+    } finally {
+      await run.end();
     }
   });
 

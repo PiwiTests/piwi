@@ -124,8 +124,8 @@ export interface ImportedConsoleEntry {
   location: string | null;
 }
 
-/** Console levels the capture fixtures keep — noise like `log` is dropped. */
-const KEPT_CONSOLE_TYPES = new Set(['warning', 'error', 'assert']);
+/** Console levels the capture fixtures keep, and uncaught page errors — noise like `log` is dropped. */
+const KEPT_CONSOLE_TYPES = new Set(['warning', 'error', 'assert', 'pageerror']);
 
 /**
  * Project a parsed trace's console events into the stored shape.
@@ -171,12 +171,15 @@ export function consoleLogsFromTrace(
   return entries.length ? entries : null;
 }
 
-/** Traces carry the console location as an object; storage wants `url:line:col`. */
+/**
+ * Traces carry the console location as an object (`lineNumber` and `columnNumber`, a page error's `line` and
+ * `column`); storage wants `url:line:col`, 0-based as the trace records them (`#shared/console-entries`).
+ */
 function normalizeConsoleLocation(location: unknown): string | null {
   if (typeof location === 'string') return location || null;
   if (!location || typeof location !== 'object') return null;
   const loc = location as Record<string, unknown>;
   // An inline script reports an empty URL — there is nothing to link to.
   if (typeof loc.url !== 'string' || !loc.url) return null;
-  return `${loc.url}:${loc.lineNumber ?? 0}:${loc.columnNumber ?? 0}`;
+  return `${loc.url}:${loc.lineNumber ?? loc.line ?? 0}:${loc.columnNumber ?? loc.column ?? 0}`;
 }

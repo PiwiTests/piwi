@@ -102,12 +102,11 @@ A connection can live in either place:
 
 See the [configuration reference](/reference/configuration#integrations) for the variables.
 
-## Trusted base URLs and private hosts
+## Private hosts
 
-A connection base URL is supplied by an administrator, so Piwi trusts it: a private host such as
-`https://jira.internal.example.com` or an RFC 1918 address is reachable without extra configuration. The client speaks
-Jira Cloud's REST v3 only. A URL a non-administrator supplies (a pinned link) goes through the SSRF guard that blocks
-private hosts. Moving a connection to another site drops its stored credentials.
+A site set in **Settings → Integrations** on a private address is reached only where the operator allows it, as
+[Private hosts](./production-checklist#private-hosts) says. The client speaks Jira Cloud's REST v3 only. Moving a
+connection to another site drops its stored credentials.
 
 ## Creating issues from a failure
 

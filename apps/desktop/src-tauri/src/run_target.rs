@@ -949,6 +949,62 @@ pub async fn desktop_unlink_request_folder(app: AppHandle, project_id: String) -
         .map_err(|e| e.to_string())?
 }
 
+/// Link the folder of this app's project `local_project_id` to the connected
+/// instance's project `team_project_id` (Compare with team instance), without
+/// a request. The window names both ids alone: the shell reads the folder from
+/// its own links of this app's projects, never from the window.
+#[tauri::command]
+pub async fn desktop_link_team_project(
+    app: AppHandle,
+    team_project_id: String,
+    local_project_id: String,
+) -> Result<String, String> {
+    if !crate::runner::valid_project_id(&team_project_id) || !crate::runner::valid_project_id(&local_project_id) {
+        return Err("invalid project id".into());
+    }
+    let instance = connected_instance(&app).ok_or("no team instance is connected")?;
+    let folder = crate::runner::read_links(&app)
+        .remove(&local_project_id)
+        .map(|link| link.path)
+        .ok_or("this project has no folder linked on this machine")?;
+    if !Path::new(&folder).is_dir() {
+        return Err("this project's folder is no longer on this machine".into());
+    }
+    let links = linked_to_one_team_project(links_of(&app, &instance), &team_project_id, &folder)?;
+    write_links(&app, &instance, links)?;
+    let handed = app.clone();
+    tauri::async_runtime::spawn_blocking(move || hand_links(&handed, &instance))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(folder)
+}
+
+/// The most folders the server takes for an instance's projects (`linksOf` in the editor service).
+const TEAM_LINKS_MAX: usize = 200;
+/// The largest project id the server reads (`Number.MAX_SAFE_INTEGER`).
+const TEAM_PROJECT_ID_MAX: u64 = 9_007_199_254_740_991;
+
+/// `links` with `folder` linked to team project `team_project_id` alone: a folder is one team project's, so the
+/// other projects linked to it, compared by real path, lose it. Refuses an id the server would not read, and a link
+/// past the number of folders the server takes.
+fn linked_to_one_team_project(
+    mut links: HashMap<String, String>,
+    team_project_id: &str,
+    folder: &str,
+) -> Result<HashMap<String, String>, String> {
+    let id = team_project_id.parse::<u64>().ok().filter(|id| (1..=TEAM_PROJECT_ID_MAX).contains(id));
+    let Some(id) = id else {
+        return Err("invalid project id".into());
+    };
+    let own = crate::runner::real_path(Path::new(folder));
+    links.retain(|_, linked| crate::runner::real_path(Path::new(linked.as_str())) != own);
+    links.insert(id.to_string(), folder.to_string());
+    if links.len() > TEAM_LINKS_MAX {
+        return Err(format!("at most {TEAM_LINKS_MAX} folders can be linked to a team instance's projects"));
+    }
+    Ok(links)
+}
+
 /// What the server answers the shell for a request after **Run**.
 struct Launch {
     instance: String,
@@ -1017,9 +1073,10 @@ fn tell_started(server: &ServerInfo, request_id: &str, error: Option<&str>) {
 
 /// Start the run of a request after **Run** in the window: the command and the
 /// request token come from the server, the folder from this machine's links.
-/// Returns the run id; its output arrives as `piwi:local-run` events.
+/// Returns the run id, whose output arrives as `piwi:local-run` events; `None`
+/// when the requester stopped the request before its run started.
 #[tauri::command]
-pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> Result<u32, String> {
+pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> Result<Option<u32>, String> {
     if !valid_request_id(&request_id) {
         return Err("invalid request id".into());
     }
@@ -1050,8 +1107,14 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         }
     };
 
-    let settings = match launch.settings.clone() {
-        Ok(settings) => settings,
+    // A protected environment's run is limited to the tests carrying one of its required tags, beside the setup and
+    // teardown projects they depend on, whatever the command approved.
+    let settings_and_args = launch.settings.clone().and_then(|settings| {
+        let args = settings.args(launch.args.clone())?;
+        Ok((settings, args))
+    });
+    let (settings, args) = match settings_and_args {
+        Ok(found) => found,
         Err(e) => {
             forget(&app, &request_id);
             tell_started(&server, &request_id, Some(&e));
@@ -1091,7 +1154,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
                 log(&app, &format!("could not tell the server a requested run ended: {e}"));
             }
         }
-        return Err("the request was stopped before its run started".into());
+        return Ok(None);
     }
 
     let envs = vec![
@@ -1102,10 +1165,6 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
-    // A protected environment's run is limited here to the tests carrying one of its required tags, beside the setup
-    // and teardown projects they depend on, whatever the command approved.
-    let mut args = launch.args;
-    args.extend(settings.args());
     // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and
     // only the quit sends an end once it began.
     let spawned = crate::runner::spawn_tests(&app, &folder, &cli, args, settings.envs(), envs, move |code, stopped| {
@@ -1141,14 +1200,12 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
                     _ => false,
                 }
             });
+            // Before the window hears the id, so the `stopping` event comes first.
             if stop_now {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = crate::runner::desktop_stop_local_tests(app, id).await;
-                });
+                crate::runner::stop_local_run(&app, id, true);
             }
             std::thread::spawn(move || tell_started(&server, &request_id, None));
-            Ok(id)
+            Ok(Some(id))
         }
         Err(e) => {
             forget(&app, &request_id);
@@ -1202,16 +1259,15 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
     Ok((folder, cli, dir, token_file))
 }
 
-/// The requester stopped a request from the dashboard: stop the run it started.
+/// The requester stopped a request from the dashboard: stop the run it started,
+/// gracefully, so a stop that goes on is never turned into a kill.
 pub(crate) fn stop_requested_run(app: &AppHandle, request_id: &str) {
     if !valid_request_id(request_id) {
         return;
     }
     if let Some(run_id) = app.try_state::<RequestedRuns>().and_then(|runs| runs.stop(request_id)) {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = crate::runner::desktop_stop_local_tests(app, run_id).await;
-        });
+        tauri::async_runtime::spawn(async move { crate::runner::stop_local_run(&app, run_id, true) });
     }
 }
 
@@ -1697,6 +1753,32 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_linked_to_a_team_project_is_that_project_s_alone() {
+        let root = TempRoot::new("team-link");
+        let shop = root.0.join("shop");
+        let admin = root.0.join("admin");
+        std::fs::create_dir_all(&shop).unwrap();
+        std::fs::create_dir_all(&admin).unwrap();
+        let path = |p: &Path| p.to_string_lossy().to_string();
+        let links = HashMap::from([
+            ("7".to_string(), path(&shop)),
+            ("4".to_string(), path(&shop.join("."))),
+            ("2".to_string(), path(&admin)),
+        ]);
+        let linked = linked_to_one_team_project(links.clone(), "9", &path(&shop)).unwrap();
+        assert_eq!(linked.len(), 2);
+        assert_eq!(team_project_in(&linked, &shop), Some(9));
+        assert_eq!(team_project_in(&linked, &admin), Some(2));
+        for id in ["0", "00", "9007199254740992", "18446744073709551616", "x"] {
+            assert!(linked_to_one_team_project(links.clone(), id, &path(&shop)).is_err(), "{id}");
+        }
+        let full: HashMap<String, String> =
+            (1..=TEAM_LINKS_MAX).map(|id| (id.to_string(), path(&root.0.join(id.to_string())))).collect();
+        assert!(linked_to_one_team_project(full.clone(), "1", &path(&shop)).is_ok());
+        assert!(linked_to_one_team_project(full, "999", &path(&shop)).is_err());
+    }
+
+    #[test]
     fn a_launch_applies_the_environment_it_names() {
         let settings = crate::environments::checked_settings(&json!({
             "runVariables": [{ "name": "TEST_ENV", "value": "production" }],
@@ -1707,9 +1789,9 @@ mod tests {
             settings.envs().last().unwrap(),
             &("PIWI_ENVIRONMENT".to_string(), "production".to_string())
         );
-        assert_eq!(settings.args().len(), 1);
+        assert_eq!(settings.args(Vec::new()).unwrap().len(), 1);
         let none = crate::environments::checked_settings(&json!({ "runVariables": [] })).unwrap();
-        assert!(none.envs().is_empty() && none.args().is_empty());
+        assert!(none.envs().is_empty() && none.args(Vec::new()).unwrap().is_empty());
         let refused = json!({ "runVariables": [], "environment": { "id": 4, "key": "production", "name": "Production", "protected": true, "requiredTags": [] } });
         assert!(crate::environments::checked_settings(&refused).is_err());
     }

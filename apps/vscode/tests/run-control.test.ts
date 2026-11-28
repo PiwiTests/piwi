@@ -1,3 +1,5 @@
+import { CiAsks } from '@piwitests/run-model/ci';
+import type { CiHeld } from '@piwitests/editor/protocol';
 import { describe, expect, test, vi } from 'vitest';
 import type { PageEvent } from '@piwitests/core/live-layers';
 import type { LiveCallLog } from '@piwitests/core/live-view';
@@ -20,6 +22,12 @@ import {
   countWords,
   ciLaneArg,
   ciLaneCaption,
+  ciCommandParams,
+  ciNoteStands,
+  ciStopShown,
+  ciLaneStop,
+  ciStopPlace,
+  ciLaneKey,
   ciLaneLayersNote,
   ciLaneRedraws,
   ciLaneTakes,
@@ -142,6 +150,7 @@ import {
   writtenLines,
   type CaretQuery,
   type CaretShown,
+  type CiStopView,
   type LaneLayersShown,
   type RunBreakpoint,
   type RunBreakpoints,
@@ -2512,7 +2521,7 @@ describe('the CI runs of the branch', () => {
       icon: 'cloud',
       open: null,
     });
-    expect(run!.tooltip).toContain('Read-only');
+    expect(run!.tooltip).toContain('Watched only');
     const [open, running, failed] = run!.children;
     // The run pages' globe, as Open the run page draws it.
     expect(open).toMatchObject({
@@ -2617,6 +2626,227 @@ describe('the CI runs of the branch', () => {
     expect(ciLaneRedraws(view, ciLaneCaption(new Map(), lane), false)).toBe(true);
     expect(ciLaneRedraws(view, caption, false)).toBe(true);
     expect(ciLaneRedraws(null, caption, true)).toBe(true);
+  });
+
+  test('say a failure held for the run’s controllers in the run page’s words, with Let it go where the service offers it', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const held: CiHeld = {
+      id: ':4:1763727900000',
+      state: 'Failed, held at its line',
+      heldFor: 'Held for Ana · until 12:05',
+      error: 'Expected "Paid" <b>',
+      place: 'tests/checkout.spec.ts:7',
+      at: { uri: spec, line: 6 },
+      note: 'The CI job’s own timeout still runs.',
+      letGo: true,
+      letGoLabel: 'Let it go now',
+      letGoTitle: 'End the hold, as the service says it',
+    };
+    const base = ci(78);
+    const kept = withCiSession(new Map(), ci(78, { tests: [{ ...base.tests[0]!, held }, base.tests[1]!] }));
+    const stop = ciLaneStop(kept, lane)!;
+    expect(stop).toEqual({
+      id: ':4:1763727900000',
+      box: {
+        kind: 'held',
+        state: 'Failed, held at its line',
+        by: 'Held for Ana · until 12:05',
+        call: 'Expected "Paid" <b>',
+        place: 'tests/checkout.spec.ts:7',
+        at: { uri: spec, line: 6 },
+        note: 'The CI job’s own timeout still runs.',
+      },
+      buttons: [{ command: 'let-go', label: 'Let it go now', title: 'End the hold, as the service says it' }],
+      ask: null,
+    });
+    expect(ciLaneStop(kept, { ...lane, lane: 1 })).toBeNull();
+    expect(ciLaneStop(withCiSession(new Map(), base), lane)).toBeNull();
+    expect(ciLaneCaption(kept, lane)).toBe('CI run #78 · worker 2 · Failed, held at its line: checkout › pays');
+    expect(ciLaneTakes({ type: 'ci-command', command: 'let-go' })).toBe(true);
+    expect(ciLaneTakes({ type: 'ci-place' })).toBe(true);
+    expect(ciStopPlace(stop.box!)).toEqual({ uri: spec, line: 6, character: 0 });
+    expect(ciStopPlace({ ...stop.box!, at: null })).toBeNull();
+    // The CI Runs view marks the held test where it lists it.
+    const [run] = ciNodes(kept);
+    const row = run!.children.find((n) => n.label === 'checkout › pays')!;
+    expect(row.description).toBe('chromium · worker 2 · Failed, held at its line');
+    expect(row.tooltip).toContain('Failed, held at its line · Held for Ana · until 12:05');
+    expect(row.tooltip).not.toContain('read-only');
+    expect(ciCommandParams(lane, 'let-go')).toEqual({ root: '/work/shop', runId: 78, shard: null, lane: 2 });
+    // The hold coming, going, or Let it go offered or not draws the panel again.
+    const view = {
+      caption: ciLaneCaption(kept, lane),
+      live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+      ciStop: { ...stop, asking: false },
+    };
+    expect(ciLaneRedraws(view, view.caption, true, stop)).toBe(false);
+    expect(ciLaneRedraws(view, view.caption, true, { ...stop, buttons: [] })).toBe(true);
+    expect(ciLaneRedraws(view, view.caption, true, null)).toBe(true);
+
+    const draw = (shown: CiStopView) =>
+      pausedPageHtml(
+        {
+          image: null,
+          caption: view.caption,
+          lane: true,
+          ci: true,
+          pick: null,
+          live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+          ciStop: { ...shown, asking: false },
+        },
+        'n0nce',
+        'vscode-webview://x/paused-page.js',
+      );
+    const html = draw(stop);
+    expect(html).toContain('<div id="ci-stop" class="ci-stop held" role="status">');
+    expect(html).toContain('<strong id="ci-stop-state">Failed, held at its line</strong>');
+    expect(html).toContain('<span id="ci-stop-by">· Held for Ana · until 12:05</span>');
+    expect(html).toContain('<p id="ci-stop-call">Expected &#34;Paid&#34; &#60;b&#62;</p>');
+    expect(html).toContain(
+      '<button id="ci-stop-place" class="place" type="button" title="Open the line">tests/checkout.spec.ts:7</button>',
+    );
+    expect(html).toContain('<p id="ci-stop-note" class="hint">The CI job’s own timeout still runs.</p>');
+    expect(html).toContain(
+      '<div id="ci-buttons" class="controls"><button type="button" data-command="let-go" title="End the hold, as the service says it">Let it go now</button></div>',
+    );
+    expect(draw({ ...stop, buttons: [] })).toContain('<div id="ci-buttons" class="controls" hidden></div>');
+    // A place the workspace does not hold opens nothing.
+    expect(draw({ ...stop, box: { ...stop.box!, at: null } })).toContain(
+      '<button id="ci-stop-place" class="place" type="button" title="Open the line" disabled>',
+    );
+    // No hold: the box is there, hidden, for the panel's script to fill.
+    expect(
+      pausedPageHtml(
+        { image: null, caption: 'CI', lane: true, ci: true, pick: null, live: view.live },
+        'n',
+        'vscode-webview://x/paused-page.js',
+      ),
+    ).toContain('<div id="ci-stop" class="ci-stop" role="status" hidden>');
+  });
+
+  test('say a test paused for the run’s controllers, a Pause asked, and the controls the service offers', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const base = ci(78);
+    const at = (test: Partial<CiSession['tests'][number]>) =>
+      withCiSession(new Map(), ci(78, { tests: [{ ...base.tests[0]!, ...test }, base.tests[1]!] }));
+    const paused = {
+      state: 'Paused',
+      pausedBy: 'Paused by Ana · until 12:05',
+      call: "Click getByRole('button')",
+      place: 'tests/checkout.spec.ts:7',
+      at: { uri: spec, line: 6 },
+      note: 'The CI job’s own timeout still runs.',
+    };
+    const controls = {
+      id: ':4:paused:1763727900000',
+      offered: [
+        { command: 'resume' as const, label: 'Resume', title: 'Go on' },
+        { command: 'end' as const, label: 'End the test', title: 'End it' },
+      ],
+    };
+    const kept = at({ paused, controls });
+    expect(ciLaneStop(kept, lane)).toEqual({
+      id: ':4:paused:1763727900000',
+      box: {
+        kind: 'paused',
+        state: 'Paused by Ana · until 12:05',
+        by: null,
+        call: "Click getByRole('button')",
+        place: 'tests/checkout.spec.ts:7',
+        at: { uri: spec, line: 6 },
+        note: 'The CI job’s own timeout still runs.',
+      },
+      buttons: [
+        { command: 'resume', label: 'Resume', title: 'Go on' },
+        { command: 'end', label: 'End the test', title: 'End it' },
+      ],
+      ask: null,
+    });
+    expect(ciLaneCaption(kept, lane)).toBe('CI run #78 · worker 2 · Paused: checkout › pays');
+    expect(ciLaneTakes({ type: 'ci-command', command: 'end' })).toBe(true);
+    expect(ciCommandParams(lane, 'end')).toEqual({
+      root: '/work/shop',
+      runId: 78,
+      shard: null,
+      lane: 2,
+      command: 'end',
+    });
+    const [run] = ciNodes(kept);
+    const row = run!.children.find((n) => n.label === 'checkout › pays')!;
+    expect(row.description).toBe('chromium · worker 2 · Paused');
+    expect(row.tooltip).toContain(': Paused by Ana · until 12:05.');
+    // A Pause waits: no box, Resume, and the words.
+    const asked = ciLaneStop(
+      at({ pauseAsk: 'Pause asked by Ana', controls: { id: ':4:asked', offered: [controls.offered[0]!] } }),
+      lane,
+    )!;
+    expect(asked).toEqual({ id: ':4:asked', box: null, buttons: [controls.offered[0]], ask: 'Pause asked by Ana' });
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: 'CI',
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+        ciStop: { ...asked, asking: true },
+      },
+      'n',
+      'vscode-webview://x/paused-page.js',
+    );
+    expect(html).toContain('<div id="ci-stop" class="ci-stop" role="status" hidden>');
+    expect(html).toContain('<button type="button" data-command="resume" title="Go on" disabled>Resume</button>');
+    expect(html).toContain('<p id="ci-ask" class="hint">Pause asked by Ana</p>');
+    // A running test with Pause offered, a Viewer's watch with nothing: nothing to say for the latter.
+    expect(
+      ciLaneStop(
+        at({ controls: { id: ':4:running:', offered: [{ command: 'pause', label: 'Pause', title: 'Stop' }] } }),
+        lane,
+      ),
+    ).toMatchObject({ box: null, buttons: [{ command: 'pause' }] });
+    expect(ciLaneStop(at({}), lane)).toBeNull();
+  });
+
+  test('say what reaches a CI run from the editor: nothing but Pause, Resume, End the test and Let it go, for its controllers', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: 'CI',
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+      },
+      'n',
+      'vscode-webview://x/paused-page.js',
+    );
+    expect(html).toContain(
+      'Watched only: nothing here steers a CI run, except Pause, Resume, End the test and Let it go, for those who may control it.',
+    );
+    const [run] = ciNodes(withCiSession(new Map(), ci(78)));
+    expect(run!.tooltip).toContain(
+      'Watched only: it runs on CI, so nothing here steers it, except Pause, Resume, End the test and Let it go, for those who may control it.',
+    );
+  });
+
+  test('keep what a CI lane’s button came to while the lane stands in the state it was asked in, and no longer', () => {
+    const stop = (id: string | null): CiStopView => ({ id, box: null, buttons: [], ask: null });
+    expect(ciNoteStands('a', stop('a'))).toBe(true);
+    expect(ciNoteStands('a', stop('b'))).toBe(false);
+    expect(ciNoteStands('a', null)).toBe(false);
+    expect(ciNoteStands(null, stop('a'))).toBe(true);
+    // What the lane shows, as text, which an ask the instance took goes with.
+    expect(ciStopShown(stop('a'))).toBe(ciStopShown(stop('a')));
+    expect(ciStopShown({ ...stop('a'), ask: 'Pause asked' })).not.toBe(ciStopShown(stop('a')));
+  });
+
+  test('ask a CI lane’s control once per state of the lane, its buttons off until it changes or the ask is refused', () => {
+    const asks = new CiAsks();
+    expect(asks.ask(ciLaneKey({ root: '/w', runId: 78, shard: null, lane: 2 }), 'a')).toBe(true);
+    expect(asks.asked(ciLaneKey({ root: '/w', runId: 78, shard: null, lane: 3 }), 'a')).toBe(false);
+    expect(ciLaneKey({ root: '/w', runId: 78, shard: 1, lane: 2 })).not.toBe(
+      ciLaneKey({ root: '/w', runId: 78, shard: null, lane: 2 }),
+    );
   });
 
   test('draw a CI lane’s panel with Watch alone: no Interact, no pick', () => {

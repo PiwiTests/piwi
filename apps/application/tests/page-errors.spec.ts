@@ -22,7 +22,7 @@ for (const { path, heading } of [
     const errorPage = page.locator('[data-shot="error-page"]');
     await expect(errorPage.getByRole('heading', { level: 1, name: heading })).toBeVisible();
     await expect(errorPage).toContainText('It may have been deleted, or the link may be wrong.');
-    await expect(page).toHaveTitle(`${heading} — Piwi Dashboard`);
+    await expect(page).toHaveTitle(`${heading} — Piwi`);
   });
 }
 

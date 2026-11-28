@@ -12,12 +12,16 @@
  * summed height, the word count, the active evidence tab, the grade of the Most
  * likely line, the Next step's action and how far below its button the content
  * it copies sits, and the text styles the situation block mixes. A control
- * counts when the reader can see it. It changes nothing on the page — it reads
+ * counts when the reader can see it and Tab reaches it: a disabled one does
+ * not, and a row with one keyboard stop (the History strip, a tab list) counts
+ * once. It changes nothing on
+ * the page — it reads
  * the DOM after hydration and a bounded settle.
  *
  * The budgets (`scripts/lib/detail-page-budgets.mjs`) hold at 1280×800: at most
  * 15 text styles in the execution page's situation block and 13 in the cluster
- * page's, at most 25 controls in the navbar and the situation block, at most
+ * page's, at most 28 controls in the navbar and the situation block on the
+ * execution page and 25 on the cluster page's, at most
  * one solid primary button above the fold, and a Next step that copies a code
  * change shows that change in the block (distance 0). The script finds the Next
  * action by `data-next-action` and what it copies by `data-copies`, never by a
@@ -139,8 +143,19 @@ function measurePage({ viewportHeight, copyActions }) {
   // chooser beside an Open in IDE link) is not seen.
   const seen = (el) =>
     el.getBoundingClientRect().width > 0 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+  // A control counts once Tab can reach it: a disabled one does not; a row with
+  // one keyboard stop (the History strip's squares, a tab list) counts once,
+  // by its row.
+  const COMPOSITE = '[role="toolbar"], [role="tablist"], [role="radiogroup"], [role="menubar"]';
   const controlSelector = 'button, a[href], [role="tab"], select, input, textarea, [role="button"], [role="combobox"]';
-  const controls = [...panel.querySelectorAll(controlSelector)].filter(seen);
+  const counted = new Map();
+  for (const el of panel.querySelectorAll(controlSelector)) {
+    if (!seen(el) || el.matches(':disabled')) continue;
+    const row = el.closest(COMPOSITE);
+    if (el.getAttribute('tabindex') === '-1' && !row) continue;
+    if (!counted.has(row ?? el)) counted.set(row ?? el, el);
+  }
+  const controls = [...counted.values()];
   const inNavbar = (el) => !!body && !body.contains(el);
   // The controls the page opens on, wherever the fold falls: the navbar's and
   // the situation block's.
@@ -337,20 +352,20 @@ const POSITION_LABELS = [
   ['clusterLine', 'cluster line'],
   ['issue', 'issue'],
   ['whatChanged', 'what changed'],
-  ['fixLead', 'fix (next step)'],
+  ['history', 'history'],
   ['clues', 'clues'],
-  ['changesCard', 'changes card'],
-  ['affectedTests', 'affected tests'],
-  ['evidence', 'evidence'],
   ['occurrenceTrend', 'occurrences trend'],
   ['activity', 'activity'],
-  ['fix', 'fix'],
+  ['fixLead', 'fix (next step)'],
   ['fixLocatorFix', '· locator fix'],
   ['fixFixPlan', '· fix plan'],
   ['fixDiagnosis', '· diagnosis'],
   ['fixVerify', '· verify'],
   ['fixReproduce', '· reproduce'],
-  ['history', 'history'],
+  ['fix', 'more ways to fix'],
+  ['changesCard', 'changes card'],
+  ['affectedTests', 'affected tests'],
+  ['evidence', 'evidence'],
 ];
 
 function nextStepText(next) {

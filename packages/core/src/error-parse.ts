@@ -17,7 +17,7 @@
  */
 
 /** The locator-builder methods whose innermost call identifies the resolved element. */
-import { scanLocatorChain } from './locator-chain';
+import { isLocatorChainMethod, scanLocatorChain, tryParseLocatorChain } from './locator-chain';
 import { LOCATOR_BUILDER_METHODS } from './locator-methods';
 
 export type ParsedErrorKind =
@@ -50,6 +50,8 @@ export type CallLogState =
   | 'not-visible'
   | 'not-enabled'
   | 'not-editable'
+  /** `element is inert` (Playwright 1.65 and later): the element or an ancestor carries the `inert` attribute. */
+  | 'inert'
   | 'not-stable'
   | 'outside-viewport'
   /** Another element receives the pointer events. */
@@ -73,7 +75,10 @@ export interface ParsedPlaywrightError {
   assertion: string | null;
   /** True for `expect(…).not.<matcher>`. */
   negated: boolean;
-  /** The full locator chain as Playwright code, or null when the error names none. */
+  /**
+   * The full locator chain as Playwright code, or null when the error names none. For a locator given a
+   * `describe()`, whose description stands in the `Locator:` header, the chain its call log waited for.
+   */
   locator: string | null;
   /** The innermost locator-creating call of that chain. */
   leafLocator: string | null;
@@ -116,20 +121,11 @@ export function stripAnsi(text: string): string {
 
 const SELECTOR_FN_RE =
   /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
-
-/** Methods that extend a locator chain without leaving it. */
-const CHAIN_LINK_METHODS = new Set<string>([
-  ...LOCATOR_BUILDER_METHODS,
-  'frameLocator',
-  'contentFrame',
-  'filter',
-  'first',
-  'last',
-  'nth',
-  'and',
-  'or',
-  'describe',
-]);
+/** A link of a locator chain, `.name(`, read at `lastIndex`, its name captured. */
+const CHAIN_LINK_RE = /\.(\w+)\(/y;
+/** The name of a call that builds a locator, as `SELECTOR_FN_RE` reads one. */
+const LOCATOR_CALL_RE =
+  /^(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)$/;
 
 /**
  * Cut the error down to its message head: everything before the Playwright
@@ -167,28 +163,67 @@ function stackStart(text: string): number {
 }
 
 /**
- * Extract the first Playwright locator expression, scanning forward with a
- * paren-depth counter so nested forms like getByRole('row', { name: '…' })
- * are captured whole.
+ * The index just past the closing parenthesis of the call whose name starts at
+ * `from`, counting parentheses within 200 characters of one line; -1 when the
+ * call does not close there.
  */
-export function extractSelector(text: string): string | null {
-  const match = SELECTOR_FN_RE.exec(text);
-  if (!match) return null;
-  const start = match.index;
+export function locatorCallEnd(text: string, from: number): number {
   let depth = 0;
-  for (let i = start; i < Math.min(text.length, start + 200); i++) {
+  for (let i = from; i < Math.min(text.length, from + 200); i++) {
     const ch = text[i];
     if (ch === '(') {
       depth++;
     } else if (ch === ')') {
       depth--;
-      if (depth === 0) return text.slice(start, i + 1);
+      if (depth === 0) return i + 1;
     } else if (ch === '\n') {
       break;
     }
   }
+  return -1;
+}
+
+/**
+ * Extract the first Playwright locator expression, scanning forward with a
+ * paren-depth counter so nested forms like getByRole('row', { name: '…' })
+ * are captured whole. It is the first call alone, unless the chain it starts
+ * enters a frame (a `.contentFrame()` link, a `frameLocator(…)` call, named or
+ * empty for any frame): then it runs through the first locator call inside the
+ * last frame entered, so
+ * `locator('iframe').first().contentFrame().getByLabel('Card number')` is kept
+ * whole. The chain is read link by link, `.name(…)`, up to the first text that
+ * is not one or a call that does not close.
+ */
+export function extractSelector(text: string): string | null {
+  const match = SELECTOR_FN_RE.exec(text);
+  if (!match) return null;
+  const start = match.index;
+  let end = locatorCallEnd(text, start);
   // Unbalanced within the window — keep a stable prefix
-  return text.slice(start, start + 80);
+  if (end === -1) return text.slice(start, start + 80);
+  let inFrame = text.startsWith('frameLocator(', start);
+  let callEnd = end;
+  for (;;) {
+    CHAIN_LINK_RE.lastIndex = callEnd;
+    const link = CHAIN_LINK_RE.exec(text);
+    if (!link) break;
+    const name = link[1]!;
+    const callStart = link.index + 1;
+    const isLocatorCall = LOCATOR_CALL_RE.test(name);
+    const next = locatorCallEnd(text, callStart);
+    if (next === -1) {
+      // The locator inside a frame cut short — keep a stable prefix of it
+      if (inFrame && isLocatorCall) return text.slice(start, callStart + 80);
+      break;
+    }
+    if (inFrame && isLocatorCall) {
+      end = next;
+      inFrame = false;
+    }
+    if (name === 'contentFrame' || name === 'frameLocator') inFrame = true;
+    callEnd = next;
+  }
+  return text.slice(start, end);
 }
 
 /**
@@ -292,7 +327,8 @@ function lenientLeaf(region: string): string | null {
  * The whole locator chain starting at the first locator call on its line —
  * every top-level `.method(...)` link included, so
  * `getByRole('row', { name: 'Acme' }).getByRole('button').first()` is kept
- * whole where `extractSelector` stops after the first balanced call.
+ * whole where `extractSelector` stops after the first balanced call, or after
+ * the first locator call inside the frame the chain enters.
  */
 export function extractLocatorChain(text: string): string | null {
   const first = SELECTOR_FN_RE.exec(text);
@@ -319,7 +355,7 @@ export function extractLocatorChain(text: string): string | null {
         end = i + 1;
         // Continue only through a chained locator link, never into `.click()`.
         const link = /^\.(\w+)\(/.exec(region.slice(end));
-        if (!link || !CHAIN_LINK_METHODS.has(link[1]!)) break;
+        if (!link || !isLocatorChainMethod(link[1]!)) break;
         i = end + link[0].length - 2;
       }
     }
@@ -330,15 +366,17 @@ export function extractLocatorChain(text: string): string | null {
 
 /**
  * The chain at the start of `region`, read with the shared parser — null when
- * it doesn't parse, or when it stops right before another chain link (one cut
- * short in the error text, or one the parser doesn't know): the caller then
- * reads the region leniently.
+ * it doesn't parse, when it stops right before another chain link (one cut
+ * short in the error text), or when its calls are not in the order the text
+ * writes them (a `within()` link): the caller then reads the region leniently,
+ * as written.
  */
 function readChain(region: string): ReturnType<typeof scanLocatorChain> {
   const scanned = scanLocatorChain(region);
   if (!scanned) return null;
+  if (scanned.spans.some((span, k) => k > 0 && span.start < scanned.spans[k - 1]!.end)) return null;
   const link = /^\s*\.\s*(\w+)\(/.exec(region.slice(scanned.end));
-  return link && CHAIN_LINK_METHODS.has(link[1]!) ? null : scanned;
+  return link && isLocatorChainMethod(link[1]!) ? null : scanned;
 }
 
 /** The stack frames outside node_modules and Node internals, innermost first. */
@@ -388,6 +426,8 @@ const RETRY_COUNT_LINE_RE = /^\s+\d+ × (.+)$/;
 
 interface CallLogRead {
   state: CallLogState;
+  /** The chain of the first `waiting for <locator>` line. */
+  locator: string | null;
   count: number | null;
   lastLine: string | null;
   stateLine: string | null;
@@ -430,6 +470,7 @@ function readCallLog(text: string): CallLogRead {
   const lines = callLogLines(text);
   const read: CallLogRead = {
     state: 'unknown',
+    locator: null,
     count: null,
     lastLine: null,
     stateLine: null,
@@ -446,7 +487,8 @@ function readCallLog(text: string): CallLogRead {
     const before = read.state;
     const lower = line.toLowerCase();
     const count = /^locator resolved to (\d+) elements?/.exec(line);
-    const expectLine = /^Expect "(\w+)" with timeout (\d+)ms/.exec(line);
+    // `Expect "toBeVisible" with timeout 5000ms`, the locator or its description before `with` from Playwright 1.65.
+    const expectLine = /^Expect "(\w+)"(?: .*)? with timeout (\d+)ms/.exec(line);
     const navTo = /navigat(?:ing|ion|ed) to "([^"]+)"/.exec(line);
     if (expectLine) {
       read.matcher = expectLine[1]!;
@@ -465,6 +507,7 @@ function readCallLog(text: string): CallLogRead {
     if (line.startsWith('waiting for ') && SELECTOR_FN_RE.test(line)) {
       sawWaiting = true;
       waitingLine ??= line;
+      read.locator ??= extractLocatorChain(line);
       continue;
     }
     if (count) {
@@ -483,6 +526,7 @@ function readCallLog(text: string): CallLogRead {
     if (lower.startsWith('element is not visible')) read.state = 'not-visible';
     else if (lower.startsWith('element is not enabled')) read.state = 'not-enabled';
     else if (lower.startsWith('element is not editable')) read.state = 'not-editable';
+    else if (lower.startsWith('element is inert')) read.state = 'inert';
     else if (lower.startsWith('element is not stable')) read.state = 'not-stable';
     else if (lower.startsWith('element is outside of the viewport')) read.state = 'outside-viewport';
     else if (lower.startsWith('element is not attached') || lower.includes('element was detached'))
@@ -520,11 +564,16 @@ export function readLocatorHeader(text: string): string | null {
   return header ? header[1]!.trim() : null;
 }
 
-/** The locator named by the error: the `Locator:` header first, else the first call in the text. */
-function readLocator(text: string, strict: RegExpExecArray | null): string | null {
+/**
+ * The locator named by the error: the `Locator:` header when it holds a chain, else the strict-mode chain. A header
+ * that holds no chain is a `describe()` text: the chain the call log waited for stands in for it, or the text itself
+ * without one. With no header, the first call in the text.
+ */
+function readLocator(text: string, strict: RegExpExecArray | null, callLog: CallLogRead): string | null {
   const header = readLocatorHeader(text);
-  if (header) return header;
+  if (header && tryParseLocatorChain(header)) return header;
   if (strict) return strict[1]!.trim();
+  if (header) return callLog.locator ?? header;
   return extractLocatorChain(text);
 }
 
@@ -662,7 +711,7 @@ export function parsePlaywrightError(
   const paramsLocator = typeof context?.stepParams?.locator === 'string' ? context.stepParams.locator : null;
   const paramsUrl = typeof context?.stepParams?.url === 'string' ? context.stepParams.url : null;
 
-  const locator = readLocator(text, strict) ?? paramsLocator;
+  const locator = readLocator(text, strict, callLog) ?? paramsLocator;
   const leafLocator = locator ? extractLeafSelector(locator) : null;
   const expected = headerValue(text, 'Expected');
   const received = headerValue(text, 'Received');

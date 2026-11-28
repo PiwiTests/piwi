@@ -17,7 +17,6 @@ import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import { commandWithRunVariables } from '#shared/run-variables';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi, stripAnsi } from '@piwitests/run-ui/ansi';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
 import { escapeHtml } from '#shared/markdown-to-html';
@@ -77,7 +76,7 @@ const describable = computed(() => ({
 const clusterName = computed(() => (cluster.value ? describeCluster(describable.value) : 'Failure cluster'));
 const signatureLine = computed(() => (cluster.value ? clusterSignatureLine(describable.value) : null));
 
-useHead(computed(() => ({ title: `${clusterName.value} — Piwi Dashboard` })));
+useHead(computed(() => ({ title: `${clusterName.value} — Piwi` })));
 
 // ── Selected affected execution ─────────────────────────────────────────────
 // The evidence and the clues are shown for one affected test at a time; the
@@ -328,10 +327,40 @@ const verifyForms = computed(() => {
 const shellKey = COMMAND_SHELL_KEY;
 const { copy: copyRetry } = useCopy();
 
-const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
-  `/api/failure-clusters/${clusterId}/rerun`,
+const rerunPlace = computed(() =>
+  clusterProjectId.value ? { projectId: clusterProjectId.value, source: { clusterId } } : null,
 );
-const { rerunning, triggerRerun } = useCiRerun(`/api/failure-clusters/${clusterId}/rerun`, refreshRerun);
+const { rerunInfo, refreshRerun } = await useRerunInfo(`failure-cluster-rerun-${clusterId}`, () =>
+  rerunPlace.value ? { ...rerunPlace.value, clusterId, mayDispatch: canRerun.value } : null,
+);
+// The run button, in the navbar and in Verify: the affected tests, which CI re-runs, and this computer in the desktop
+// window, by the verify command's selection.
+const runPlace = await useRunPlace({
+  projectId: clusterProjectId.value ?? 0,
+  machine: await useRunOnMyMachine(clusterProjectId.value ?? 0),
+  whats: () => [
+    {
+      ...clusterTestsWhat(
+        'Its affected tests',
+        { clusterId },
+        affectedCases.value.map((c) => c.title),
+      ),
+      local: affectedRetryCases.value.length
+        ? {
+            label: `Re-run the ${affectedTestsLabel.value}`,
+            cases: affectedRetryCases.value,
+            runTitle: `${affectedTestsLabel.value} of cluster #${clusterId}`,
+          }
+        : { reason: 'No affected test has a file path Playwright takes.' },
+    },
+  ],
+  prefersCi: () => true,
+  onDispatched: () => refreshRerun(),
+  thisComputer: {
+    projectLabel: () => cluster.value?.project?.label ?? cluster.value?.project?.name,
+    sourceRunId: () => cluster.value?.lastSeenRunId,
+  },
+});
 
 function refresh() {
   void reloadCluster();
@@ -514,12 +543,6 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       'data-tour': 'quarantine-all-tests',
       onSelect: () => quarantineAll.value?.trigger(),
     });
-  if (canRerun.value && rerunInfo.value?.available)
-    testActions.push({
-      label: 'Re-run in CI',
-      icon: 'i-lucide-refresh-cw',
-      onSelect: () => void triggerRerun(),
-    });
 
   const copies: DropdownMenuItem[] = [
     { label: 'Copy summary', icon: 'i-lucide-clipboard-list', onSelect: copyCluster },
@@ -571,6 +594,7 @@ const clusterLocatorPanel = ref<{
 const toolbox = ref<{
   openSection: (k: FixSectionKey) => Promise<void>;
   scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
+  closePanel: () => void;
 } | null>(null);
 
 // The Diagnosis section renders its panel only while open: open it (and scroll to
@@ -587,7 +611,9 @@ async function onDiagnosisPanel(act: (panel: DiagnosisPanelActions) => void, scr
     });
 }
 
+// A block of the page it scrolls to sits under More ways to fix's side panel: it closes first.
 function scrollToEl(el: HTMLElement | null) {
+  toolbox.value?.closePanel();
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function openFixPlan() {
@@ -608,6 +634,7 @@ const pageSections: Record<string, () => void> = {
 provide(clusterSectionLocatorKey, {
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
   open: (id: string, index?: number) => {
+    toolbox.value?.closePanel();
     if (id in pageSections) pageSections[id]!();
     else evidenceTabs.value?.revealSection(id, index);
   },
@@ -628,7 +655,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
   reproRecipe: () => fixPlan.value?.reproduce ?? null,
   diagnosisContextEndpoint: () => diagnosisContextEndpoint,
   scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
-  selectAttemptsTab: () => evidenceTabs.value?.selectTab('attempts'),
+  selectAttemptsTab: () => {
+    toolbox.value?.closePanel();
+    evidenceTabs.value?.selectTab('attempts');
+  },
   setClusterStatus,
   quarantine: async () => {
     if (selectedCase.value) {
@@ -636,7 +666,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
       if (ok) refresh();
     }
   },
-  rerunInCi: () => triggerRerun(),
+  rerunInCi: () => runPlace.openDialog({ where: 'ci' }),
+  flakeLabInCi: (id, kind) => runPlace.openDialog({ whats: [flakeLabWhat(id, kind)], where: 'ci' }),
   whatChanged: () => scrollToEl(scmEl.value ?? whatChangedLine.value?.$el ?? null),
   reDiagnose: () => onDiagnosisPanel((panel) => panel.reDiagnose?.(), true),
 });
@@ -685,6 +716,7 @@ const breadcrumbItems = computed(() => [
           <BreadcrumbNav :items="breadcrumbItems" />
         </template>
         <template #right>
+          <RunButton :place="runPlace" />
           <ShareLinksModal
             v-if="cluster && offersShareLinks"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
@@ -856,67 +888,12 @@ const breadcrumbItems = computed(() => [
           class="max-sm:rounded-none max-sm:border-x-0"
         />
 
-        <!-- ── The fix the next step points at, then the context and the evidence, then More ways to fix ── -->
+        <!-- ── The history first, folded: occurrences over time, then the activity ── -->
+        <ClusterOccurrenceTrend ref="occurrenceTrend" :cluster-id="cluster.id" :first-seen-at="cluster.firstSeenAt" />
+        <ClusterActivity :cluster-id="cluster.id" />
+
+        <!-- ── The fix the next step points at, then More ways to fix on one line ── -->
         <Toolbox ref="toolbox" lead :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
-          <template #between>
-            <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
-            <div v-if="hasChangesToShow" ref="scmEl" data-shot="what-changed-card" class="scroll-mt-4">
-              <ClusterInvestigation :project="cluster.project ?? null" />
-            </div>
-
-            <!-- ── Affected tests: the evidence selector, above the evidence, with several tests ── -->
-            <ClusterAffectedTests
-              v-if="!singleTest"
-              v-model:selected-case-id="selectedCaseId"
-              :cluster-id="clusterId"
-              :cases="cluster.affectedTestCases ?? []"
-              :project-id="cluster.project?.id"
-              :project-key="cluster.project?.id"
-              :project-name="cluster.project?.name"
-              @changed="refresh"
-            />
-
-            <!-- ── Evidence ───────────────────────────────────────────────── -->
-            <div v-if="selectedExecId" class="scroll-mt-4">
-              <EvidenceTabs
-                v-if="execution"
-                ref="evidenceTabs"
-                :test-case="execution"
-                :traces="execTraces ?? []"
-                :has-trace="hasTrace"
-                :default-hint="defaultHint"
-                :fixtures-state="clusterCapState('fixtures')"
-                :coverage-state="clusterCapState('coverage')"
-                :suspect-lines="clusterSuspectLines"
-                :can-decide-fixtures="canDecideClusterCap"
-                help="case.evidence"
-                @decline-fixtures="declineClusterFixtures"
-              >
-                <!-- The test (its title path), the run and the occurrence the evidence is of -->
-                <template v-if="selectedCase" #subject>
-                  <TestTitlePath
-                    :file-path="selectedCase.filePath"
-                    :line="selectedLine"
-                    :suite-path="selectedCase.suitePath"
-                    :project-key="cluster.project?.id"
-                    :project-name="cluster.project?.name"
-                    >{{ selectedCase.title }}</TestTitlePath
-                  >
-                  <template v-if="selectedRunId">
-                    ·
-                    <NuxtLink :to="`/test-runs/${selectedRunId}`" :class="SENTENCE_LINK_CLASS"
-                      >run #{{ selectedRunId }}</NuxtLink
-                    >, {{ isLatestOccurrence ? 'latest occurrence' : "this test's latest occurrence" }}
-                  </template>
-                  ·
-                  <NuxtLink :to="`/test-run-cases/${selectedExecId}`" :class="SENTENCE_LINK_CLASS"
-                    >Open execution</NuxtLink
-                  >
-                </template>
-              </EvidenceTabs>
-            </div>
-          </template>
-
           <template #diagnosis-summary>{{ diagnosisSummary }}</template>
           <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
           <template #verify-summary>{{ verifySummary }}</template>
@@ -984,14 +961,7 @@ const breadcrumbItems = computed(() => [
               </p>
               <p class="text-xs text-muted">{{ fixPlan.verify.expectation }}</p>
               <div class="flex flex-wrap items-center gap-2">
-                <DesktopRunLocallyButton
-                  :project-id="cluster.project?.id"
-                  :project-label="cluster.project?.label ?? cluster.project?.name"
-                  :cases="affectedRetryCases"
-                  :label="`Re-run the ${affectedTestsLabel}`"
-                  :run-title="`${affectedTestsLabel} of cluster #${cluster.id}`"
-                  :source-run-id="cluster.lastSeenRunId"
-                />
+                <RunButton :place="runPlace" />
                 <ClientOnly>
                   <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
@@ -1032,9 +1002,60 @@ const breadcrumbItems = computed(() => [
           </template>
         </Toolbox>
 
-        <!-- ── The history, folded: occurrences over time, then the activity ── -->
-        <ClusterOccurrenceTrend ref="occurrenceTrend" :cluster-id="cluster.id" :first-seen-at="cluster.firstSeenAt" />
-        <ClusterActivity :cluster-id="cluster.id" />
+        <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
+        <div v-if="hasChangesToShow" ref="scmEl" data-shot="what-changed-card" class="scroll-mt-4">
+          <ClusterInvestigation :project="cluster.project ?? null" />
+        </div>
+
+        <!-- ── Affected tests: the evidence selector, above the evidence, with several tests ── -->
+        <ClusterAffectedTests
+          v-if="!singleTest"
+          v-model:selected-case-id="selectedCaseId"
+          :cluster-id="clusterId"
+          :cases="cluster.affectedTestCases ?? []"
+          :project-id="cluster.project?.id"
+          :project-key="cluster.project?.id"
+          :project-name="cluster.project?.name"
+          @changed="refresh"
+        />
+
+        <!-- ── Evidence, last: it is long, so nothing follows it ──────── -->
+        <div v-if="selectedExecId" class="scroll-mt-4">
+          <EvidenceTabs
+            v-if="execution"
+            ref="evidenceTabs"
+            :test-case="execution"
+            :traces="execTraces ?? []"
+            :has-trace="hasTrace"
+            :default-hint="defaultHint"
+            :fixtures-state="clusterCapState('fixtures')"
+            :coverage-state="clusterCapState('coverage')"
+            :suspect-lines="clusterSuspectLines"
+            :can-decide-fixtures="canDecideClusterCap"
+            help="case.evidence"
+            @decline-fixtures="declineClusterFixtures"
+          >
+            <!-- The test (its title path), the run and the occurrence the evidence is of -->
+            <template v-if="selectedCase" #subject>
+              <TestTitlePath
+                :file-path="selectedCase.filePath"
+                :line="selectedLine"
+                :suite-path="selectedCase.suitePath"
+                :project-key="cluster.project?.id"
+                :project-name="cluster.project?.name"
+                >{{ selectedCase.title }}</TestTitlePath
+              >
+              <template v-if="selectedRunId">
+                ·
+                <NuxtLink :to="`/test-runs/${selectedRunId}`" :class="SENTENCE_LINK_CLASS"
+                  >run #{{ selectedRunId }}</NuxtLink
+                >, {{ isLatestOccurrence ? 'latest occurrence' : "this test's latest occurrence" }}
+              </template>
+              ·
+              <NuxtLink :to="`/test-run-cases/${selectedExecId}`" :class="SENTENCE_LINK_CLASS">Open execution</NuxtLink>
+            </template>
+          </EvidenceTabs>
+        </div>
       </div>
 
       <ErrorState v-else text="Cluster not found." icon="i-lucide-search-x" class="h-64">
@@ -1064,6 +1085,8 @@ const breadcrumbItems = computed(() => [
     :known-issue-key="knownIssue?.key ?? null"
     @linked="onIssueChanged"
   />
+
+  <RunDialog :place="runPlace" />
 
   <!-- Bulk actions triggered from the More menu. -->
   <QuarantineAllButton

@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 /**
- * A credential's secret is read only by `server/utils/credentials.ts`, whose
- * `withCredential` checks the credential's rules and logs the use before it
- * opens it. Any other code of the server, the shared modules or the app (the
+ * A credential's secret, and a person's token for a per-user credential, are
+ * read only by `server/utils/credentials.ts`, whose `withCredential` checks the
+ * credential's rules and logs the use before it opens it. Any other code of the server, the shared modules or the app (the
  * demo included) that reads the secret column, or selects whole credential
  * rows, fails here. The schema and the migrations declare the column and are
  * not scanned; the rest of `server/database/` is.
@@ -21,6 +21,24 @@ const EXTENSIONS = /\.(ts|mts|cts|js|mjs|cjs|vue)$/;
 /** The ways code reads the secret column or a whole credential row. */
 const SECRET_READS: Array<{ what: string; pattern: RegExp }> = [
   { what: 'reads the secret column', pattern: /\bcredentials\s*\.\s*secret\b/ },
+  { what: 'reads a person’s token', pattern: /\bcredentialUserTokens\s*\.\s*secret\b/ },
+  {
+    what: 'reads a person’s token by its name',
+    pattern: /\bcredentialUserTokens\s*\[\s*['"`]secret['"`]\s*\]/,
+  },
+  {
+    what: 'selects whole user token rows',
+    pattern: /\.select\(\s*\)\s*\.from\(\s*(?:[\w$]+\.)?credentialUserTokens\s*\)/,
+  },
+  {
+    what: 'selects every column of the user tokens',
+    pattern: /getTableColumns\(\s*(?:[\w$]+\.)?credentialUserTokens\s*\)/,
+  },
+  { what: 'queries user token rows', pattern: /\.query\s*\.\s*credentialUserTokens\b/ },
+  {
+    what: 'reads user token rows in SQL',
+    pattern: /\bselect\s+(?:\*|[\w."`]+(?:\s*,\s*[\w."`]+)*)\s+from\s+["`]?credential_user_tokens["`]?(?!\w)/i,
+  },
   { what: 'reads the secret column by its name', pattern: /\bcredentials\s*\[\s*['"`]secret['"`]\s*\]/ },
   {
     what: 'selects whole credential rows',
@@ -72,6 +90,7 @@ describe('the credential secret', () => {
       files.some((path) => path.startsWith('server/database/schema') || path.startsWith('server/database/migrations')),
     ).toBe(false);
     expect(secretReads(readFileSync(join(APP_ROOT, OWNER), 'utf8'))).toContain('reads the secret column');
+    expect(secretReads(readFileSync(join(APP_ROOT, OWNER), 'utf8'))).toContain('reads a person’s token');
   });
 
   test('the patterns find each way of reading it', () => {
@@ -85,12 +104,21 @@ describe('the credential secret', () => {
       'sql`SELECT * FROM credentials WHERE id = ${id}`',
       'sql`select secret from "credentials"`',
       'sql`select id, secret from credentials`',
+      'db.select({ secret: credentialUserTokens.secret }).from(credentialUserTokens)',
+      'await db.select().from(schema.credentialUserTokens)',
+      'row = credentialUserTokens["secret"]',
+      'db.select(getTableColumns(credentialUserTokens)).from(credentialUserTokens)',
+      'await db.query.credentialUserTokens.findFirst()',
+      'sql`select secret from credential_user_tokens`',
+      'sql`SELECT * FROM "credential_user_tokens"`',
     ];
     for (const text of reads) expect(secretReads(text), text).not.toEqual([]);
     const allowed = [
       'db.select({ id: credentials.id, name: credentials.name }).from(credentials)',
       'db.select().from(credentialUses)',
       'db.select().from(credentialProjects)',
+      'db.select({ state: credentialUserTokens.state }).from(credentialUserTokens)',
+      'select id, state from credential_user_tokens_backup',
       'await db.update(credentials).set({ secret: sealed })',
       'select id from credential_uses',
       'Only the credential manager reads a secret from credentials it stores.',

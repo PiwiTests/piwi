@@ -49,6 +49,11 @@ function runningKey(subject: DiagnosisSubject): string {
   return subject.scope === 'execution' ? `exec:${subject.executionId}` : `cluster:${subject.cluster.id}`;
 }
 
+/** How many diagnoses this process is running: streamed, asked for, or started by a run's end. */
+export function diagnosesInProgress(): number {
+  return running.size;
+}
+
 export function isDiagnosisRunning(clusterId: number): boolean {
   return running.has(`cluster:${clusterId}`);
 }

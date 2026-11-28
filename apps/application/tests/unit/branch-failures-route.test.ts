@@ -38,7 +38,7 @@ vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params[name]);
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('apiError', apiError);
-vi.stubGlobal('useRuntimeConfig', () => ({ public: { appVersion } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ appVersion, public: {} }));
 
 const route = (await import('../../server/api/projects/[id]/branch-failures.get')).default as unknown as (
   event: FakeEvent,

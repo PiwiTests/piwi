@@ -14,11 +14,32 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Read a credential’s log',
     description:
-      'Returns the uses of a credential, newest first, 50 at a time: `{ items, nextCursor }`, `nextCursor` passed back as `before`. A row says which feature used it (`ci-dispatch`, `ci-check`), for which project, who started it (`actor`, and `apiKey` when it came through one), what it was about (`subjectType` and `subjectId`, a CI action), where it went (`destination`, the origin and path of the request), and how it ended (`result`: `sent`, `ok`, `failed` or `refused`, with its `reason`, the secret masked). A read (`ci-check`) is counted in one row per project, result and hour (`count`); every other use is a row of its own. `projectId`, `feature` and `result` filter the rows. Someone who holds `credentials:manage` reads every credential’s log; a Project admin the logs of those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
+      'Returns the uses of a credential, newest first, 50 at a time: `{ items, nextCursor }`, `nextCursor` passed back as `before`. A row says which feature used it (`ci-dispatch`, `ci-check`, `ci-list`, a repository read or write, an AI call, an integration read or write, a notification), for which project, who started it (`actor`, and `apiKey` when it came through one, and `remoteUser`, their own account on the service, for a per-user credential), what it was about (`subjectType` and `subjectId`: a CI action, a pull request, a commit, a branch or a Slack channel), where it went (`destination`, the origin and path of the request), and how it ended (`result`: `sent`, `ok`, `failed` or `refused`, with its `reason`, the secret masked). A read (`ci-check`, `ci-list`, `scm-read`, `ai-call`, `integration-read`, `credential-test`, a test of a person’s token) is counted in one row per project, result and hour (`count`), and per person for a per-user credential; every other use is a row of its own. `projectId`, `feature` and `result` filter the rows. Someone who holds `credentials:manage` reads every credential’s log; a Project admin the logs of those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'projectId', in: 'query', required: false, schema: { type: 'integer' } },
-      { name: 'feature', in: 'query', required: false, schema: { type: 'string', enum: ['ci-dispatch', 'ci-check'] } },
+      {
+        name: 'feature',
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'string',
+          enum: [
+            'ci-dispatch',
+            'ci-check',
+            'ci-list',
+            'scm-read',
+            'scm-comment',
+            'scm-status',
+            'scm-pull-request',
+            'ai-call',
+            'integration-read',
+            'integration-write',
+            'notification',
+            'credential-test',
+          ],
+        },
+      },
       {
         name: 'result',
         in: 'query',

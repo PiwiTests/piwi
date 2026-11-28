@@ -262,6 +262,13 @@ describe('sanitizeExecutionResources', () => {
       sanitizeExecutionResources({ workerCpuMs: 10, loopUtilization: 7, roles: { kernel: { cpuMs: 1 } } }),
     ).toMatchObject({ workerCpuMs: 10, loopUtilization: 1, roles: null });
   });
+
+  test('keeps an event loop the worker’s runtime did not measure as null, never 0', () => {
+    expect(sanitizeExecutionResources({ workerCpuMs: 10, loopUtilization: null })).toMatchObject({
+      workerCpuMs: 10,
+      loopUtilization: null,
+    });
+  });
 });
 
 describe('the stored report', () => {
@@ -468,6 +475,38 @@ describe('machineFacts and resourceTotals', () => {
     expect(totals.counts).toEqual({ leaked: 1, lingering: 1, idle: 3, piling: 1, handle: 1, probable: 0 });
     expect(totals.peakMemoryBytes).toBe(9.6 * 1024 ** 3);
     expect(totals.artifactBytes).toBe(10_000_000);
+  });
+
+  test('name what the workers’ runtime did not measure, never a busy 0%', () => {
+    const part = report(null);
+    const bun = sanitizeResourceReport({
+      ...part,
+      profile: { ...part.profile!, notMeasured: ['CPU pressure'] },
+      workerHealth: {
+        tests: 5,
+        loopUtilization: null,
+        loopDelayP99Ms: 31,
+        involuntarySwitchesPerTest: 120,
+        gcReported: false,
+      },
+    })!;
+    expect(bun.workerHealth).toEqual({
+      tests: 5,
+      loopUtilization: null,
+      loopDelayP99Ms: 31,
+      involuntarySwitchesPerTest: 120,
+      gcReported: false,
+    });
+    const facts = machineFacts(bun);
+    expect(facts.find((f) => f.label === 'Workers')!.facts).toEqual([
+      'p99 delay 31 ms at worst',
+      '120 involuntary context switches per test',
+    ]);
+    expect(facts.find((f) => f.label === 'Not measured')!.facts).toEqual([
+      'CPU pressure, workers’ event loop busy time, workers’ heap after garbage collection',
+    ]);
+    // A report from a reporter that sends no `gcReported` claims nothing about the heap.
+    expect(machineFacts(report(null)).some((f) => f.label === 'Not measured')).toBe(false);
   });
 });
 

@@ -31,7 +31,8 @@ vi.mock('node:dns', async (importOriginal) => ({
   },
 }));
 
-const { safeFetch, publicOnlyLookup } = await import('../../server/utils/safe-fetch');
+const { safeFetch, publicOnlyLookup, PrivateAddressError } = await import('../../server/utils/safe-fetch');
+const { sendCiServerRequest } = await import('../../server/utils/ci-server-dispatch');
 const { GenericUnfurlProvider } = await import('../../server/utils/unfurl/GenericUnfurlProvider');
 
 let server: Server;
@@ -78,6 +79,23 @@ describe('a name rebound to loopback after the check', () => {
     hits = 0;
     await expect(safeFetch(`http://rebind.example.test:${port}/`)).rejects.toThrow();
     expect(dns.looked).toContain('rebind.example.test');
+    expect(hits).toBe(0);
+  });
+
+  test('a CI server request never reaches it, and says the host resolves to a private address', async () => {
+    dns.connectAddress = '127.0.0.1';
+    hits = 0;
+    const sent = sendCiServerRequest({
+      method: 'GET',
+      url: `http://rebind.example.test:${port}/api/json`,
+      headers: {},
+      body: null,
+      credential: null,
+      custom: false,
+      droppedInputs: [],
+    });
+    await expect(sent).rejects.toBeInstanceOf(PrivateAddressError);
+    await expect(sent).rejects.toThrow(`rebind.example.test:${port} resolves to a private address`);
     expect(hits).toBe(0);
   });
 

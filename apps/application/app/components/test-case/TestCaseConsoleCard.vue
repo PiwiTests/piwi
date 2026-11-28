@@ -3,9 +3,11 @@
  * Browser console output captured while the test ran. With a `storageKey` the
  * card folds to its header with a one-line peek (entry count plus the first
  * entry, ANSI-stripped) and the fold state persists per user; without one it is
- * a plain always-open card.
+ * a plain always-open card. Each entry's place reads 1-based, as an editor
+ * counts lines and columns.
  */
 import { stripAnsi } from '@piwitests/run-ui/ansi';
+import { PAGE_ERROR_TYPE, shownConsoleLocation } from '#shared/console-entries';
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
@@ -43,7 +45,7 @@ const peek = computed(() => {
   const n = props.entries.length;
   const first = props.entries[0];
   const head = `${n} entr${n === 1 ? 'y' : 'ies'}`;
-  return first ? `${head} · ${first.type}: ${stripAnsi(first.text).trim()}` : head;
+  return first ? `${head} · ${consoleTypeLabel(first.type)}: ${stripAnsi(first.text).trim()}` : head;
 });
 
 // Forward reveal so a jump chip or diagnosis citation can unfold + scroll to this card.
@@ -57,27 +59,32 @@ defineExpose({ reveal });
 function consoleTypeColor(type: string): 'error' | 'warning' | 'neutral' {
   switch (type) {
     case 'error':
+    case 'assert':
+    case PAGE_ERROR_TYPE:
       return 'error';
     case 'warning':
       return 'warning';
-    case 'assert':
-      return 'error';
     default:
       return 'neutral';
   }
 }
 
 function consoleTypeIcon(type: string): string {
-  switch (type) {
+  switch (consoleTypeColor(type)) {
     case 'error':
       return 'i-lucide-octagon-x';
     case 'warning':
       return 'i-lucide-alert-triangle';
-    case 'assert':
-      return 'i-lucide-octagon-x';
     default:
       return 'i-lucide-message-square';
   }
+}
+
+const ICON_CLASS = { error: 'text-red-500', warning: 'text-amber-500', neutral: 'text-gray-400' } as const;
+
+/** The entry's type as its badge says it: an uncaught page error reads `page error`. */
+function consoleTypeLabel(type: string): string {
+  return type === PAGE_ERROR_TYPE ? 'page error' : type;
 }
 </script>
 
@@ -104,24 +111,18 @@ function consoleTypeIcon(type: string): string {
       >
         <UIcon
           :name="consoleTypeIcon(entry.type)"
-          :class="
-            entry.type === 'error' || entry.type === 'assert'
-              ? 'text-red-500'
-              : entry.type === 'warning'
-                ? 'text-amber-500'
-                : 'text-gray-400'
-          "
+          :class="ICON_CLASS[consoleTypeColor(entry.type)]"
           class="size-4 mt-0.5 shrink-0"
         />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <UBadge :color="consoleTypeColor(entry.type)" variant="soft" size="xs" class="shrink-0">
-              {{ entry.type }}
+              {{ consoleTypeLabel(entry.type) }}
             </UBadge>
             <span class="truncate">{{ entry.text }}</span>
           </div>
-          <div v-if="entry.location" class="text-xs text-gray-400 mt-0.5 ml-0">
-            {{ entry.location }}
+          <div v-if="entry.location && shownConsoleLocation(entry.location)" class="text-xs text-gray-400 mt-0.5 ml-0">
+            {{ shownConsoleLocation(entry.location) }}
           </div>
         </div>
       </div>

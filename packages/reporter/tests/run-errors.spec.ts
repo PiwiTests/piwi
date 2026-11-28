@@ -62,6 +62,27 @@ describe('an error outside any test', () => {
     );
   });
 
+  it('names the worker it came from, its lane, its Playwright project and the shard the run is, when Playwright does', () => {
+    const teardown = { message: 'Error: could not delete the tenant', stack: 'Error: x\n    at teardown (/a.ts:1:1)' };
+    expect(runErrorOf(teardown, CONFIG_DIR, { parallelIndex: 1, project: { name: 'firefox' } }, 3)).toEqual({
+      message: 'Error: could not delete the tenant',
+      stack: '    at teardown (/a.ts:1:1)',
+      location: null,
+      parallelIndex: 1,
+      shardIndex: 3,
+      playwrightProject: 'firefox',
+    });
+    // A run that is not sharded, and a project with no name (a config without projects).
+    expect(runErrorOf(teardown, CONFIG_DIR, { parallelIndex: 0, project: { name: '' } })).toMatchObject({
+      parallelIndex: 0,
+    });
+    expect(runErrorOf(teardown, CONFIG_DIR, { parallelIndex: 0, project: { name: '' } })).not.toHaveProperty(
+      'playwrightProject',
+    );
+    // An error of no worker (Playwright before 1.60 names none).
+    expect(Object.keys(runErrorOf(teardown, CONFIG_DIR, undefined, 3)!)).toEqual(['message', 'stack', 'location']);
+  });
+
   it('reads its message from its stack when it has none, and is null when it says nothing', () => {
     expect(runErrorOf({ stack: 'Error: boom\n    at x (/a.ts:1:1)' }, CONFIG_DIR)?.message).toBe('Error: boom');
     expect(runErrorOf({}, CONFIG_DIR)).toBeNull();
@@ -158,6 +179,29 @@ describe('the errors of a run outside its tests', () => {
     expect(submitBody.runErrors).toHaveLength(MAX_RUN_ERRORS);
     expect(submitBody.runErrors[0].message).toBe('Error: worker 0 teardown failed');
     expect(submitBody.runErrors.at(-1).message).toBe(`Error: worker ${MAX_RUN_ERRORS - 1} teardown failed`);
+  });
+
+  it("name the worker of an error a worker reported, with its shard, as Playwright's workerInfo gives it", async () => {
+    const piwi = reporter(false);
+    piwi.onBegin({ ...config(), shard: { current: 2, total: 3 } }, fakeSuite());
+    piwi.onError({ message: 'Error: global teardown failed' });
+    piwi.onError(
+      { message: 'Error: worker fixture teardown failed' },
+      { parallelIndex: 3, workerIndex: 7, project: { name: 'webkit' } } as any,
+    );
+    await piwi.onEnd({ status: 'failed' } as any);
+
+    expect(submitBody.runErrors).toEqual([
+      { message: 'Error: global teardown failed', stack: null, location: null },
+      {
+        message: 'Error: worker fixture teardown failed',
+        stack: null,
+        location: null,
+        parallelIndex: 3,
+        shardIndex: 2,
+        playwrightProject: 'webkit',
+      },
+    ]);
   });
 
   it('are left out of a run that had none', async () => {

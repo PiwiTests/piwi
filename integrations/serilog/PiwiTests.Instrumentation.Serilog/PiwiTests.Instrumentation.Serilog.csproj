@@ -4,8 +4,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
     <PackageId>PiwiTests.Instrumentation.Serilog</PackageId>
-    <Version>0.74.0</Version> <!-- x-release-please-version -->
-    <Description>Serilog sink for Piwi Dashboard — WriteTo.PiwiTestLogs() feeds backend log events into the per-request capture sent to Playwright tests</Description>
+    <Version>0.78.0</Version> <!-- x-release-please-version -->
+    <Description>Serilog sink for Piwi — WriteTo.PiwiTestLogs() feeds backend log events into the per-request capture sent to Playwright tests</Description>
     <Authors>piwitests</Authors>
     <RepositoryUrl>https://github.com/PiwiTests/piwi</RepositoryUrl>
     <PackageProjectUrl>https://piwitests.dev</PackageProjectUrl>

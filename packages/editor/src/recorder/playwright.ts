@@ -1,8 +1,9 @@
 /**
  * The project's own Playwright, resolved from the folder of its config: the first of its packages Node finds in a
  * `node_modules` folder there or above it, the test runner's package first, so the CLI that reads the config's
- * options and the library the launcher opens the browser with are the same Playwright. A Playwright Node would only
- * find in a global folder (`NODE_PATH`, `~/.node_modules`) is not the project's.
+ * options and the library the launcher opens the browser with are the same Playwright. A package such a folder holds
+ * as a link to elsewhere (`npm link`, a store outside the project) is the project's; a Playwright Node would only find
+ * in a global folder (`NODE_PATH`, `~/.node_modules`) is not.
  */
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -21,14 +22,23 @@ export function canonicalPath(file: string): string {
   }
 }
 
-/** The real paths of the `node_modules` folders in `dir` and in each folder above it. */
-function nodeModulesOf(dir: string): string[] {
+/** The package a module id names: `@playwright/test` for `@playwright/test/cli`, `playwright` for `playwright/cli`. */
+function packageOf(id: string): string {
+  const parts = id.split('/');
+  return parts.slice(0, id.startsWith('@') ? 2 : 1).join('/');
+}
+
+/**
+ * The real paths of the folders of package `name` in the `node_modules` folder of `dir` and of each folder above it,
+ * each found by its path before following links, as Node looks for it there.
+ */
+function installedIn(dir: string, name: string): string[] {
   const found: string[] = [];
   for (let folder = path.resolve(dir); ; folder = path.dirname(folder)) {
     try {
-      found.push(fs.realpathSync.native(path.join(folder, 'node_modules')));
+      found.push(fs.realpathSync.native(path.join(folder, 'node_modules', name)));
     } catch {
-      // none in this folder
+      // not in this folder
     }
     if (path.dirname(folder) === folder) return found;
   }
@@ -37,16 +47,16 @@ function nodeModulesOf(dir: string): string[] {
 function resolveFirst(from: string, ids: string[]): string | null {
   const dir = canonicalPath(from);
   const require = createRequire(path.join(dir, 'noop.js'));
-  const roots = nodeModulesOf(dir);
-  const inProject = (file: string) =>
-    roots.some((root) => {
-      const relative = path.relative(root, file);
-      return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-    });
   for (const id of ids) {
+    const packages = installedIn(dir, packageOf(id));
+    if (packages.length === 0) continue;
     try {
       const file = canonicalPath(require.resolve(id));
-      if (inProject(file)) return file;
+      const inProject = packages.some((root) => {
+        const relative = path.relative(root, file);
+        return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+      });
+      if (inProject) return file;
     } catch {
       // the next candidate
     }
@@ -54,9 +64,21 @@ function resolveFirst(from: string, ids: string[]): string | null {
   return null;
 }
 
-/** The project's Playwright CLI; null when Playwright is not installed there. */
+/**
+ * The project's Playwright CLI: `@playwright/test/cli`, else the `playwright` bin of the `playwright` package, which
+ * exports no CLI module of its own; null when Playwright is not installed there.
+ */
 export function resolvePlaywrightCli(dir: string): string | null {
-  return resolveFirst(dir, ['@playwright/test/cli', 'playwright/cli', 'playwright/lib/cli/cli']);
+  const cli = resolveFirst(dir, ['@playwright/test/cli']);
+  if (cli) return cli;
+  const manifest = resolveFirst(dir, ['playwright/package.json']);
+  if (!manifest) return null;
+  try {
+    const bin = (JSON.parse(fs.readFileSync(manifest, 'utf8')) as { bin?: { playwright?: unknown } }).bin?.playwright;
+    return typeof bin === 'string' ? path.join(path.dirname(manifest), bin) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The module of the project's Playwright library (`chromium`, `firefox`, `webkit`, `selectors`); null when none. */

@@ -5,6 +5,7 @@
  * my machine** is on, or while the person has requests to show. Read again every 5 seconds while one goes on.
  */
 import type { RunRequestView } from '#shared/handlers/run-requests';
+import { runRequestCanStop, runRequestIsFinal, runRequestSentence, runRequestStatusKey } from '#shared/run-follow-up';
 
 const { isHidden } = await useInstanceCapabilities();
 const toast = useToast();
@@ -112,7 +113,8 @@ function what(request: RunRequestView): string {
       </div>
     </div>
     <p v-else class="text-center text-muted py-6 text-sm">
-      None yet. Open a run or a test and click <strong>Run on my machine</strong>.
+      None yet. Open a run, an execution or a test, click its <strong>Run on my machine</strong> button and pick one of
+      your apps.
     </p>
   </SectionCard>
 </template>

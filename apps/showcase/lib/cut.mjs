@@ -214,8 +214,8 @@ async function stagePage(browser, server, id, { dpr, title }) {
 /**
  * Renders the plan's frames `from` to `to` into `file` (H.264, near lossless): each state drawn on the stage and
  * screenshotted, or the last screenshot sent again when neither the state nor the master's frame changed. It stops,
- * throwing, once `halt.reason` is set (another range failed, or the cut was stopped), and returns only once its
- * encoder has ended.
+ * throwing, once `halt.reason` is set (another range failed, or the cut was stopped), its screenshot in progress
+ * ending as `halt.signal` aborts, and returns only once its encoder has ended.
  */
 async function renderRange({ browser, server, plan, id, from, to, master, frames, fps, dpr, title, file, halt }) {
   const { page } = await stagePage(browser, server, id, { dpr, title });
@@ -268,7 +268,11 @@ async function renderRange({ browser, server, plan, id, from, to, master, frames
       } else {
         if (jpeg) server.frames.set(`r${id}`, jpeg);
         await page.evaluate((s) => window.stage.draw(s), state);
-        const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true });
+        const { data } = await cdp.send(
+          'Page.captureScreenshot',
+          { format: 'png', optimizeForSpeed: true },
+          { signal: halt.signal ?? undefined },
+        );
         shot = Buffer.from(data, 'base64');
         drawn++;
       }
@@ -344,7 +348,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
   const server = await serve();
   // A signal stops the cut through `showcase.mjs`'s handlers, which abort `signal`: every ffmpeg ends, and the browser.
   const browser = await chromium.launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
-  const halt = { reason: null };
+  const halt = { reason: null, signal };
   const stop = () => {
     halt.reason ??= `stopped by ${signal.reason}`;
     for (const child of running) end(child);

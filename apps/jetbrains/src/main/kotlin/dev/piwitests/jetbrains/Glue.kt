@@ -427,14 +427,15 @@ object Glue {
     }
 
     /**
-     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
-     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, and another's where it comes from (`Run #131 on
+     * feature-x (from the desktop app) is running: …`), as VS Code's `liveLine`.
      */
     private fun liveLine(live: LiveRun): String {
         val run = when {
             live.own && live.label != null -> "Run #${live.runId} (${live.label})"
             live.own -> "Your run #${live.runId}"
-            else -> othersRun(live, "Run")
+            else -> othersRun(live, "Run") + (live.from?.let { " ($it)" } ?: "")
         }
         return "\n$run is running: ${liveCount(live)}"
     }
@@ -896,6 +897,27 @@ object Glue {
         runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
 
     /**
+     * One call queued on the event thread for a burst of changes, run for every change made until it runs. A call still
+     * queued `staleMillis` after it was queued is queued again, so one the queue never runs holds no later change back.
+     */
+    class QueuedOnce(private val staleMillis: Long) {
+        /** When the call waiting was queued (a clock in milliseconds), 0 with none waiting. */
+        private val queuedAt = java.util.concurrent.atomic.AtomicLong()
+
+        /** Whether to queue a call `now`: none waits, or the one waiting was queued `staleMillis` ago or more. */
+        fun take(now: Long): Boolean {
+            while (true) {
+                val at = queuedAt.get()
+                if (at != 0L && now - at < staleMillis) return false
+                if (queuedAt.compareAndSet(at, now)) return true
+            }
+        }
+
+        /** The queued call runs: the next change queues another. */
+        fun ran() = queuedAt.set(0)
+    }
+
+    /**
      * `piwi/fileSummary` answers by file URI, each for one state of the file's text (`stamp`) and one count of the changes
      * the service pushed (`pushed`): the gutter and Code Vision of one highlighting pass share one request. An answer
      * older than `ttlMillis`, or one that failed, is asked for again; past `max` files, all are.
@@ -1350,8 +1372,10 @@ object Glue {
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
      * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
-     * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen
-     * (`baselineNoRun`), no connection; else no failure in the run read (`runId`).
+     * that did not prove its token, an instance that refused the key, no project chosen or found, an instance still
+     * being read, no run yet or none for the baseline chosen, no connection, no failure in the run read; else, from a
+     * service that names no state or no sentence, the baseline that found no run (`baselineNoRun`) or no failure in the
+     * run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
         val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
@@ -1360,7 +1384,10 @@ object Glue {
             "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…", links)
             "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
             "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
-            "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", links)
+            "refused" -> EmptyText(view.message ?: "The instance refused the API key.", links)
+            "no-project" -> EmptyText(view.message ?: "No project chosen.", links)
+            "norun" -> EmptyText(view.message ?: baselineNoRun ?: "No run of this branch yet.", links)
+            "clear" -> EmptyText(view.message ?: baselineNoRun ?: runId?.let { "No failure in run #$it" } ?: "No failure in the latest run", links)
             else -> EmptyText(
                 when {
                     baselineNoRun != null -> baselineNoRun
@@ -3209,7 +3236,7 @@ object Glue {
     /**
      * The links of the inlay above a stop, after its paused text, as VS Code's row (`stopLensControls`): Resume, Step and
      * Finish (Resume alone at a failure), then Write code… while the stop offers a code action. Run to the caret, End the
-     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi.
+     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi → Run control.
      */
     fun stopInlayLinks(stop: ShownStop): List<StopLink> =
         stopControls(stop).filter { it != StopControl.RUN_TO_CARET && it != StopControl.END } +
@@ -3221,7 +3248,7 @@ object Glue {
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
      * Record, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
-     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
+     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi → Run control**;
      * the inlay names it shorter, beside the controls.
      */
     enum class StopAction(
@@ -4502,18 +4529,142 @@ object Glue {
 
     /**
      * What the Worker tab says above a CI lane it watches, from the run's session (`sessions` by `ciKey`): the test
-     * running in the lane and the call it is at, else that the lane is between tests, else that the run ended; always
-     * read-only.
+     * running in the lane and the call it is at, or where it stands while held at its failure, else that the lane is
+     * between tests, else that the run ended; read-only but for a held failure.
      */
     fun ciLaneCaption(sessions: Map<String, CiSession>, lane: CiLane): String {
         val name = ciLaneTitle(lane)
         val session = sessions[ciKey(lane.root, lane.runId)] ?: return "$name · the run ended."
-        val test = session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
-            ?: return "$name · between tests · read-only"
+        val test = ciLaneTest(session, lane) ?: return "$name · between tests · read-only"
         val title = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+        (test.held?.state ?: test.paused?.state)?.let { return "$name · $it: $title" }
         val at = test.at?.let { " · ${it.title}" }.orEmpty()
         return "$name · Running $title$at · read-only"
     }
+
+    private fun ciLaneTest(session: CiSession, lane: CiLane): CiTest? =
+        session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
+
+    /** A button of a CI lane as the service offers it: Let it go (`let-go`), Pause, Resume or End the test. */
+    data class CiButton(val command: String, val label: String, val title: String)
+
+    /**
+     * A CI lane's test held at its failure or paused for the run's controllers, and the controls of the lane, as the
+     * service says them (the mirror of VS Code's `ciLaneStop`): where it stands and by or for whom, its call and place
+     * (`at`, where the project holds it), the job's timeout note, the buttons the service offers (Let it go on a held
+     * failure, else its `controls`), the lane's state they follow (`id`, which an ask is kept by: `CiAsks`), and a Pause
+     * waiting or dropped (`ask`). `state` is empty while neither held nor paused.
+     */
+    data class CiStop(
+        val id: String?,
+        val held: Boolean,
+        val state: String,
+        val by: String?,
+        val call: String,
+        val place: String?,
+        val at: CiHeldAt?,
+        val note: String,
+        val buttons: List<CiButton>,
+        val ask: String?,
+    )
+
+    /** The CI lane's running test held or paused, its controls and its Pause asked, as the service says them; null for none. */
+    fun ciLaneStop(sessions: Map<String, CiSession>, lane: CiLane): CiStop? {
+        val test = sessions[ciKey(lane.root, lane.runId)]?.let { ciLaneTest(it, lane) } ?: return null
+        test.held?.let { held ->
+            val buttons = if (held.letGo) listOf(CiButton("let-go", held.letGoLabel, held.letGoTitle)) else emptyList()
+            return CiStop(held.id, true, held.state, held.heldFor, held.error, held.place, held.at, held.note, buttons, null)
+        }
+        val paused = test.paused
+        if (paused == null && test.controls == null && test.pauseAsk == null) return null
+        val buttons = test.controls?.offered.orEmpty().map { CiButton(it.command, it.label, it.title) }
+        return CiStop(
+            test.controls?.id,
+            false,
+            // `Paused by Ana · until 12:05` says the state itself, as the run page says it.
+            paused?.let { it.pausedBy ?: it.state }.orEmpty(),
+            null,
+            paused?.call.orEmpty(),
+            paused?.place,
+            paused?.at,
+            paused?.note.orEmpty(),
+            buttons,
+            test.pauseAsk,
+        )
+    }
+
+    /**
+     * What the Worker tab shows of a CI lane's held or paused test: its lines (where it stands and by or for whom, its
+     * call, the job's timeout note, none while neither), its place (which opens its line where the project holds it:
+     * `placeOpens`), whether it is held (drawn as a failure), the service's buttons, off once one was asked in the
+     * lane's state (`asking`), and a Pause waiting or dropped (`ask`).
+     */
+    data class CiStopShown(
+        val lines: List<String>,
+        val place: String?,
+        val placeOpens: Boolean,
+        val held: Boolean,
+        val buttons: List<CiButton>,
+        val asking: Boolean,
+        val ask: String?,
+    )
+
+    fun ciStopShown(stop: CiStop, asking: Boolean): CiStopShown {
+        val lines = if (stop.state.isEmpty()) emptyList() else listOf(
+            listOfNotNull(stop.state, stop.by).joinToString(" · "),
+            stop.call,
+            stop.note,
+        ).filter { it.isNotBlank() }
+        return CiStopShown(lines, stop.place, stop.at != null, stop.held, stop.buttons, asking, stop.ask)
+    }
+
+    /**
+     * A CI lane's buttons asked in each state of the lane (`CiStop.id`), as `CiAsks` of `@piwitests/run-model/ci` keeps
+     * them for VS Code and the Runs window: one asked in a state, the buttons off until it changes (`seen`), asked again
+     * after a refusal, and, once the instance took the ask (`took`), as soon as the lane shows anything new (`shown`,
+     * whatever its state). On the event thread.
+     */
+    class CiAsks {
+        private class Ask(val state: String, var shown: String? = null)
+
+        private val asks = HashMap<CiLane, Ask>()
+
+        fun asked(lane: CiLane, state: String): Boolean = asks[lane.copy(dashboard = null)]?.state == state
+
+        fun ask(lane: CiLane, state: String): Boolean {
+            if (asked(lane, state)) return false
+            asks[lane.copy(dashboard = null)] = Ask(state)
+            return true
+        }
+
+        fun refused(lane: CiLane, state: String) {
+            if (asked(lane, state)) asks.remove(lane.copy(dashboard = null))
+        }
+
+        fun took(lane: CiLane, state: String, shown: String) {
+            asks[lane.copy(dashboard = null)]?.takeIf { it.state == state }?.shown = shown
+        }
+
+        fun seen(lane: CiLane, state: String?, shown: String? = null) {
+            val key = lane.copy(dashboard = null)
+            val ask = asks[key] ?: return
+            if (ask.state != state || (ask.shown != null && shown != null && ask.shown != shown)) asks.remove(key)
+        }
+    }
+
+    /**
+     * Whether what a button of a CI lane came to (said under the caption) still stands: while the lane stands in the state
+     * it was asked in (`noteState`; null for a note no button gave).
+     */
+    fun ciNoteStands(noteState: String?, state: String?): Boolean = noteState == null || noteState == state
+
+    /** What a control asks of the service for the CI lane the Worker tab shows (`piwi/ciControl`). */
+    fun ciControlParams(lane: CiLane, command: String): CiControlParams =
+        CiControlParams(lane.root, lane.runId, lane.shard, lane.lane, command)
+
+    /** What **Let it go** asks of the service for the CI lane the Worker tab shows (`piwi/ciLetGo`). */
+    fun ciLetGoParams(lane: CiLane): CiLetGoParams = CiLetGoParams(lane.root, lane.runId, lane.shard, lane.lane)
+
 
     /**
      * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its
@@ -4536,7 +4687,7 @@ object Glue {
                 test.project,
                 if (test.retry > 0) "retry ${test.retry}" else "",
                 if (running) ciLane(test) else test.status,
-                if (running) test.at?.title.orEmpty() else "",
+                if (running) test.held?.state ?: test.paused?.state ?: test.at?.title.orEmpty() else "",
             ).filter { it.isNotEmpty() }.joinToString(" · ")
             val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
             var testKey = "$key\n${test.uri.orEmpty()}\n${test.title.orEmpty().joinToString("\u001f")}\n${test.project}"
@@ -4552,7 +4703,7 @@ object Glue {
                     CiRow(
                         "ci-watch",
                         "Watch",
-                        "${ciLane(test)} · read-only",
+                        "${ciLane(test)} · ${test.held?.state ?: test.paused?.state ?: "read-only"}",
                         lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
                         key = "$testKey\nwatch-here",
                     )

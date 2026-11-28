@@ -36,7 +36,11 @@ need the detail behind one of them.
   (`write_keeping_mode_checked`), so a change in between is not overwritten. Connect and Disconnect pass the text they
   read for the same check and report a file that changed meanwhile.
 - **The bridge.** `piwi-desktop mcp-stdio` sends the token only through `connect_proving_token`, and only to
-  `127.0.0.1`.
+  `127.0.0.1`. It carries a client of any MCP revision: a `2026-07-28` request, which names its version in `_meta`, goes
+  out with the headers that mirror its body (`mirrored_headers`: `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` in
+  base64 when a header cannot carry it as it is), a 4xx that carries a JSON-RPC error reaches the client as `/mcp` wrote
+  it, and a `subscriptions/listen` is acknowledged by the bridge itself, with no notification, since `/mcp` sends none
+  and its stream would hold the one connection the bridge reads each answer from.
 
 ## Server session
 
@@ -70,6 +74,9 @@ The bundled server is the hub of every Playwright run the shell starts.
   instead: the run channel of the live editor whose workspace holds its linked folder, when one does (from the
   route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server, else the bundled
   server's.
+- **Where a job in a worktree runs.** The worktree is of the repository's root, and the job runs Playwright, the
+  browser install and `piwi flake` in the linked folder's place in it (`repo_place`, `run_folder`), with its filters
+  anchored there; dependencies install in the nearest folder up to the root that holds a lockfile (`install_folder`).
 - **A run nobody attends** (Flake Lab, a bisect, a lab job, one with `--ui`, or with `--repeat-each` above 1 unless it
   stops at its first failure) ends its ref in `-unattended` (`attended_args`, mirrored by `desktopArgsAttended`), and
   the server never holds its failures.

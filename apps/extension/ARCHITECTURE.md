@@ -968,8 +968,10 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 - The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
-- Every control but Pause, Share live and End the test while a Pause waits for a call (`give-up`, naming the worker)
-  names the stop shown (`since`), so a click made twice never answers the next stop.
+- Every control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the trace so far
+  (`trace`) and End the test while a Pause waits for a call (`give-up`, naming the worker) names the stop shown
+  (`since`), so a click made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share
+  live, Hold failures, Stop the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`).
 - At a stop, the test's controls are Resume, Step and Finish, and End the test where the stop's `intents` list `end`
   (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
@@ -1178,6 +1180,25 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   ends it, after 45 s of silence or on an error, each window hearing why (`ci-ended`, `CiWatchEnd`), shown in the view
   with **Watch on the dashboard**; a refusal (`RunsAnswer.ci`) is said there too, the instance's own sentence when it
   gave one. The view is read-only: no Interact, input, pick or control.
+- **Held**: a run's `live-worker` events say a worker's test held at its failure for the run's controllers
+  (`readCiHold`, kept by shard and worker, forgotten as the run's stream opens again, and a test's only from its own
+  worker), listed on its test (`RunsCiTest.held`, **Failed, held at its line**) and
+  shown above the lane watched in the run page's words (`ciHoldWords`). The watch's `hello` says whether it counts as
+  a controller's, which its windows hear (`ci-controller`); only then, and only on the lane the window watches
+  (`offersLetGo`), **Let it go** sends `ci-let-go` once per hold (`LetGoAsks`, its button off until the hold ends or is refused), which the worker posts on that watch with the held worker
+  (`CiRunsWatch.held`, `letGoCiTest`), saying why not (`unwatched`, `uncontrolled`, `unheld`) or the instance's
+  sentence.
+- **Paused**: each connected worker's latest `live-worker` event is kept too (forgotten as the stream opens again) and
+  listed on its lane's test (`RunsCiTest.live`, `ciWorkerStateOf`): a test paused for the run's controllers shows
+  above the lane in the run page's words (`readCiPause`, `ciPauseWords`, **Paused** in the list), a Pause waiting or
+  dropped under the controls (`ciPauseAskWords`). On a controller's watch of the lane the window offers what
+  `ciControlsOffered` decides (**Pause**, **Resume**, **End the test**), each sending `ci-control` with its command,
+  which the worker posts on that watch for the lane's worker (`CiRunsWatch.laneWorker`, `controlCiTest`), saying why
+  not (`unwatched`, `uncontrolled`, `no-worker`) or the instance's sentence. Let it go and the controls are asked once
+  in each state of the lane (`CiAsks`, `ciStateKey`: its hold, or its test and the instance's `pauseSeq`), their
+  buttons off until it changes, the lane shows anything new after the instance took the ask (`ciShown`), or the ask is
+  refused; what the ask came to shows under them in that state alone (`ciNote.state`), and the box is drawn again as
+  the state changes.
 
 ### Run-level controls, keys and the window's place
 

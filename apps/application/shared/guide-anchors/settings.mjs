@@ -24,6 +24,16 @@ export const SETTINGS_ANCHORS = [
     doc: 'features/desktop',
     sample: { route: '/settings/desktop', surface: 'desktop' },
   },
+  {
+    id: 'team-instance-settings-page',
+    kind: 'page',
+    pages: ['/settings/team-instance'],
+    describes:
+      'Settings → Team instance: the connection to a team instance, and the team project each project’s folder is linked to, for Run on my machine and Team CI.',
+    requires: { permission: 'settings:manage', desktop: true },
+    doc: 'features/compare-with-team',
+    sample: { route: '/settings/team-instance', surface: 'desktop' },
+  },
 
   // Account
   {
@@ -513,10 +523,10 @@ export const SETTINGS_ANCHORS = [
     kind: 'block',
     pages: ['/settings/integrations'],
     describes:
-      'The note under the Jira card: a connection’s base URL is trusted as an administrator’s, so a self-hosted tracker on a private host works.',
+      'The note under the Jira card: a site on a private address is reached only when the environment sets it, PIWI_PRIVATE_HOSTS lists it, or in the desktop app.',
     requires: { capability: 'integrations', permission: 'connections:manage' },
     help: 'settings.integrations.private-host',
-    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
+    doc: 'operate/production-checklist#private-hosts',
     sample: { route: '/settings/integrations' },
   },
 
@@ -916,7 +926,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/about'],
     describes:
-      'Settings → About: the version and build, the Node.js, database and platform, the reporter and Playwright of the latest run, and docs links.',
+      'Settings → About: the version and build, the Node.js, database and platform, the latest run’s reporter and Playwright, the runs in progress, docs links.',
     doc: 'operate/upgrading#verifying-the-upgrade-landed',
     sample: { route: '/settings/about' },
   },
@@ -924,6 +934,56 @@ export const SETTINGS_ANCHORS = [
 
 /** @type {readonly import('./index.d.mts').GuideAnchorExemption[]} */
 export const SETTINGS_EXEMPTIONS = [
+  {
+    rule: 'page',
+    key: '/authorized',
+    reason: 'The page a person lands on after authorizing a credential at its host, in a popup that closes itself.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.destination',
+    reason:
+      'The help of the Destination field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.identity',
+    reason:
+      'The help of the Who it acts as field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.inputs',
+    reason: 'The help of the Inputs field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.oauth-application',
+    reason:
+      'The help of the OAuth client id field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.projects',
+    reason: 'The help of the Projects field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.stored-secret',
+    reason:
+      'The help of the Secret and Variable field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.service',
+    reason: 'The help of the Service field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.token-help-url',
+    reason:
+      'The help of the Where a person creates their token field of the credential form, a modal its New credential and Edit buttons open.',
+  },
   {
     rule: 'field',
     key: 'account.connected-accounts',

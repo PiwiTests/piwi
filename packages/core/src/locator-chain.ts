@@ -5,9 +5,13 @@
  *
  * The grammar is the JavaScript form Playwright's own `asLocator` produces:
  * method calls joined by `.`, with string, regex, number, boolean, object and
- * nested-locator arguments (`filter({ has: getByRole('combobox') })`). Methods
- * outside {@link LOCATOR_CHAIN_METHODS} are refused, so a parsed chain can be
- * rebuilt against a real page through a fixed list of calls.
+ * nested-locator arguments (`filter({ has: getByRole('combobox') })`). Two
+ * links Playwright never prints but a test's code holds are read into the chain
+ * Playwright prints for them: `a.within(b)` becomes `b.locator(a)`, and
+ * `describe('…')`, which only names the locator in reports, is dropped. Methods
+ * outside {@link LOCATOR_CHAIN_METHODS} are refused (`getByRef()` among them),
+ * so a parsed chain can be rebuilt against a real page through a fixed list of
+ * calls.
  */
 
 /** One argument of a locator call. */
@@ -54,10 +58,20 @@ const NARROWING_METHODS: ReadonlySet<string> = new Set([
   'owner',
 ]);
 
-/** Every method a chain may contain. */
-const LOCATOR_CHAIN_METHODS: ReadonlySet<string> = new Set([...LOCATING_METHODS, ...NARROWING_METHODS]);
+/** Calls read into the chain Playwright prints for them: `within(<locator>)` and `describe('…')`. */
+const REWRITTEN_METHODS: ReadonlySet<string> = new Set(['within', 'describe']);
 
-/** Whether a call of `name` locates, narrows or combines a locator: a link of a chain, which acts on nothing. */
+/** Every method a chain may contain. */
+const LOCATOR_CHAIN_METHODS: ReadonlySet<string> = new Set([
+  ...LOCATING_METHODS,
+  ...NARROWING_METHODS,
+  ...REWRITTEN_METHODS,
+]);
+
+/**
+ * Whether a call of `name` locates, narrows, combines, re-roots or describes a locator: a link of a chain, which acts
+ * on nothing.
+ */
 export function isLocatorChainMethod(name: string): boolean {
   return LOCATOR_CHAIN_METHODS.has(name);
 }
@@ -70,7 +84,11 @@ class LocatorParseError extends Error {
   }
 }
 
-/** Where one top-level call of a chain starts and ends in the parsed text. */
+/**
+ * Where the text one top-level call of a chain was read from starts and ends. The calls of `b` in `a.within(b)` were
+ * read inside its parentheses, and the `locator(a)` after them from `a`, the text before `.within`; a `describe('…')`
+ * link has no call, so no span.
+ */
 export interface CallSpan {
   start: number;
   end: number;
@@ -128,31 +146,46 @@ class Parser {
    * A chain of calls joined by `.`. With `lenient`, parsing stops before the
    * first link that doesn't parse instead of failing, so a chain followed by
    * other text (an error message) is read up to where it ends. `spans` receives
-   * where each top-level call starts and ends.
+   * where the text of each top-level call starts and ends.
    */
   parseChain(opts: { lenient?: boolean; spans?: CallSpan[] } = {}): LocatorChain {
     this.skipSpace();
-    const calls: LocatorCall[] = [];
+    const chainStart = this.i;
+    let calls: LocatorCall[] = [];
+    let spans: CallSpan[] = [];
+    let end = this.i;
     for (;;) {
       const before = this.i;
-      if (calls.length > 0) this.i++; // the `.`
+      const first = calls.length === 0;
+      if (!first) this.i++; // the `.`
       this.skipSpace();
       const start = this.i;
+      const scopeSpans: CallSpan[] = [];
+      let call: LocatorCall;
       try {
-        calls.push(this.parseCall(calls.length === 0));
+        call = this.parseCall(first, scopeSpans);
       } catch (error) {
-        if (!opts.lenient || calls.length === 0) throw error;
+        if (!opts.lenient || first) throw error;
         this.i = before;
         break;
       }
-      opts.spans?.push({ start, end: this.i });
-      const end = this.i;
+      if (call.method === 'within') {
+        // `a.within(b)` is `b.locator(a)`.
+        const scope = call.args[0] as { type: 'chain'; chain: LocatorChain };
+        calls = [...scope.chain.calls, { method: 'locator', args: [{ type: 'chain', chain: { calls } }] }];
+        spans = [...scopeSpans, { start: chainStart, end }];
+      } else if (call.method !== 'describe') {
+        calls.push(call);
+        spans.push({ start, end: this.i });
+      }
+      end = this.i;
       this.skipSpace();
       if (this.peek() !== '.') {
         this.i = end;
         break;
       }
     }
+    opts.spans?.push(...spans);
     return { calls };
   }
 
@@ -161,17 +194,35 @@ class Parser {
     return this.i;
   }
 
-  private parseCall(first: boolean): LocatorCall {
+  /**
+   * One call. `within(<locator>)` takes exactly one locator, whose top-level spans go to `scopeSpans`, and
+   * `describe(<string>)` exactly one string.
+   */
+  private parseCall(first: boolean, scopeSpans: CallSpan[]): LocatorCall {
     this.skipSpace();
     const method = this.identifier();
     if (!LOCATOR_CHAIN_METHODS.has(method)) this.fail(`unsupported method ${method}()`);
     if (first && !LOCATING_METHODS.has(method)) this.fail(`${method}() needs a locator before it`);
     this.expect('(');
+    if (method === 'within') {
+      const scope = this.parseChain({ spans: scopeSpans });
+      this.expect(')');
+      return { method, args: [{ type: 'chain', chain: scope }] };
+    }
+    const args = this.parseArgs();
+    if (method === 'describe' && (args.length !== 1 || args[0]!.type !== 'string')) {
+      this.fail('describe() takes one string');
+    }
+    return { method, args };
+  }
+
+  /** The arguments of a call, after its `(` and up to its `)` included. */
+  private parseArgs(): LocatorArg[] {
     const args: LocatorArg[] = [];
     this.skipSpace();
     if (this.peek() === ')') {
       this.i++;
-      return { method, args };
+      return args;
     }
     for (;;) {
       args.push(this.parseValue());
@@ -188,7 +239,7 @@ class Parser {
       this.expect(')');
       break;
     }
-    return { method, args };
+    return args;
   }
 
   private parseValue(): LocatorArg {
@@ -319,9 +370,9 @@ export function parseLocatorChain(expr: string): LocatorChain {
 
 /**
  * Read the chain at the start of `text`, stopping where it ends — before any
- * following text or link that doesn't parse. Returns the chain, each top-level
- * call's span in `text`, and where the chain ends; null when `text` does not
- * start with a locator call.
+ * following text or link that doesn't parse. Returns the chain, the span in
+ * `text` of each of its top-level calls ({@link CallSpan}), and where the chain
+ * ends; null when `text` does not start with a locator call.
  */
 export function scanLocatorChain(text: string): { chain: LocatorChain; spans: CallSpan[]; end: number } | null {
   const parser = new Parser(text);

@@ -1,6 +1,6 @@
 ---
 title: Run on my machine
-description: 'Ask the desktop app or Piwi Runner on your own machine to run Playwright tests from the dashboard: who may ask, how an administrator turns it on, Connected apps, and why a requested run is yours alone.'
+description: "Ask the desktop app or Piwi Runner on your own machine to run Playwright tests from the dashboard: who may ask, how an administrator turns it on, Connected apps, and why a requested run is yours alone."
 lang: en-US
 ---
 
@@ -36,24 +36,24 @@ Turned off or declined, the instance refuses every request for that project, and
 
 ## Connect the desktop app
 
-In Piwi Desktop, open **Settings → Desktop app → Run on my machine**, enter the instance's address and click
+In Piwi Desktop, open **Settings → Team instance**, enter the instance's address and click
 **Connect**. The app opens the instance's page, which asks you to allow **Piwi Desktop** with the code the app shows.
 Once allowed, the app keeps its key in the operating system's keychain (Keychain on macOS, Credential Manager on
 Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs.
 An app connects to one instance at a time. **Disconnect** removes the key from the keychain; the app stays listed in
 the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
-Each project's folder is linked on this machine, per instance, when its first request asks; **Settings → Desktop
-app** lists them, with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
+Each project's folder is linked on this machine, per instance, when its first request asks, or beforehand on
+**Settings → Team instance**, which lists them with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
 in your code folders; a picked folder without the tests gets a better one offered.
 
 ## Ask for a run
 
-**Run on my machine** shows on a run's page (its failed tests, or all of them), on an execution's page and on a test's
-page (that test) while the capability is on for the project and you may ask there. Its window picks what runs, which of
-your apps runs it, and the run options of **Copy retry command**: headed, trace, repeat each, workers and, when the
-tests ran in more than one, the Playwright project. A request holds at most 200 tests; a test with no recorded line is
-left out, and the window says how many. Nobody else's app receives it.
+The run button of a run (its failed tests, or all of them), an execution or a test (that test) lists your apps under
+**Where** where the capability is on and you may ask: **Run on my machine**, or **Run on my machine or CI** with
+[CI actions](./ci-actions). With an app picked, the dialog offers the run options of **Copy retry command**: headed,
+trace, repeat each, workers and, when the tests ran in more than one, the Playwright project. A request holds at most
+200 tests; a test with no recorded line is left out, and the dialog says how many.
 
 ## In the app
 
@@ -73,14 +73,14 @@ the linked folder, and the exact command. Nothing runs until you click **Run**:
 **Not now** declines it, or refuses it with the checks that failed, and the page says which. A request nobody answers
 in the app within 10 minutes ends.
 
-The app takes the command and a key for this one run from its own server, never from the page or the window. The run
-reports to the instance that asked with that key, which starts one run within 30 minutes and nothing else. It shows in
-the app's Local runs while it goes on.
+The app takes the command and a key for this one run from its own server, never from the page or the window. That key
+starts one run within 30 minutes and nothing else. The run shows in the app's Local runs while it goes on.
 
 ## Follow and stop
 
-Once sent, the same window follows the request: waiting for your app, shown in the app, running, ended with its outcome,
-and a link to its run. **Stop** ends it from the page: the app stops the run, or drops a request it has not run. **Run
+Once sent, the dialog follows the request: waiting for your app, shown in the app, running, ended with its outcome,
+and a link to its run. Until it ends, a row above the project's [runs](./ci-rerun#waiting-rows) shows it to you
+alone. **Stop** ends it from the page: the app stops the run, or drops a request it has not run. **Run
 again** sends the same tests with the same options. **Settings → Account → Your runs on my machine** lists your last 20
 requests and their project, with **Stop** for one still going on. Quitting the app stops its requested runs. A run
 that ends while the app's server restarts keeps its outcome. After a crash, the app ends the requests it lost:
@@ -131,6 +131,6 @@ does, so you can show a teammate what happened on your machine. It appears in th
 
 ## Related
 
-- [Desktop app](./desktop): the app that takes requests, and its Settings page
+- [Desktop app](./desktop): the app that takes requests
 - [Desktop app runs](./desktop-runs): the runs the desktop app starts and how you follow them
 - [Share links](./share-links): showing one execution to someone without an account

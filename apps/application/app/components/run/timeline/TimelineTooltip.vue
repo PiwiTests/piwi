@@ -18,6 +18,7 @@ import {
   timelineTooltipSide,
 } from '~/utils/timeline';
 import { stepHookName } from '#shared/step-tree';
+import { lockLabel } from '#shared/test-locks';
 
 const props = defineProps<{
   /** The hover state the timeline shares with its focus overlay: the hovered item and the pointer. */
@@ -255,7 +256,7 @@ const positionStyle = computed(() => {
             class="inline-block size-2 rounded-sm shrink-0"
             :style="{ backgroundColor: lockColorMap?.get(lock) ?? '#a1a1aa' }"
           />
-          {{ lock }}
+          {{ lockLabel(lock) }}
         </span>
       </div>
     </div>

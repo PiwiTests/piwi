@@ -115,7 +115,7 @@ export const PROVIDER_TILES: ProviderTile[] = [
     key: 'none',
     embeddings: true,
     suggest: { main: 'llama3.1', embed: 'nomic-embed-text' },
-    hint: 'The address of your Ollama server, ending in /v1. Start it with ollama serve.',
+    hint: 'The address of your Ollama server, ending in /v1. Start it with ollama serve. Outside the desktop app, the server reaches it once PIWI_PRIVATE_HOSTS lists its host.',
   },
   {
     id: 'lmstudio',
@@ -127,7 +127,7 @@ export const PROVIDER_TILES: ProviderTile[] = [
     key: 'none',
     embeddings: true,
     suggest: {},
-    hint: 'The address of the LM Studio server, ending in /v1. Turn it on in its Developer tab.',
+    hint: 'The address of the LM Studio server, ending in /v1. Turn it on in its Developer tab. Outside the desktop app, the server reaches it once PIWI_PRIVATE_HOSTS lists its host.',
   },
   {
     id: 'openai-compatible',

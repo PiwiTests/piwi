@@ -69,6 +69,24 @@ describe('diffAttempts', () => {
     expect(console[0]!.ref).toEqual({ section: 'console' });
   });
 
+  test('an uncaught page error only on the fail emits a console diff that names it', () => {
+    const failing: AttemptEvidence = {
+      error: 'Error: element not found',
+      consoleLogs: [{ type: 'pageerror', text: 'TypeError: cart is undefined' }],
+      duration: 1000,
+    };
+    const console = diffAttempts(failing, cleanPass()).filter((d) => d.kind === 'console');
+    expect(console).toEqual([
+      {
+        kind: 'console',
+        summary: 'Uncaught page error on only the failing attempt',
+        detail: 'TypeError: cart is undefined',
+        only: 'failing',
+        ref: { section: 'console' },
+      },
+    ]);
+  });
+
   test('a timing-only difference yields a single duration row', () => {
     const failing = cleanPass({ error: null, duration: 8000 });
     const passing = cleanPass({ duration: 1500 });

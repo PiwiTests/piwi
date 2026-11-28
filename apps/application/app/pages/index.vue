@@ -446,8 +446,8 @@ useViewScroll(() => dashboardPanelBody('home'));
                   <div>
                     <div class="font-medium truncate">{{ run.projectLabel || run.projectName }}</div>
                     <div class="text-xs text-gray-400">
-                      Run #{{ run.id }} · {{ formatRelativeTime(run.startTime)
-                      }}<span v-if="ownMark(run)" data-testid="own-run-mark"> · {{ ownMark(run) }}</span>
+                      Run #{{ run.id }}<ClientOnly> · {{ formatRelativeTime(run.startTime) }}</ClientOnly
+                      ><span v-if="ownMark(run)" data-testid="own-run-mark"> · {{ ownMark(run) }}</span>
                     </div>
                   </div>
                   <RunLiveProgress v-if="isLiveRun(run)" :run="run" />

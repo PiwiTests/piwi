@@ -15,7 +15,7 @@ const isDemo = process.env.PIWI_DEMO_MODE === 'true';
 // Static head description for the demo shell — same wording as the docs
 // site's og: cards (apps/docs/.vitepress/config.mts).
 const demoDescription =
-  'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.';
+  'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.';
 
 // The dashboard version is authoritative in `application/package.json`
 // (kept in sync across the monorepo by release-please) — read it once at
@@ -169,7 +169,7 @@ export default defineNuxtConfig({
           meta: [
             { name: 'description', content: demoDescription },
             { property: 'og:type', content: 'website' },
-            { property: 'og:site_name', content: 'Piwi Dashboard' },
+            { property: 'og:site_name', content: 'Piwi' },
             { property: 'og:title', content: 'Piwi: a Playwright dashboard (live demo)' },
             { property: 'og:description', content: demoDescription },
             { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
@@ -215,6 +215,12 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
+    // The dashboard's version and build, private: the server reads them through `server/utils/app-version.ts`, and a
+    // page asks `/api/version`, which tells them to a signed-in caller only. The version is read from the committed
+    // package.json (release-please-maintained).
+    appVersion: pkg.version as string,
+    buildSha: process.env.PIWI_BUILD_SHA || '',
+    buildTime: new Date().toISOString(),
     // Allowlist of glob patterns (comma/newline separated) for wait steps counted
     // as "wasted time". When set, locks the in-app "Wasted time" setting.
     wastedWaitPatterns: process.env.PIWI_WASTED_WAIT_PATTERNS || '',
@@ -277,13 +283,6 @@ export default defineNuxtConfig({
       authEnabled: process.env.PIWI_AUTH_ENABLED === 'true' || isDemo,
       demoMode: process.env.PIWI_DEMO_MODE === 'true',
       demoDataVersion,
-      // Authoritative dashboard version — read from the committed package.json
-      // (release-please-maintained), so it works even in the static demo build
-      // with no server round-trip.
-      appVersion: pkg.version as string,
-      buildSha: process.env.PIWI_BUILD_SHA || '',
-      buildTime: new Date().toISOString(),
-      nodeVersion: process.version,
       // True only in the Tauri desktop build — the launcher starts the bundled
       // server with NUXT_PUBLIC_DESKTOP=true (desktop/src-tauri/src/lib.rs),
       // which Nuxt maps onto this key. Gates desktop-only UI (see useIsDesktop):
@@ -378,7 +377,7 @@ export default defineNuxtConfig({
       // bake the spec into a static file; 'runtime' serves it live from the real SSR server.
       production: isDemo ? 'prerender' : 'runtime',
       meta: {
-        title: 'Piwi Dashboard API',
+        title: 'Piwi API',
         description:
           'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
         version: pkg.version as string,
@@ -398,13 +397,19 @@ export default defineNuxtConfig({
               in: 'cookie',
               // Sealed-session cookie name, pinned in server/utils/auth.ts
               // (SESSION_COOKIE_NAME) rather than left to h3's `h3` default.
-              name: 'piwi_session',
+              name: '__Host-piwi_session',
               description: 'Session cookie authentication (sealed session cookie). Set via POST /api/auth/login.',
+            },
+            operatorToken: {
+              type: 'http',
+              scheme: 'bearer',
+              description:
+                'The operator token of PIWI_OPERATOR_TOKEN, for the operator routes alone: never a session or an API key.',
             },
           },
         },
         // Default security requirement for all endpoints.
-        // Override with `security: []` on auth endpoints (login, oauth, ai/status).
+        // Override with `security: []` on public endpoints (login, oauth, version).
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       } as any,
       // The reference UI is rendered in-app by app/pages/settings/api.vue from the
@@ -447,10 +452,10 @@ export default defineNuxtConfig({
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification, auto-heal and integration outbox sweepers every minute. The
+      // Run the notification, auto-heal and integration outbox sweepers and the storage quota's watch every minute. The
       // tracker status pull ticks here too and runs on the cadence PIWI_INTEGRATIONS_SYNC_MINUTES
       // sets at run time (default every 15 min).
-      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync'],
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync', 'storage:watch'],
       // Fire the report schedules that are due (a missed tick fires on the next sweep)
       '*/5 * * * *': ['reports:schedule'],
       // Read the final state of the pull requests a gate failed on (overrides and escapes)
@@ -463,6 +468,9 @@ export default defineNuxtConfig({
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
       // rows and canonical nodes unseen for thirty runs (independent of retention).
       '23 3 * * *': ['graph:sweep'],
+      // Nightly recount of the stored bytes the storage quota is watched against, after the retention sweep freed what
+      // it frees.
+      '41 3 * * *': ['storage:reconcile'],
     },
   },
 

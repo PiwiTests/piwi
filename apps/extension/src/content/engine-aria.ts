@@ -1010,12 +1010,7 @@ export class DomModel {
     const childCtx: NameContext = { ...ctx, target: ctx.target === 'self' ? 'descendant' : ctx.target };
 
     if (!ctx.includeHidden) {
-      const inHiddenReference =
-        !!ctx.labelledBy?.hidden ||
-        !!ctx.describedBy?.hidden ||
-        !!ctx.nativeTextAlternative?.hidden ||
-        !!ctx.label?.hidden;
-      if (isIgnoredForAria(element) || (!inHiddenReference && this.isHiddenForAria(element))) {
+      if (isIgnoredForAria(element) || (!inHiddenReference(ctx) && this.isHiddenForAria(element))) {
         ctx.visited.add(element);
         return '';
       }
@@ -1240,9 +1235,14 @@ export class DomModel {
     return result;
   }
 
-  /** Name from content: pseudo-element text, then children (slotted, shadow and owned), in order. */
+  /**
+   * Name from content: pseudo-element text, then children (slotted, shadow and owned), in order. Text the browser
+   * does not render (`isTextNodeNotRendered`) is left out, unless hidden content is included or the text is reached
+   * through a hidden reference.
+   */
   private accumulatedText(element: Element, ctx: NameContext): string {
     const tokens: string[] = [];
+    const skipNotRenderedText = !ctx.includeHidden && !inHiddenReference(ctx);
     const visit = (node: Node, skipSlotted: boolean) => {
       if (skipSlotted && (node as Element | Text).assignedSlot) return;
       if (node.nodeType === ELEMENT_NODE) {
@@ -1251,6 +1251,7 @@ export class DomModel {
         if (display !== 'inline' || node.nodeName === 'BR') token = ` ${token} `;
         tokens.push(token);
       } else if (node.nodeType === TEXT_NODE) {
+        if (skipNotRenderedText && isTextNodeNotRendered(node as Text)) return;
         tokens.push(node.textContent || '');
       }
     };
@@ -1432,6 +1433,24 @@ export class DomModel {
     }
     return [];
   }
+}
+
+/** Whether the text alternative is being computed through a reference (label, `aria-labelledby`…) that is hidden. */
+function inHiddenReference(ctx: NameContext): boolean {
+  return (
+    !!ctx.labelledBy?.hidden || !!ctx.describedBy?.hidden || !!ctx.nativeTextAlternative?.hidden || !!ctx.label?.hidden
+  );
+}
+
+/**
+ * Text the browser does not render: a shadow host's own text that no slot takes, and a closed `<details>`'s own
+ * text, outside its `<summary>`. Accessible names leave it out.
+ */
+function isTextNodeNotRendered(text: Text): boolean {
+  const parent = text.parentElement;
+  if (!parent) return false;
+  if (parent.shadowRoot && !text.assignedSlot) return true;
+  return tagNameOf(parent) === 'DETAILS' && !(parent as HTMLDetailsElement).open;
 }
 
 function skippedForTextMatching(node: Element | ShadowRoot): boolean {

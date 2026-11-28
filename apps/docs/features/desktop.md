@@ -43,9 +43,9 @@ The tray menu, in the editors' order: **Show the stopped test** if one waits, **
 running test (machine kept awake), **MCP server…**, **Desktop app settings…**, **Run in background** (off, closing
 the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit Piwi Desktop**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
 and macOS menu items. **Open in a
-window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
+window**, on a worker of the [Local runs tray](./desktop-runs), keeps it on top, then says how its run ended.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
-the Dock icon and in the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)
+the Dock icon and the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)
 says how it stands: blue while it runs, red once a test failed, violet while a test of the app's runs, or of an
 editor's, waits at a stop for you (`1 test waits for you`). A run from the window's Local runs tray flashes its outcome
 as it ends (slate when interrupted), whatever else runs, and, failed while you look away, bounces the Dock icon or
@@ -91,27 +91,22 @@ links against it when no workspace root is set; and a clone serves its git histo
 
 ## Running tests from the app
 
-A run, an execution, a cluster or a test runs again here with the folder's own Playwright, and its button says what:
-**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (×20 until a failure, traced) on a test case.
+A run, an execution, a cluster or a test runs again here with the folder's own Playwright: its run button lists
+**This computer** under **Where**, and says what one click runs, such as **Re-run 3 failed tests** or **Run this
+test** (×20 until a failure, traced) on a test case. Its arrow, its options and its dialog:
+[Run on this computer](./run-on-this-computer).
 
-- **The arrow** shows the command, runs it once headed, in the inspector or UI mode, and sets its
-  options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
-  options…**), stopping at the first failing repetition, and [**Hold failures**](/features/watch-a-run#hold-failures).
-  The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
-  **Project → Settings → Local folder**.
-- **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
 - **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; results come here, with
   **Compare with run #N**. A [bug report](/features/replay-a-bug-report#running-it-with-playwright)
   from Piwi Picker runs there too.
-- **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
 - **Watch, pause and step** each worker from the Local runs tray, running or stopped: [Desktop app
   runs](/features/desktop-runs). While it goes on, the run's own page shows the same (**On your machine**), with its
-  **Stop**, **Hold failures** and output.
+  **Stop**, [**Hold failures**](/features/watch-a-run#hold-failures) and output.
 
 ### Reproducing a failure and finding the breaking commit
 
-A fix plan's [reproduce and bisect](/features/fix-plans#reproduce-and-bisect) recipe can run here, against the linked
-folder, **without touching your checkout**:
+A fix plan's [reproduce and bisect](/features/fix-plans#reproduce-and-bisect) recipe can run here **without touching
+your checkout**:
 
 - **Reproduce here** checks out the failing commit in a throwaway
   [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing yours on an
@@ -155,8 +150,8 @@ The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-check
 
 - **One machine, one user.** It accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Local runs need the checkout**: a linked folder with Playwright installed, plus `git` and your package manager for
-  reproduce, bisect (one repository) and the lab.
+- **Local runs need the checkout**: a linked folder (a monorepo's subfolder works) with Playwright installed, plus `git`
+  and your package manager for reproduce, bisect (one repository) and the lab.
 - **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal),
   [share links](/features/share-links) or Jira webhook; email only with SMTP set.
 
@@ -164,5 +159,6 @@ The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-check
 
 - [Reporter](/guide/reporter#finding-the-desktop-app-automatically)
 - [MCP server](/features/mcp)
+- [Run on this computer](/features/run-on-this-computer)
 - [Desktop app runs](/features/desktop-runs)
 - [Write, run and fix a test](./write-run-fix)

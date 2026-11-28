@@ -8,6 +8,7 @@
  * offset on the timeline reads against, and it carries the page at the failure.
  */
 import type { TimelineItem, TimelineLane } from '#shared/failure-timeline';
+import { isConsoleErrorType } from '#shared/console-entries';
 
 /** Every item type, in the order the axis stacks its lanes and the chips read. */
 export const TIMELINE_TYPES: readonly TimelineLane[] = ['steps', 'network', 'console', 'dialogs', 'backend'];
@@ -117,12 +118,13 @@ export function countTimelineTypes(items: readonly Pick<TimelineItem, 'lane'>[])
 
 /**
  * Whether an item is a problem — a failed step or request, an error or fatal
- * console/backend entry — or a warning. Anything else is ordinary.
+ * console/backend entry, an uncaught page error — or a warning. Anything else is
+ * ordinary.
  */
 export function timelineItemSeverity(item: FilterableItem): 'error' | 'warning' | null {
   if (item.failed) return 'error';
   const status = item.status?.toLowerCase();
-  if (status === 'error' || status === 'fatal') return 'error';
+  if (isConsoleErrorType(status) || status === 'fatal') return 'error';
   if (status === 'warning' || status === 'warn') return 'warning';
   return null;
 }

@@ -6903,6 +6903,86 @@
   "runs_stateFailed": {
     "message": "Falhou, retido na sua linha"
   },
+  "runs_heldFor": {
+    "message": "Retido para $names$ · até $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Retido · até $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Deixar seguir"
+  },
+  "runs_letGoTitle": {
+    "message": "Encerrar a retenção: o teste é desmontado como seria, com o resultado inalterado"
+  },
+  "runs_heldJobTimeout": {
+    "message": "O tempo limite do próprio job de CI continua correndo."
+  },
+  "runs_pausedBy": {
+    "message": "Pausado por $name$ · até $time$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_pausedUntil": {
+    "message": "Pausado · até $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_ciResumeTitle": {
+    "message": "Deixar o teste seguir de onde está pausado"
+  },
+  "runs_pauseAsked": {
+    "message": "Pausa pedida"
+  },
+  "runs_pauseAskedBy": {
+    "message": "Pausa pedida por $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "A pausa foi descartada: $why$",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Retirar a pausa: o teste segue sem parar"
+  },
   "runs_stateRunning": {
     "message": "Em execução"
   },
@@ -7493,7 +7573,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Assistir mostra aqui a página de um teste em execução."
+    "message": "Só para assistir: elas rodam na CI, então nada aqui as conduz, exceto Pausar, Retomar, Encerrar o teste e Deixar seguir, para quem pode controlá-las. Assistir mostra aqui a página de um teste em execução."
   },
   "runs_ciTests": {
     "message": "Testes em execução agora"
@@ -7551,6 +7631,21 @@
   },
   "runs_ciRefusedNoTest": {
     "message": "Nenhum teste rodou ainda na raia deste worker."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Deixar seguir passa pela visualização desta janela sobre o worker: assista a ele de novo primeiro."
+  },
+  "runs_ciNotController": {
+    "message": "Você pode assistir a esta execução, não controlá-la."
+  },
+  "runs_ciNotHeld": {
+    "message": "Este worker não retém nenhum teste com falha agora."
+  },
+  "runs_ciControlUnwatched": {
+    "message": "Os controles passam pela visualização desta janela sobre o worker: assista a ele de novo primeiro."
+  },
+  "runs_ciNoWorker": {
+    "message": "Nenhum worker roda nesta raia agora."
   },
   "runs_ciRefusedOffline": {
     "message": "A instância não respondeu."

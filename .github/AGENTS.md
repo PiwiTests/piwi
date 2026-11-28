@@ -13,8 +13,9 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   same commit: branch protection reads the latest run of a check. `pr-lint.yml` runs every job on every event for this
   reason.
 - **Node through `setup-workspace`.** The version comes from the root `.node-version`. A job names another version only
-  to test a floor (`engines`, Node 22) or a bundled runtime (the desktop's: the root `Dockerfile`'s Node, read by
-  `apps/desktop/scripts/node-version.mjs`). `npm ci` runs with `--prefer-offline --no-audit --fund=false`.
+  to test a floor (`engines`, Node 22), a bundled runtime (the desktop's: the root `Dockerfile`'s Node, read by
+  `apps/desktop/scripts/node-version.mjs`) or the Node of Playwright's own images (Node 26, a package smoke leg).
+  `npm ci` runs with `--prefer-offline --no-audit --fund=false`.
 - **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), and saved as soon as it is
   installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every run:
   the workflows that use it run on pull requests, where a cache serves its own pull request alone, or once a night
@@ -90,6 +91,6 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   exercises it. A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request:
   every target builds and packs, and nothing is published.
 - **The other workflows never run on a pull request** (`docs.yml`, `edge.yml`, `release-please.yml`,
-  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`, `nightly-showcase.yml`, and `perf-comment.yml`, which
-  runs from the default branch only): actionlint is the only check a change to them gets before it merges, with
+  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`, `nightly-showcase.yml`, `playwright-next.yml`, and
+  `perf-comment.yml`, which runs from the default branch only): actionlint is the only check a change to them gets before it merges, with
   `perf-suite.test.ts` for `perf-comment.yml`'s marker and the workflow name it follows.

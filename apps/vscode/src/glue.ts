@@ -314,15 +314,16 @@ function liveCount(live: LiveRun): string {
 }
 
 /**
- * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
- * Claude Code) is running: …` for one a person did not start.
+ * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, `Run #124 (Started by Claude
+ * Code) is running: …` for one a person did not start, and another's where it comes from: `Run #131 on feature-x (from
+ * the desktop app) is running: …`.
  */
 function liveLine(live: LiveRun): string {
   const run = live.own
     ? live.label
       ? `Run #${live.runId} (${live.label})`
       : `Your run #${live.runId}`
-    : othersRun(live, 'Run');
+    : `${othersRun(live, 'Run')}${live.from ? ` (${live.from})` : ''}`;
   return `${run} is running: ${liveCount(live)}`;
 }
 
@@ -373,6 +374,55 @@ export function flakyTestsByRoot(result: FailuresResult | null): Map<string, num
 /** What opens a config's flaky tests: `Show the run's 2 flaky tests`, as the JetBrains plugin's action says it. */
 export function showFlakyTestsLabel(count: number): string {
   return count === 1 ? "Show the run's flaky test" : `Show the run's ${count} flaky tests`;
+}
+
+/** The states whose sentence, from the service, the failures view shows while its tree draws no node. */
+const FAILURES_MESSAGE_STATES: ReadonlySet<string> = new Set([
+  'clear',
+  'norun',
+  'unreachable',
+  'desktop-unproven',
+  'refused',
+  'no-project',
+  'loading',
+]);
+
+/**
+ * What the failures view shows while its tree draws no node: the service's sentence for its state
+ * (`FailuresResult.view`) as the view's message (`TreeView.message`), with a node for each action the state links, as
+ * VS Code shows no welcome under a message; else, from a service that names no state, no failure in the run it read.
+ * In any other state, no message, and `package.json`'s welcome shows with its links.
+ */
+export function failuresViewEmpty(result: FailuresResult | null): {
+  message: string | undefined;
+  links: FailureNode[];
+} {
+  const view = result?.view;
+  if (view) {
+    const message = FAILURES_MESSAGE_STATES.has(view.state) ? (view.message ?? undefined) : undefined;
+    return {
+      message,
+      links: message
+        ? view.links.map((l) => ({
+            key: `link:${l.vscode}`,
+            kind: 'link' as const,
+            label: l.label,
+            description: '',
+            tooltip: '',
+            icon: 'arrow-right',
+            state: 'none' as const,
+            url: null,
+            command: l.vscode,
+            children: [],
+          }))
+        : [],
+    };
+  }
+  const run = result?.run;
+  return {
+    message: run ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.` : undefined,
+    links: [],
+  };
 }
 
 /** The failures view's description: how it groups, and the baseline it compares with (`by file · Baseline: …`). */
@@ -758,7 +808,8 @@ export const FAILURES_GROUPINGS: Array<{ grouping: FailuresGrouping; label: stri
 export interface FailureNode {
   /** Stable across refreshes: the view keeps a node's expansion and selection by it. */
   key: string;
-  kind: FailureTreeNode['kind'];
+  /** The service's node's kind, or `link`: an action the view's state links while the tree draws no failure. */
+  kind: FailureTreeNode['kind'] | 'link';
   label: string;
   description: string;
   /** Markdown. */
@@ -777,6 +828,8 @@ export interface FailureNode {
   place?: { uri: string; line: number };
   /** On a flaky test: what looks into it, which **Look into this flake…** offers. */
   actions?: PiwiCommand[];
+  /** On a link: the command a click runs. */
+  command?: string;
   children: FailureNode[];
 }
 

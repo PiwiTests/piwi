@@ -11,18 +11,31 @@
  * `tests/unit/credential-secret-access.test.ts` fails on any other code that
  * reads the secret column.
  */
-import { and, eq, gte, isNotNull, isNull, lt, sql } from 'drizzle-orm';
-import { appSettings, credentialProjects, credentials, credentialUses, projects } from '../database/schema';
+import { and, eq, gte, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
+import {
+  appSettings,
+  credentialProjects,
+  credentials,
+  credentialAuthorizations,
+  credentialUserTokens,
+  credentialUses,
+  projects,
+} from '../database/schema';
 import type { DbClient } from '../database';
 import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
+import { isUniqueViolation } from './db-errors';
 import {
   CREDENTIAL_READ_FEATURES,
   credentialLogDestination,
   credentialRefusal,
   isCredentialSecretEnv,
+  userTokenActorRefusal,
+  userTokenMissingMessage,
+  userTokenTestUrl,
   type CredentialFeature,
   type CredentialService,
   type CredentialUseResult,
+  type UserTokenRefusalCode,
 } from '#shared/credentials';
 import {
   freeCredentialName,
@@ -31,7 +44,14 @@ import {
   readInstanceScmCredentialIds,
   type CredentialRecord,
 } from '#shared/handlers/credentials';
-import { SCM_API_DESTINATIONS, scmApiDestination, scmDestinationHost } from '#shared/scm-urls';
+import {
+  oauthEndpoints,
+  SCM_API_DESTINATIONS,
+  scmApiDestination,
+  scmDestinationHost,
+  type OAuthEndpoints,
+} from '#shared/scm-urls';
+import { requestOAuthTokens, revokeOAuthToken, type OAuthClient, type OAuthTokenAnswer } from './oauth-token-requests';
 import { configuredGitlabHosts } from './scm/gitlab-hosts';
 import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
@@ -154,11 +174,16 @@ function envCredential(service: CredentialService): {
     destination,
     user: process.env.PIWI_CI_SERVER_USER?.trim() || null,
     secret,
-    allowedInputs: (process.env.PIWI_CI_SERVER_ALLOWED_INPUTS ?? '')
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean),
+    allowedInputs: instanceCiServerAllowedInputs(),
   };
+}
+
+/** The action inputs a request carrying the instance's CI server credential may send (`PIWI_CI_SERVER_ALLOWED_INPUTS`). */
+export function instanceCiServerAllowedInputs(): string[] {
+  return (process.env.PIWI_CI_SERVER_ALLOWED_INPUTS ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -257,6 +282,12 @@ export interface CredentialUse {
   custom: boolean;
   actor: CredentialActor;
   subject?: { type: string; id: string };
+  /**
+   * A token not saved yet, which a test of a per-user credential sends instead
+   * of the actor's stored one (feature `credential-test`, to the one URL the
+   * credential's tokens are tested at).
+   */
+  candidate?: OpenedCredential;
 }
 
 /** What a use opens: the user name and the secret, for this one request. */
@@ -272,8 +303,385 @@ export interface OpenedCredential {
  */
 export type CredentialWriteGate = <T>(run: () => Promise<T>, failure: (value: T) => string | null) => Promise<T>;
 
-/** A use the credential's rules refuse; its message names the credential and the reason, never the secret. */
-export class CredentialRefusedError extends Error {}
+/**
+ * A use the credential's rules refuse; its message names the credential and
+ * the reason, never the secret. A use of a per-user credential refused for who
+ * asked carries a `code` and the credential, so a page can ask the person for
+ * their token.
+ */
+export class CredentialRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly code: UserTokenRefusalCode | null = null,
+    readonly credential: { id: number; name: string } | null = null,
+  ) {
+    super(message);
+  }
+}
+
+/** A person's token sealed with its credential, its person and the destination it may be sent under. */
+export function sealUserToken(
+  token: { credentialId: number; userId: number; destination: string },
+  opened: UserTokenSecret,
+): string {
+  return encryptSecret(
+    JSON.stringify({
+      ...token,
+      user: opened.user ?? '',
+      secret: opened.secret,
+      ...(opened.refresh ? { refresh: opened.refresh } : {}),
+      ...(opened.expiresAt ? { expiresAt: opened.expiresAt } : {}),
+    }),
+    getEncryptionKey(),
+  );
+}
+
+/**
+ * A person's token as sealed: the secret sent, and for an OAuth token its
+ * refresh token and when the access token expires (epoch ms).
+ */
+export interface UserTokenSecret extends OpenedCredential {
+  refresh?: string | null;
+  expiresAt?: number | null;
+}
+
+/** A sealed user token, opened, or null when its seal does not match its credential, person and destination. */
+function openUserToken(
+  stored: string,
+  token: { credentialId: number; userId: number; destination: string },
+): UserTokenSecret | null {
+  try {
+    const value = JSON.parse(decryptSecret(stored, getEncryptionKey())) as Record<string, unknown>;
+    if (
+      value.credentialId !== token.credentialId ||
+      value.userId !== token.userId ||
+      value.destination !== token.destination ||
+      typeof value.secret !== 'string' ||
+      !value.secret
+    ) {
+      return null;
+    }
+    return {
+      user: typeof value.user === 'string' && value.user ? value.user : null,
+      secret: value.secret,
+      refresh: typeof value.refresh === 'string' && value.refresh ? value.refresh : null,
+      expiresAt: typeof value.expiresAt === 'number' ? value.expiresAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** How long before it expires an OAuth access token is refreshed, when it is opened. */
+export const OAUTH_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+/** The one URL a per-user credential's tokens are tested at: Jenkins' `whoAmI`, or the repository host's user endpoint. */
+export function perUserTestUrl(record: { service: CredentialService; destination: string }): string | null {
+  if (record.service === 'scm') return oauthEndpoints(record.destination, configuredGitlabHosts())?.user ?? null;
+  return userTokenTestUrl(record.destination);
+}
+
+/**
+ * The OAuth application of a per-user SCM credential, its client secret
+ * opened for one exchange with the host, sealed with the host's token
+ * endpoint; or why it cannot be had.
+ */
+async function openOAuthClient(
+  db: DbClient,
+  record: CredentialRecord,
+): Promise<{ endpoints: OAuthEndpoints; client: OAuthClient } | { refusal: string }> {
+  const endpoints = oauthEndpoints(record.destination, configuredGitlabHosts());
+  if (!record.perUser || !endpoints || !record.oauthClientId) {
+    return { refusal: `The credential "${record.name}" authorizes nobody through OAuth.` };
+  }
+  const [row] = await db.select({ secret: credentials.secret }).from(credentials).where(eq(credentials.id, record.id));
+  const opened = openStoredSecret(row?.secret ?? null, endpoints.token, null, record.name);
+  if (!('secret' in opened)) return { refusal: opened.refusal };
+  return { endpoints, client: { id: record.oauthClientId, secret: opened.secret } };
+}
+
+/** Log one exchange with a host's OAuth endpoints, counted per person, the client and the tokens never in it. */
+async function logOAuthExchange(
+  db: DbClient,
+  record: CredentialRecord,
+  userId: number | null,
+  url: string,
+  result: CredentialUseResult,
+  reason: string | null,
+): Promise<void> {
+  await countRead(
+    db,
+    {
+      credentialId: record.id,
+      credentialName: record.name,
+      feature: 'credential-oauth',
+      projectId: null,
+      userId,
+      apiKeyId: null,
+      remoteUser: null,
+      subjectType: null,
+      subjectId: null,
+      destination: credentialLogDestination(url),
+      result,
+      reason,
+    },
+    true,
+  );
+}
+
+/**
+ * Exchange the code a host sent back after a person authorized a per-user SCM
+ * credential's OAuth application, with the PKCE verifier when the host checks
+ * one; the client secret is opened for that one request. Logged as an OAuth
+ * exchange of the person.
+ */
+export async function exchangeOAuthCode(
+  db: DbClient,
+  record: CredentialRecord,
+  userId: number,
+  grant: { code: string; verifier: string | null; redirectUri: string },
+): Promise<OAuthTokenAnswer> {
+  const opened = await openOAuthClient(db, record);
+  if ('refusal' in opened) return { ok: false, reason: 'client' };
+  const answer = await requestOAuthTokens(opened.endpoints, opened.client, {
+    grant_type: 'authorization_code',
+    code: grant.code,
+    redirect_uri: grant.redirectUri,
+    ...(grant.verifier ? { code_verifier: grant.verifier } : {}),
+  });
+  await logOAuthExchange(
+    db,
+    record,
+    userId,
+    opened.endpoints.token,
+    answer.ok ? 'ok' : 'failed',
+    answer.ok ? null : OAUTH_FAILURES[answer.reason],
+  );
+  return answer;
+}
+
+/**
+ * A person's OAuth token refreshed at the host, saved in place of the one
+ * read (`sealed`) only while that one is still the row's: a refresh another
+ * request made first wins, and its token is read again. A refused refresh
+ * marks the token `invalid`. Answers the token with its sealed value as the
+ * row holds it, or null when it is refused or cannot be had.
+ */
+async function refreshUserToken(
+  db: DbClient,
+  record: CredentialRecord,
+  token: { id: number; userId: number; sealed: string },
+  opened: UserTokenSecret,
+): Promise<{ token: UserTokenSecret; sealed: string } | null> {
+  const client = await openOAuthClient(db, record);
+  if ('refusal' in client || !opened.refresh) return null;
+  const answer = await requestOAuthTokens(client.endpoints, client.client, {
+    grant_type: 'refresh_token',
+    refresh_token: opened.refresh,
+  });
+  await logOAuthExchange(
+    db,
+    record,
+    token.userId,
+    client.endpoints.token,
+    answer.ok ? 'ok' : 'failed',
+    answer.ok ? null : OAUTH_FAILURES[answer.reason],
+  );
+  const current = and(eq(credentialUserTokens.id, token.id), eq(credentialUserTokens.secret, token.sealed));
+  if (!answer.ok) {
+    // Another request refreshed it first, with the refresh token this one sent: its token is the person's now.
+    const newer = await reread();
+    if (newer) return newer;
+    // Only the person's grant refused is theirs to give again; a refused client is the administrator's to fix.
+    if (answer.reason === 'refused') {
+      await db.update(credentialUserTokens).set({ state: 'invalid' }).where(current);
+    }
+    return null;
+  }
+  const next: UserTokenSecret = {
+    user: null,
+    secret: answer.tokens.access,
+    refresh: answer.tokens.refresh ?? opened.refresh,
+    expiresAt: answer.tokens.expiresAt,
+  };
+  const nextSealed = sealUserToken(
+    { credentialId: record.id, userId: token.userId, destination: record.destination },
+    next,
+  );
+  const updated = await db
+    .update(credentialUserTokens)
+    .set({
+      secret: nextSealed,
+      expiresAt: next.expiresAt ? new Date(next.expiresAt) : null,
+      // A refused refresh of another request that raced this one never leaves the new token refused.
+      state: 'ready',
+    })
+    .where(current)
+    .returning({ id: credentialUserTokens.id });
+  if (updated.length > 0) return { token: next, sealed: nextSealed };
+  const newer = await reread();
+  if (!newer && (await rowGone())) {
+    // The token was removed from Piwi while it was refreshed: the one the host just gave is revoked too.
+    if (client.endpoints.revoke)
+      await revokeAtHost(db, record, client, [{ userId: token.userId, token: next.refresh ?? next.secret }]);
+    return null;
+  }
+  return newer;
+
+  async function rowGone(): Promise<boolean> {
+    const [row] = await db
+      .select({ id: credentialUserTokens.id })
+      .from(credentialUserTokens)
+      .where(eq(credentialUserTokens.id, token.id));
+    return !row;
+  }
+
+  /** The person's token as the row holds it now, when another request saved a newer one; else null. */
+  async function reread(): Promise<{ token: UserTokenSecret; sealed: string } | null> {
+    const [row] = await db
+      .select({ secret: credentialUserTokens.secret, state: credentialUserTokens.state })
+      .from(credentialUserTokens)
+      .where(eq(credentialUserTokens.id, token.id));
+    if (!row || row.secret === token.sealed || row.state !== 'ready') return null;
+    const newer = openUserToken(row.secret, {
+      credentialId: record.id,
+      userId: token.userId,
+      destination: record.destination,
+    });
+    return newer ? { token: newer, sealed: row.secret } : null;
+  }
+}
+
+/** What the log says of a failed exchange with a host's OAuth endpoints, never the host's own text. */
+const OAUTH_FAILURES: Record<'refused' | 'client' | 'unreachable', string> = {
+  refused: 'The host refused the grant.',
+  client: 'The host refused the OAuth application: check its client id and secret.',
+  unreachable: 'The host could not be reached.',
+};
+
+/** How many revocations run at once, and how long a removal waits for them all. */
+const REVOCATION_CONCURRENCY = 4;
+const REVOCATION_DEADLINE_MS = 15_000;
+
+/** A per-user SCM credential's OAuth client, opened for revocations; null when its host revokes nothing. */
+export type RevocationClient = { endpoints: OAuthEndpoints; client: OAuthClient } | null;
+
+/**
+ * Open a per-user SCM credential's OAuth client for the revocations of its
+ * people's tokens, before anything changes the credential: once its host or
+ * its application changes, the stored client secret is no longer the one
+ * these tokens were given to.
+ */
+export async function openRevocationClient(db: DbClient, record: CredentialRecord): Promise<RevocationClient> {
+  if (!record.perUser || record.service !== 'scm') return null;
+  const client = await openOAuthClient(db, record);
+  return 'refusal' in client || !client.endpoints.revoke ? null : client;
+}
+
+/**
+ * Revoke OAuth tokens at their host, a few at a time, and wait for them at
+ * most `REVOCATION_DEADLINE_MS`: a revocation that fails or is still waiting
+ * then leaves the token to expire at the host. Each one is logged.
+ */
+async function revokeAtHost(
+  db: DbClient,
+  record: CredentialRecord,
+  client: NonNullable<RevocationClient>,
+  tokens: Array<{ userId: number | null; token: string }>,
+): Promise<void> {
+  const queue = [...tokens];
+  const worker = async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      const revoked = await revokeOAuthToken(client.endpoints, client.client, next.token);
+      await logOAuthExchange(
+        db,
+        record,
+        next.userId,
+        client.endpoints.revoke!,
+        revoked ? 'ok' : 'failed',
+        revoked ? null : 'The host did not revoke the token.',
+      ).catch(() => undefined);
+    }
+  };
+  const all = Promise.all(Array.from({ length: Math.min(REVOCATION_CONCURRENCY, tokens.length) }, worker));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, REVOCATION_DEADLINE_MS);
+  });
+  await Promise.race([
+    all.then(
+      () => undefined,
+      () => undefined,
+    ),
+    deadline,
+  ]);
+  clearTimeout(timer);
+}
+
+/**
+ * Remove people's tokens for a per-user credential (one person's, or every
+ * one's when `userId` is null) from Piwi, then revoke the OAuth ones at their
+ * host where it offers revocation, with `client` when the caller opened it
+ * before changing the credential. Returns how many went.
+ */
+export async function revokeUserTokens(
+  db: DbClient,
+  record: CredentialRecord,
+  userId: number | null,
+  client?: RevocationClient,
+): Promise<number> {
+  // An authorization still pending would save a token for what the credential no longer is.
+  if (userId == null) {
+    await db.delete(credentialAuthorizations).where(eq(credentialAuthorizations.credentialId, record.id));
+  }
+  const revoking = client === undefined ? await openRevocationClient(db, record) : client;
+  const removed = await db
+    .delete(credentialUserTokens)
+    .where(
+      userId == null
+        ? eq(credentialUserTokens.credentialId, record.id)
+        : and(eq(credentialUserTokens.credentialId, record.id), eq(credentialUserTokens.userId, userId)),
+    )
+    .returning({ userId: credentialUserTokens.userId, secret: credentialUserTokens.secret });
+  if (revoking) {
+    const tokens = removed.flatMap((row) => {
+      const opened = openUserToken(row.secret, {
+        credentialId: record.id,
+        userId: row.userId,
+        destination: record.destination,
+      });
+      return opened ? [{ userId: row.userId, token: opened.refresh ?? opened.secret }] : [];
+    });
+    if (tokens.length > 0) await revokeAtHost(db, record, revoking, tokens);
+  }
+  return removed.length;
+}
+
+/**
+ * Open the OAuth tokens a person holds, while their account still exists, and
+ * answer what revokes them at their hosts once the account is gone: a
+ * deletion that is refused (the last administrator) revokes nothing.
+ */
+export async function prepareUserTokenRevocation(db: DbClient, userId: number): Promise<() => Promise<void>> {
+  const held = await db
+    .select({ credentialId: credentialUserTokens.credentialId, secret: credentialUserTokens.secret })
+    .from(credentialUserTokens)
+    .where(eq(credentialUserTokens.userId, userId));
+  const revocations: Array<() => Promise<void>> = [];
+  for (const row of held) {
+    const record = await loadCredentialRecord(db, row.credentialId);
+    if (!record) continue;
+    const client = await openRevocationClient(db, record);
+    const opened = openUserToken(row.secret, { credentialId: record.id, userId, destination: record.destination });
+    if (!client || !opened) continue;
+    revocations.push(() =>
+      revokeAtHost(db, record, client, [{ userId: null, token: opened.refresh ?? opened.secret }]),
+    );
+  }
+  return async () => {
+    await Promise.all(revocations.map((revoke) => revoke().catch(() => undefined)));
+  };
+}
 
 /** The text with every occurrence of the secret, and of the Basic pairs it is sent in, replaced by `****`. */
 export function maskCredentialSecret(text: string, opened: OpenedCredential | null): string {
@@ -323,15 +731,28 @@ const cut = (text: string | null): string | null => (text ? text.slice(0, MAX_RE
  * anything is sent. A use that changes something outside Piwi is one log row,
  * written as `sent` before the request and settled after it; a read
  * (`CREDENTIAL_READ_FEATURES`), refused or not, adds to the row of its
- * credential, feature, project, result and hour once it ends. `failure` reads a failure from what
+ * credential, feature, project, result and hour once it ends (and person, for a
+ * per-user credential). `failure` reads a failure from what
  * `send` returned (a refused answer); a throw is a failure too, rethrown with
  * the secret masked.
+ *
+ * A per-user credential sends the token of the use's actor: a person in a
+ * session, never an API key, whose token is `ready`; `unauthorized` reads from
+ * what `send` returned that the service refused it, which marks it `invalid`.
+ * A test sends the token not saved yet (`candidate`) to the one URL tokens are
+ * tested at (`userTokenTestUrl`).
  */
 export async function withCredential<T>(
   db: DbClient,
   use: CredentialUse,
   send: (opened: OpenedCredential) => Promise<T>,
   failure?: (value: T) => string | null,
+  options: {
+    unauthorized?: (value: T) => boolean;
+    /** Whether a thrown error says the service refused the token (401), which marks a person's token `invalid`. */
+    unauthorizedError?: (message: string) => boolean;
+    refresh?: boolean;
+  } = {},
 ): Promise<T> {
   const [row] = await db
     .select({
@@ -344,16 +765,109 @@ export async function withCredential<T>(
     .where(eq(credentials.id, use.credentialId));
   const record = row ? await loadCredentialRecord(db, use.credentialId) : null;
   const name = record?.name ?? `#${use.credentialId}`;
-  let refusal = record ? credentialRefusal(record, use) : 'The credential was deleted: pick another one.';
-  let secret: string | null = null;
+  const testing = use.feature === 'credential-test';
+  let refusal = !record
+    ? 'The credential was deleted: pick another one.'
+    : testing
+      ? // A test serves no project, and goes to the one URL the credential's tokens are tested at,
+        // which a destination narrowed to a folder does not hold.
+        (credentialRefusal({ ...record, allProjects: true }, { ...use, url: record.destination }) ??
+        (record.perUser && use.url === perUserTestUrl(record)
+          ? null
+          : `The credential "${name}" tests a token only at ${perUserTestUrl(record) ?? 'its user endpoint'}.`))
+      : credentialRefusal(record, use);
+  let code: UserTokenRefusalCode | null = null;
+  let opened: OpenedCredential | null = null;
+  let userToken: { id: number; remoteUser: string; sealed: string } | null = null;
   if (!refusal && record && row) {
-    if (row.managedBy === 'env') {
-      secret = envSecret(record.service, row.secretEnv ?? null);
-      if (!secret) refusal = `The credential "${name}" is set by environment variables that are unset.`;
+    if (record.perUser) {
+      const actorRefusal = userTokenActorRefusal(name, use.actor);
+      if (actorRefusal) {
+        refusal = actorRefusal.message;
+        code = actorRefusal.code;
+      } else if (use.candidate) {
+        // A typed token is sent only to be tested, never with a request that acts.
+        if (testing) opened = use.candidate;
+        else refusal = `The credential "${name}" sends a typed token only to test it.`;
+      } else {
+        const [token] = await db
+          .select({
+            id: credentialUserTokens.id,
+            secret: credentialUserTokens.secret,
+            state: credentialUserTokens.state,
+            remoteUser: credentialUserTokens.remoteUser,
+          })
+          .from(credentialUserTokens)
+          .where(
+            and(eq(credentialUserTokens.credentialId, record.id), eq(credentialUserTokens.userId, use.actor.userId!)),
+          );
+        // A test sends a token the service refused before, to see whether it is taken again.
+        const unsealed =
+          token && (token.state === 'ready' || testing)
+            ? openUserToken(token.secret, {
+                credentialId: record.id,
+                userId: use.actor.userId!,
+                destination: record.destination,
+              })
+            : null;
+        // An OAuth token near its expiry is refreshed as it opens, and not again in a write gate (`refresh: false`),
+        // where the provider holds the token opened for its reads.
+        let current: UserTokenSecret | null = unsealed;
+        let sealed = token?.secret ?? '';
+        if (
+          unsealed?.expiresAt &&
+          token &&
+          options.refresh !== false &&
+          unsealed.expiresAt - Date.now() < OAUTH_REFRESH_MARGIN_MS
+        ) {
+          const refreshed = await refreshUserToken(
+            db,
+            record,
+            { id: token.id, userId: use.actor.userId!, sealed: token.secret },
+            unsealed,
+          );
+          // The sealed value goes with the token sent, so a refusal marks that one alone, never a newer one.
+          current = refreshed?.token ?? (unsealed.expiresAt > Date.now() ? unsealed : null);
+          if (refreshed) sealed = refreshed.sealed;
+          const [now] = current
+            ? []
+            : await db
+                .select({ state: credentialUserTokens.state })
+                .from(credentialUserTokens)
+                .where(eq(credentialUserTokens.id, token.id));
+          if (!current && now?.state === 'ready') {
+            // The host could not renew it (unreachable, or the OAuth application refused): nothing for the person to do.
+            refusal = `The credential "${name}" could not renew your token at its host: try again shortly.`;
+          }
+        }
+        if (!refusal && current && token) {
+          opened = { user: current.user, secret: current.secret };
+          userToken = { id: token.id, remoteUser: token.remoteUser, sealed };
+        } else if (!refusal && unsealed && token) {
+          refusal = userTokenMissingMessage(name, 'invalid');
+          code = 'user-token-required';
+        } else if (!refusal) {
+          // A token that no longer opens (another secret key, another destination) is asked for again.
+          if (token && token.state === 'ready') {
+            await db
+              .update(credentialUserTokens)
+              .set({ state: 'invalid' })
+              .where(and(eq(credentialUserTokens.id, token.id), eq(credentialUserTokens.secret, token.secret)));
+          }
+          refusal = userTokenMissingMessage(name, token ? 'invalid' : 'missing');
+          code = 'user-token-required';
+        }
+      }
+    } else if (use.candidate) {
+      refusal = `The credential "${name}" is shared: it holds its own secret.`;
+    } else if (row.managedBy === 'env') {
+      const secret = envSecret(record.service, row.secretEnv ?? null);
+      if (secret) opened = { user: record.user, secret };
+      else refusal = `The credential "${name}" is set by environment variables that are unset.`;
     } else {
-      const opened = openStoredSecret(row.secret, record.destination, row.secretEnv ?? null, name);
-      if ('secret' in opened) secret = opened.secret;
-      else refusal = opened.refusal;
+      const stored = openStoredSecret(row.secret, record.destination, row.secretEnv ?? null, name);
+      if ('secret' in stored) opened = { user: record.user, secret: stored.secret };
+      else refusal = stored.refusal;
     }
   }
   const base = {
@@ -363,37 +877,48 @@ export async function withCredential<T>(
     projectId: use.projectId,
     userId: use.actor.userId,
     apiKeyId: use.actor.apiKeyId,
+    remoteUser: userToken?.remoteUser ?? null,
     subjectType: use.subject?.type ?? null,
     subjectId: use.subject?.id ?? null,
     destination: credentialLogDestination(use.url),
   };
   const read = CREDENTIAL_READ_FEATURES.includes(use.feature);
-  if (refusal || !secret || !record) {
+  // A per-user credential's reads are counted per person, so a row never names another person's account.
+  const perPerson = record?.perUser === true;
+  if (refusal || !opened || !record) {
     const refused = { ...base, result: 'refused' as const, reason: cut(refusal) };
-    if (read) await countRead(db, refused);
+    if (read) await countRead(db, refused, perPerson);
     else await db.insert(credentialUses).values(refused);
-    throw new CredentialRefusedError(refusal ?? `The credential "${name}" cannot be used.`);
+    throw new CredentialRefusedError(
+      refusal ?? `The credential "${name}" cannot be used.`,
+      code,
+      record ? { id: record.id, name: record.name } : null,
+    );
   }
 
-  const opened: OpenedCredential = { user: record.user, secret };
   const [written] = read
     ? [null]
     : await db
         .insert(credentialUses)
         .values({ ...base, result: 'sent' })
         .returning({ id: credentialUses.id });
-  await db.update(credentials).set({ lastUsedAt: new Date() }).where(eq(credentials.id, record.id));
+  const now = new Date();
+  await db.update(credentials).set({ lastUsedAt: now }).where(eq(credentials.id, record.id));
+  if (userToken) {
+    await db.update(credentialUserTokens).set({ lastUsedAt: now }).where(eq(credentialUserTokens.id, userToken.id));
+  }
 
+  const used = opened;
   const settle = async (result: CredentialUseResult, reason: string | null) => {
     try {
-      const masked = cut(reason ? maskCredentialSecret(reason, opened) : null);
+      const masked = cut(reason ? maskCredentialSecret(reason, used) : null);
       if (written) {
         await db
           .update(credentialUses)
           .set({ result, reason: masked, lastAt: new Date() })
           .where(eq(credentialUses.id, written.id));
       } else {
-        await countRead(db, { ...base, result, reason: masked });
+        await countRead(db, { ...base, result, reason: masked }, perPerson);
       }
     } catch (err) {
       console.error('[credentials] Recording a use failed:', err);
@@ -402,22 +927,144 @@ export async function withCredential<T>(
 
   let value: T;
   try {
-    value = await send(opened);
+    value = await send(used);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await settle('failed', message);
-    const masked = maskCredentialSecret(message, opened);
+    if (userToken && options.unauthorizedError?.(message)) {
+      await db
+        .update(credentialUserTokens)
+        .set({ state: 'invalid' })
+        .where(and(eq(credentialUserTokens.id, userToken.id), eq(credentialUserTokens.secret, userToken.sealed)));
+    }
+    const masked = maskCredentialSecret(message, used);
     throw masked === message ? e : new Error(masked);
   }
   const failed = failure?.(value) ?? null;
   await settle(failed ? 'failed' : 'ok', failed);
+  // A person's token the service refuses is not sent again until they give it anew; one saved since stays as it is.
+  if (userToken && options.unauthorized?.(value)) {
+    await db
+      .update(credentialUserTokens)
+      .set({ state: 'invalid' })
+      .where(and(eq(credentialUserTokens.id, userToken.id), eq(credentialUserTokens.secret, userToken.sealed)));
+  }
   return value;
+}
+
+/**
+ * Save a person's tested token for a per-user credential, sealed with the
+ * credential, the person and its destination, in place of the one they had.
+ * Refused when another person already gave a token for the same account
+ * (`remoteUser`, ignoring case), so a shared account is never saved as one
+ * person's own.
+ */
+export async function saveUserToken(
+  db: DbClient,
+  token: {
+    credentialId: number;
+    userId: number;
+    destination: string;
+    remoteUser: string;
+    /** The OAuth application the token was given to, for an OAuth token. */
+    oauthClientId?: string;
+  },
+  opened: UserTokenSecret,
+): Promise<{ saved: true } | { saved: false; reason: 'account-taken' | 'changed'; message: string }> {
+  const taken = {
+    saved: false as const,
+    reason: 'account-taken' as const,
+    message: `Another person already gave a token for the account "${token.remoteUser}": each person gives their own.`,
+  };
+  // The credential's destination or OAuth application changed while the token was tested: it is not saved.
+  const [current] = await db
+    .select({
+      destination: credentials.destination,
+      perUser: credentials.perUser,
+      oauthClientId: credentials.oauthClientId,
+    })
+    .from(credentials)
+    .where(eq(credentials.id, token.credentialId));
+  if (
+    !current?.perUser ||
+    current.destination !== token.destination ||
+    (token.oauthClientId !== undefined && current.oauthClientId !== token.oauthClientId)
+  ) {
+    return {
+      saved: false,
+      reason: 'changed',
+      message: 'The credential changed while your token was tested: give it again.',
+    };
+  }
+  const holders = await db
+    .select({ userId: credentialUserTokens.userId, remoteUser: credentialUserTokens.remoteUser })
+    .from(credentialUserTokens)
+    .where(eq(credentialUserTokens.credentialId, token.credentialId));
+  const account = token.remoteUser.toLowerCase();
+  if (holders.some((h) => h.userId !== token.userId && h.remoteUser.toLowerCase() === account)) return taken;
+  const now = new Date();
+  const fields = {
+    remoteUser: token.remoteUser,
+    secret: sealUserToken(token, opened),
+    state: 'ready',
+    testedAt: now,
+    expiresAt: opened.expiresAt ? new Date(opened.expiresAt) : null,
+  };
+  const own = and(
+    eq(credentialUserTokens.credentialId, token.credentialId),
+    eq(credentialUserTokens.userId, token.userId),
+  );
+  try {
+    if (holders.some((h) => h.userId === token.userId)) {
+      await db.update(credentialUserTokens).set(fields).where(own);
+      return { saved: true };
+    }
+    try {
+      await db
+        .insert(credentialUserTokens)
+        .values({ ...fields, credentialId: token.credentialId, userId: token.userId, createdAt: now });
+    } catch (err) {
+      // Two saves of one person's token at once: the slower one replaces the row the other inserted.
+      if (!isUniqueViolation(err)) throw err;
+      await db.update(credentialUserTokens).set(fields).where(own);
+    }
+  } catch (err) {
+    // Another person saved the same account at the same moment: the account's unique index refuses the slower one.
+    if (isUniqueViolation(err)) return taken;
+    throw err;
+  }
+  return { saved: true };
+}
+
+/**
+ * Record a test of a person's saved token: when it ran and, when the service
+ * refused it, that it is `invalid`. A token saved again since the test started
+ * (`startedAt`) is the person's new one, which the test did not send: it stays
+ * as it is.
+ */
+export async function recordUserTokenTest(
+  db: DbClient,
+  token: { credentialId: number; userId: number },
+  state: 'ready' | 'invalid' | null,
+  startedAt: Date,
+): Promise<void> {
+  await db
+    .update(credentialUserTokens)
+    .set({ testedAt: new Date(), ...(state ? { state } : {}) })
+    .where(
+      and(
+        eq(credentialUserTokens.credentialId, token.credentialId),
+        eq(credentialUserTokens.userId, token.userId),
+        lte(credentialUserTokens.testedAt, startedAt),
+      ),
+    );
 }
 
 /** Add one read to the row of its credential, feature, project, result and hour, or start that row. */
 async function countRead(
   db: DbClient,
   row: typeof credentialUses.$inferInsert & { result: CredentialUseResult },
+  perPerson = false,
 ): Promise<void> {
   const now = new Date();
   const hour = new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS);
@@ -433,6 +1080,9 @@ async function countRead(
         row.projectId == null ? isNull(credentialUses.projectId) : eq(credentialUses.projectId, row.projectId),
         eq(credentialUses.result, row.result),
         gte(credentialUses.createdAt, hour),
+        ...(perPerson
+          ? [row.userId == null ? isNull(credentialUses.userId) : eq(credentialUses.userId, row.userId)]
+          : []),
       ),
     )
     .limit(1);
@@ -445,6 +1095,7 @@ async function countRead(
         reason: row.reason ?? null,
         userId: row.userId ?? null,
         apiKeyId: row.apiKeyId ?? null,
+        remoteUser: row.remoteUser ?? null,
         subjectType: row.subjectType ?? null,
         subjectId: row.subjectId ?? null,
         destination: row.destination ?? null,

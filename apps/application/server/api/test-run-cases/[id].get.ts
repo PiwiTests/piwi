@@ -10,8 +10,8 @@ import {
 import { resolveWastedSettings } from '../../utils/wasted-settings';
 import { codeownersOwnerResolver } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
-import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
-import { executionRerunTarget } from '#shared/handlers/ci-rerun-target';
+import { requestCredentialActor } from '../../utils/credentials';
+import { ciDispatchAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -26,7 +26,12 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run case ID');
-  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
+  const { db, projectId, user } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveTestRunCaseProjectId,
+    'Test run case',
+  );
 
   // Only custom patterns force a recompute; with the defaults the stored
   // wasted_time_ms is served as-is.
@@ -36,6 +41,8 @@ export default eventHandler(async (event) => {
   // CI target are configured — signals only the server can resolve. A CI run is
   // offered only to a viewer who may start one.
   const mayDispatch = await holdsProjectPermission(event, projectId, ['run:control']);
+  // An API key never starts an action on a per-user credential: it is offered as unavailable to one.
+  const actor = requestCredentialActor(event, user);
   const [row] = await db
     .select({ testRunId: testRunsCases.testRunId, testCaseId: testRunsCases.testCaseId })
     .from(testRunsCases)
@@ -43,13 +50,22 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun, flakeLabCi] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     row && mayDispatch
-      ? ciRerunAvailability(db, projectId, row.testRunId, null, async () => {
-          const target = await executionRerunTarget(db, id);
-          return target ? [target.rerunCase] : [];
-        }).catch(() => null)
+      ? ciDispatchAvailability(
+          db,
+          projectId,
+          { from: 'execution', executionId: id, scope: 'test' },
+          user.id,
+          actor,
+        ).catch(() => null)
       : Promise.resolve(null),
     row?.testCaseId != null && mayDispatch
-      ? flakeLabCiAvailability(db, projectId, row.testCaseId).catch(() => null)
+      ? ciDispatchAvailability(
+          db,
+          projectId,
+          { from: 'flake-lab', testCaseId: row.testCaseId, flakeLab: 'reproduce' },
+          user.id,
+          actor,
+        ).catch(() => null)
       : Promise.resolve(null),
   ]);
 

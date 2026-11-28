@@ -40,6 +40,41 @@ describe('extractErrorSignature', () => {
     expect(save.normalizedMessage).not.toBe(cancel.normalizedMessage);
   });
 
+  test('keeps action timeouts in a frame apart by the locator inside it', () => {
+    const timeoutOn = (locator: string) =>
+      `TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${locator}\n    at tests/checkout.spec.ts:31:7`;
+    for (const frame of ['frameLocator()', "frameLocator('#pay')", "locator('#pay').contentFrame()"]) {
+      const card = extractErrorSignature(timeoutOn(`${frame}.getByLabel('Card number')`));
+      const expiry = extractErrorSignature(timeoutOn(`${frame}.getByLabel('Expiry date')`));
+      expect(card.normalizedMessage).toBe(expiry.normalizedMessage);
+      expect(card.selector).toBe(`${frame}.getByLabel('Card number')`);
+      expect(expiry.selector).toBe(`${frame}.getByLabel('Expiry date')`);
+    }
+  });
+
+  test('masks both spellings of a named frame alike, and leaves any frame as it is', () => {
+    expect(maskSelector("frameLocator('#pay').getByRole('row', { name: 'Order 42' })")).toBe(
+      "locator('#pay').contentFrame().getByRole('row', { name: <STR> })",
+    );
+    expect(maskSelector("locator('#pay').contentFrame().getByLabel('Card number')")).toBe(
+      maskSelector("frameLocator('#pay').getByLabel('Card number')"),
+    );
+    expect(maskSelector('frameLocator("iframe[title=\\"Pay\\"]").frameLocator(\'#inner\').getByText(\'Pay\')')).toBe(
+      'locator("iframe[title=\\"Pay\\"]").contentFrame().locator(\'#inner\').contentFrame().getByText(\'Pay\')',
+    );
+    expect(maskSelector("frameLocator().getByLabel('Card number')")).toBe("frameLocator().getByLabel('Card number')");
+    expect(maskSelector("getByTestId('checkout').frameLocator('iframe').getByLabel('Card')")).toBe(
+      "getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card')",
+    );
+  });
+
+  test('leaves a frameLocator() written inside an argument as it is', () => {
+    expect(maskSelector('getByText("frameLocator(\'#x\')")')).toBe('getByText("frameLocator(\'#x\')")');
+    expect(maskSelector('getByText("frameLocator(\'#x\')")')).not.toBe(
+      maskSelector('getByText("locator(\'#x\').contentFrame()")'),
+    );
+  });
+
   test('names an empty error', () => {
     expect(extractErrorSignature('').signature).toBe('Unknown error');
   });

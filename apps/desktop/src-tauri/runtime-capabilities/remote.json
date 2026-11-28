@@ -49,6 +49,7 @@
     "allow-desktop-find-request-folders",
     "allow-desktop-link-request-folder",
     "allow-desktop-unlink-request-folder",
+    "allow-desktop-link-team-project",
     "allow-desktop-run-requested-tests",
     "allow-desktop-run-repro",
     "allow-desktop-reproduce-here",

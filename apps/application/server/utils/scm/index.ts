@@ -147,7 +147,12 @@ export async function openScmProvider(
   try {
     return await withCredential(db, { ...use, feature: 'scm-read' }, async (opened) =>
       scmProviderForUrl(repository, opened.secret)!.gateWrites((write, run, failure) =>
-        withCredential(db, { ...use, feature: write.feature, subject: write.subject }, () => run(), failure),
+        // The provider holds the token opened above: a write does not refresh it again, and a 401 the host answers
+        // marks a person's token refused, so they are asked for it again.
+        withCredential(db, { ...use, feature: write.feature, subject: write.subject }, () => run(), failure, {
+          refresh: false,
+          unauthorizedError: (message) => /\bfailed \(401\)/.test(message),
+        }),
       ),
     );
   } catch (e) {

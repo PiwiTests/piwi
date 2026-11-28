@@ -6,10 +6,18 @@
  * project (its id when it gives none); a request for a project with none asks for its folder in its confirmation.
  * Disconnecting removes the key from the keychain; it stays listed in the instance's Connected apps until it is revoked
  * there. Its parts are shared with each host's own views (`DesktopTeamSignIn`, `DesktopTeamConnectForm`,
- * `DesktopTeamFolders`), and what they do is `useDesktopTeamConnection`'s.
+ * `DesktopTeamFolders`), and what they do is `useDesktopTeamConnection`'s. A host that lists the folders in a view of
+ * its own passes `folders: false`.
  */
-/** The app's name, as the instance's page asks the person to allow it. */
-defineProps<{ appName: string }>();
+withDefaults(
+  defineProps<{
+    /** The app's name, as the instance's page asks the person to allow it. */
+    appName: string;
+    /** List the linked folders here. */
+    folders?: boolean;
+  }>(),
+  { folders: true },
+);
 
 const { connection, connected, busy, keeping, loadConnection, loadFolders, disconnect } = useDesktopTeamConnection();
 const words = useRunUiWords();
@@ -50,7 +58,7 @@ watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')
     <DesktopTeamSignIn v-if="connection.state === 'signing-in'" :app-name="appName" />
     <DesktopTeamConnectForm v-else-if="!connected" />
     <template v-else>
-      <div class="space-y-1">
+      <div v-if="folders" class="space-y-1">
         <div class="text-muted">{{ t('runui_connectionLinkedFolders') }}</div>
         <DesktopTeamFolders />
       </div>

@@ -10,6 +10,7 @@ import {
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
+import { withShownConsoleLocations } from '#shared/console-entries';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { workerNumber } from '#shared/worker-lane';
 import { describeProjectRunScope, type ProjectRunScope } from '#shared/project-run-scope';
@@ -84,6 +85,9 @@ import {
 } from '#shared/handlers/cluster-merge-suggestions';
 import { approveSuggestedMerge } from '../merge-suggestion-approve';
 import { rerunClusterInCi } from '../ci-rerun';
+import { findCiDispatch } from '#shared/handlers/ci-dispatches';
+import { ciDispatchForReader } from '#shared/ci-dispatches';
+import { ciDispatchRequestOf } from '#shared/ci-dispatch-request';
 import { createEnrichedLink } from '../integrations/link-create';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
@@ -121,7 +125,12 @@ import { projects, testRuns, testRunsCases, testCases, failureClusters, failureD
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
-import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import {
+  MCP_TOOL_DEFS,
+  DESKTOP_MCP_TOOL_DEFS,
+  MCP_SCREENSHOT_MAX_BYTES,
+  MCP_SCREENSHOT_MAX_EDGE,
+} from '#shared/mcp-tools';
 import { collectReportBundle } from '#shared/reports/collect';
 import { assertDashboardScope } from '#shared/reports/request';
 import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
@@ -170,7 +179,15 @@ import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { caseOutput, inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
-import { executionFailed, failurePageScreenshot } from '#shared/file-classify';
+import {
+  fitImageForAgent,
+  imageMediaTypeOf,
+  toolImagesOf,
+  withToolImages,
+  type FittedImage,
+  type ToolImage,
+} from './images';
+import { contentTypeForPath, executionFailed, failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
 import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
@@ -375,6 +392,8 @@ export interface McpContext {
   scope: ProjectScope;
   /** The API key the request was made with; null for a session or with authentication off. */
   apiKeyId?: number | null;
+  /** The caller reads tool results as text only, as the in-app assistant does: a handler attaches no image. */
+  textOnly?: boolean;
 }
 
 /** The caller of a write tool, as the reporter of a hand-back outcome. */
@@ -499,8 +518,41 @@ export interface McpTool extends McpToolDef {
 
 // ── Tool content wrapper ─────────────────────────────────────────────────────
 
-export function toContent(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
-  return { content: [{ type: 'text', text: JSON.stringify(data, null, 0) }] };
+type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
+
+/** A handler's result as MCP content: its JSON, then each image `withToolImages` attached, after its caption. */
+export function toContent(data: unknown): { content: ToolContent[] } {
+  return {
+    content: [
+      { type: 'text', text: JSON.stringify(data, null, 0) },
+      ...toolImagesOf(data).flatMap((img): ToolContent[] => [
+        { type: 'text', text: img.caption },
+        { type: 'image', data: img.data, mimeType: img.mimeType },
+      ]),
+    ],
+  };
+}
+
+/** A screenshot as `get_case_screenshots` lists it: the stored file, and the image sent with `content: true`. */
+interface ScreenshotItem {
+  name: string;
+  mediaType: string;
+  dataLength: number;
+  atFailure?: true;
+  width?: number;
+  height?: number;
+  sentAs?: { mediaType: string; width: number | null; height: number | null; dataLength: number };
+  notSent?: string;
+}
+
+/** The line sent before a screenshot's image block. */
+function screenshotCaption(name: string, atFailure: boolean, fitted: FittedImage): string {
+  const what = `Screenshot ${name}${atFailure ? ', the page the test failed on' : ''}`;
+  if (!fitted.reencoded || !fitted.original) return `${what}:`;
+  const { width, height } = fitted.original;
+  return width === fitted.width && height === fitted.height
+    ? `${what}, re-encoded as JPEG to fit the size limit:`
+    : `${what}, downscaled from ${width}×${height} to ${fitted.width}×${fitted.height}:`;
 }
 
 /** Compact a resolution into the agent-facing shape (bounded test sample). */
@@ -865,6 +917,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           filePath: e.location?.file ?? null,
           line: e.location?.line ?? null,
           column: e.location?.column ?? null,
+          worker: workerNumber(e.parallelIndex),
+          shardIndex: e.shardIndex ?? null,
+          playwrightProject: e.playwrightProject ?? null,
         }),
       ),
       environments: await mcpRunEnvironments(db, run.id),
@@ -1319,7 +1374,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             status: row.status,
             error: trunc(row.error, 1500),
             steps: row.steps,
-            consoleLogs: row.consoleLogs,
+            consoleLogs: withShownConsoleLocations(row.consoleLogs),
             webVitals: row.webVitals,
             ariaSnapshot: trunc(evidence.ariaSnapshot, 4000),
           }),
@@ -1347,41 +1402,52 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const screenshotRows = withContent ? allRows.slice(0, 3) : allRows;
 
     const storage = getStorage();
-    const results: Array<{ name: string; mediaType: string; dataLength: number; atFailure?: true; data?: string }> = [];
+    const limits = { maxEdge: MCP_SCREENSHOT_MAX_EDGE, maxBytes: MCP_SCREENSHOT_MAX_BYTES };
+    const results: ScreenshotItem[] = [];
+    const images: ToolImage[] = [];
 
     for (const f of screenshotRows) {
+      let buf: Buffer;
       try {
-        const buf = await storage.readFile(f.path);
-        const ext = f.path.toLowerCase().split('.').pop() || 'png';
-        const mediaType =
-          ext === 'jpg' || ext === 'jpeg'
-            ? 'image/jpeg'
-            : ext === 'gif'
-              ? 'image/gif'
-              : ext === 'webp'
-                ? 'image/webp'
-                : 'image/png';
-
-        const entry: any = {
-          name: f.path.split('/').pop() || 'screenshot',
-          mediaType,
-          dataLength: buf.length,
-          ...(f === atFailure ? { atFailure: true } : {}),
-        };
-
-        if (withContent) {
-          const maxBytes = 100 * 1024; // ~100 KB cap per image
-          const slice = buf.length > maxBytes ? buf.subarray(0, maxBytes) : buf;
-          entry.data = Buffer.from(slice).toString('base64');
-          if (buf.length > maxBytes) entry.truncated = true;
-        }
-
-        results.push(entry);
+        buf = await storage.readFile(f.path);
       } catch {
-        // skip inaccessible files
+        continue; // skip inaccessible files
       }
+
+      const entry: ScreenshotItem = {
+        name: f.path.split('/').pop() || 'screenshot',
+        mediaType: imageMediaTypeOf(buf) ?? contentTypeForPath(f.path, f.label),
+        dataLength: buf.length,
+        ...(f === atFailure ? { atFailure: true } : {}),
+      };
+
+      if (withContent && ctx.textOnly) {
+        entry.notSent = 'Images are not sent to a caller that reads tool results as text only.';
+      } else if (withContent) {
+        const fitted = await fitImageForAgent(buf, limits);
+        if ('notSent' in fitted) {
+          entry.notSent = fitted.notSent;
+        } else {
+          if (fitted.original) Object.assign(entry, fitted.original);
+          if (fitted.reencoded) {
+            entry.sentAs = {
+              mediaType: fitted.mimeType,
+              width: fitted.width,
+              height: fitted.height,
+              dataLength: fitted.data.length,
+            };
+          }
+          images.push({
+            caption: screenshotCaption(entry.name, f === atFailure, fitted),
+            data: fitted.data.toString('base64'),
+            mimeType: fitted.mimeType,
+          });
+        }
+      }
+
+      results.push(entry);
     }
-    return { items: results };
+    return withToolImages({ items: results }, images);
   },
 
   // ── get_cluster_context ────────────────────────────────────────────────────
@@ -1529,7 +1595,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       stepEvents: want('steps') ? row.stepEvents : null,
       slowestStep: row.slowestStep || null,
       slowestStepDuration: row.slowestStepDuration || null,
-      consoleLogs: want('console') ? row.consoleLogs : null,
+      consoleLogs: want('console') ? withShownConsoleLocations(row.consoleLogs) : null,
       webVitals: want('webVitals') ? row.webVitals : null,
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
@@ -2670,7 +2736,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       clusterId: row.failureClusterId || null,
       slowestStep: row.slowestStep || null,
       steps: row.steps,
-      consoleLogs: row.consoleLogs,
+      consoleLogs: withShownConsoleLocations(row.consoleLogs),
       ariaSnapshot: trunc(evidence.ariaSnapshot, 3000),
       locatorFix: rec ? dropNulls({ locator: rec.locator, method: rec.method, score: rec.score }) : null,
       pageDiff:
@@ -3032,19 +3098,59 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async rerun_cluster_in_ci(db, params, ctx) {
     const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'run:control')) === 'not-found') return null;
-    const action = typeof params.action === 'string' ? params.action.trim().slice(0, 100) : '';
+    const action = typeof params.action === 'string' ? params.action.trim().slice(0, 100) : params.action;
+    // The branch and the inputs are read as `POST /api/projects/:id/ci-dispatches` reads them.
+    const request = ciDispatchRequestOf({ from: 'cluster', clusterId: id }, { ...params, action });
+    if (!request.ok) throw new Error(request.message);
     const outcome = await rerunClusterInCi(
       db,
       id,
       { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null, apiKeyId: ctx.apiKeyId ?? null },
-      { actionId: action || undefined },
+      {
+        actionId: request.value.action ?? undefined,
+        origin: 'mcp',
+        ref: request.value.ref,
+        inputs: request.value.inputs,
+      },
     );
-    if (!outcome.ok) {
-      if (outcome.error === 'not-found') return null;
-      throw new Error(outcome.message);
-    }
-    const { provider, url, args, at, actionId } = outcome.dispatch;
-    return dropNulls({ clusterId: id, actionId, provider, url, args, dispatchedAt: iso(at) });
+    if (!outcome.ok) throw new Error(outcome.message);
+    const { id: dispatchId, state, provider, url, args, ref, at, actionId } = outcome.dispatch;
+    return dropNulls({ clusterId: id, dispatchId, state, actionId, provider, url, args, ref, dispatchedAt: iso(at) });
+  },
+
+  // ── get_ci_dispatch ────────────────────────────────────────────────────────
+  async get_ci_dispatch(db, params, ctx) {
+    const dispatchId = typeof params.dispatchId === 'string' ? params.dispatchId.trim() : '';
+    if (!/^[0-9a-f]{16}$/.test(dispatchId)) throw new Error('dispatchId must be the 16 hex digits of a dispatch id');
+    const found = await findCiDispatch(db, dispatchId);
+    // A dispatch of a project outside the caller's scope answers as one that does not exist.
+    if (!found || !scopeAllows(ctx.scope, found.projectId)) return null;
+    const d = found.dispatch;
+    return dropNulls({
+      id: d.id,
+      projectId: found.projectId,
+      state: d.state,
+      kind: d.kind,
+      origin: d.origin,
+      actionId: d.actionId,
+      actionName: d.actionName,
+      provider: d.provider,
+      preset: d.preset,
+      url: d.url,
+      args: d.args,
+      ref: d.ref,
+      tests: d.tests,
+      detail: ciDispatchForReader(d, can(ctx.access, 'run:control', found.projectId)).detail,
+      runId: d.runId,
+      run: d.run && {
+        status: d.run.status,
+        totalTests: d.run.totalTests,
+        passedTests: d.run.passedTests,
+        failedTests: d.run.failedTests,
+      },
+      dispatchedAt: iso(d.at),
+      byName: d.byName,
+    });
   },
 
   // ── set_cluster_bisect ─────────────────────────────────────────────────────

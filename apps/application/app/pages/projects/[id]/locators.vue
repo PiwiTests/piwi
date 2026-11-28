@@ -61,7 +61,7 @@ const branchHint = computed(() => {
 
 useHead(
   computed(() => ({
-    title: `Locators — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Locators — ${project.value?.label || project.value?.name || 'Project'} — Piwi`,
   })),
 );
 

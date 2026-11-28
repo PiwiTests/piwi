@@ -43,8 +43,14 @@ const request = (): OutgoingCiRequest => ({
 });
 
 describe('a private address', () => {
-  test('is refused on a host the operator did not list', async () => {
-    await expect(sendCiServerRequest(request())).rejects.toThrow('URL host is not allowed');
+  test('is refused on a host the operator did not list, naming the host and the variable that allows it', async () => {
+    const host = new URL(base).host;
+    await expect(sendCiServerRequest(request())).rejects.toThrow(
+      `${host} is a private address, which a CI server request may not reach. The operator allows it by listing the host in PIWI_CI_SERVER_HOSTS.`,
+    );
+    await expect(sendCiServerRequest({ ...request(), url: base.replace('127.0.0.1', 'localhost') })).rejects.toThrow(
+      `localhost:${new URL(base).port} is a name reserved for private addresses, which a CI server request may not reach.`,
+    );
     expect(hits).toBe(0);
     expect(ciServerBaseUrlProblem(base)).toContain('PIWI_CI_SERVER_HOSTS');
   });

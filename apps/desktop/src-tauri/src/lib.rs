@@ -77,7 +77,7 @@ use runner::{
 use repro::desktop_run_repro;
 use run_target::{
     desktop_find_request_folders, desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder,
-    desktop_request_folders, desktop_run_requested_tests, desktop_unlink_request_folder,
+    desktop_link_team_project, desktop_request_folders, desktop_run_requested_tests, desktop_unlink_request_folder,
 };
 use worktree::{
     desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
@@ -3596,6 +3596,7 @@ pub fn run() {
             desktop_find_request_folders,
             desktop_link_request_folder,
             desktop_unlink_request_folder,
+            desktop_link_team_project,
             desktop_run_requested_tests,
             desktop_run_repro,
             desktop_reproduce_here,
@@ -4136,7 +4137,7 @@ mod tests {
         ServerNotification {
             kind: kind.into(),
             project_id,
-            title: "Piwi Dashboard".into(),
+            title: "Piwi".into(),
             body: "acme-web: 3/120 tests failed".into(),
             path: Some("/test-runs/146".into()),
             default_on,
@@ -4178,12 +4179,12 @@ mod tests {
 
     #[test]
     fn a_server_notification_reads_as_the_server_sends_it() {
-        let sent = r#"{"type":"run.failed","projectId":3,"title":"Piwi Dashboard","body":"acme-web: 3/120 tests failed","path":"/test-runs/146","defaultOn":true}"#;
+        let sent = r#"{"type":"run.failed","projectId":3,"title":"Piwi","body":"acme-web: 3/120 tests failed","path":"/test-runs/146","defaultOn":true}"#;
         assert_eq!(
             serde_json::from_str::<ServerNotification>(sent).unwrap(),
             server_notification("run.failed", Some(3), true)
         );
-        let about_no_project = r#"{"type":"report.ready","projectId":null,"title":"Piwi Dashboard","body":"Your quality report is ready","path":null,"defaultOn":false}"#;
+        let about_no_project = r#"{"type":"report.ready","projectId":null,"title":"Piwi","body":"Your quality report is ready","path":null,"defaultOn":false}"#;
         let read = serde_json::from_str::<ServerNotification>(about_no_project).unwrap();
         assert_eq!((read.project_id, read.path), (None, None));
     }

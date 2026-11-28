@@ -6,7 +6,7 @@
  * Duplicate, Check and Remove. Edits stay in the form until the settings are
  * saved; Check reads the action as it is in the form.
  */
-import { duplicateCiAction } from '~/utils/ci-action-form';
+import { ciCheckResultView, duplicateCiAction } from '~/utils/ci-action-form';
 import {
   CI_ACTION_DEFAULT_KEYS,
   CI_ACTION_KINDS,
@@ -26,6 +26,8 @@ const props = defineProps<{
   repositoryUrl?: string | null;
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
+  /** The action inputs a request carrying the instance's credential may send; null when unknown. */
+  instanceAllowedInputs?: string[] | null;
 }>();
 const settings = defineModel<CiActionsSettings>({ required: true });
 
@@ -36,9 +38,10 @@ const DEFAULT_BADGES: Record<CiActionKind, string> = {
   tests: 'Default for re-runs',
   flakeLab: 'Default for Flake Lab',
   suite: 'Default for Run on CI',
+  tags: 'Default for tagged tests',
 };
-/** The badges in the order the editor lists the defaults. */
-const BADGE_KINDS: CiActionKind[] = ['tests', 'flakeLab', 'suite'];
+/** The order the badges show in. */
+const BADGE_KINDS: CiActionKind[] = ['tests', 'flakeLab', 'suite', 'tags'];
 
 const { byId: environmentById } = useProjectEnvironments(() => props.projectId);
 
@@ -136,17 +139,17 @@ async function check(action: CiAction) {
   }
 }
 
-/** How a Check answer reads: a pass, a problem, or "could not be checked" (not a pass). */
 function resultOf(id: string) {
   const result = results.value[id];
-  if (!result) return null;
-  if ('error' in result) return { tone: 'error' as const, icon: 'i-lucide-circle-alert', message: result.error };
-  if (result.ok === true) return { tone: 'ok' as const, icon: 'i-lucide-circle-check', message: result.message };
-  if (result.ok === false) return { tone: 'error' as const, icon: 'i-lucide-circle-alert', message: result.message };
-  return { tone: 'muted' as const, icon: 'i-lucide-circle-help', message: `Not checked: ${result.message}` };
+  return result ? ciCheckResultView(result) : null;
 }
 
-const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-muted' } as const;
+const RESULT_CLASS = {
+  ok: 'text-success',
+  error: 'text-error',
+  warning: 'text-warning',
+  muted: 'text-muted',
+} as const;
 </script>
 
 <template>
@@ -271,6 +274,7 @@ const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-mut
       :default-for="editingDefaults"
       :other-names="otherNames"
       :instance-url="instanceUrl"
+      :instance-allowed-inputs="instanceAllowedInputs ?? null"
       :project-id="projectId"
       :repository-url="repositoryUrl ?? null"
       @save="saveAction"

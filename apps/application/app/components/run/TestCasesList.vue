@@ -6,12 +6,14 @@ import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
-import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
+import type { LiveWorkerState } from '#shared/live-view';
+import { currentRows, rowLiveWorker, rowWorkerKey } from '~/utils/live-row-worker';
 import type { LiveRowNote } from '~/utils/live-row-note';
 import type { HubSession } from '@piwitests/core/run-hub';
 import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
 import { compareWorkers, workerNumber } from '#shared/worker-lane';
+import { lockLabel } from '#shared/test-locks';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
@@ -91,43 +93,19 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
 }
 
-/** A running row's worker, as the run's live view files it. */
-function workerKeyOf(tc: TestCaseResult): string | null {
-  if (tc.status !== 'running' || tc.workerIndex == null) return null;
-  return liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex });
-}
+/** The execution each worker runs now, in the run's live view or in a run the desktop app started (`currentRows`). */
+const currentExecutionOf = computed(() =>
+  props.liveWorkers || props.desktopSessions?.length ? currentRows(props.testCases) : new Map<string, TestCaseResult>(),
+);
 
-/**
- * The execution each worker runs now, in the run's live view or in a run the desktop app started: its running row that
- * began last. A row of the test before, whose end has not streamed in yet, is not it, nor an earlier repetition of the
- * same test (`--repeat-each`).
- */
-const currentExecutionOf = computed(() => {
-  const current = new Map<string, TestCaseResult>();
-  if (!props.liveWorkers && !props.desktopSessions?.length) return current;
-  for (const tc of props.testCases) {
-    const key = workerKeyOf(tc);
-    if (!key) continue;
-    const seen = current.get(key);
-    if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
-  }
-  return current;
-});
-
-/**
- * The row's worker in the run's live view, when the row is the test that worker runs now. A stop names its test: one
- * of the worker's next test, whose begin has not streamed in yet, is not this row's.
- */
+/** The row's worker in the run's live view, when the row is the test that worker runs now (`rowLiveWorker`). */
 function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
-  const key = workerKeyOf(tc);
-  const worker = key ? props.liveWorkers?.[key] : null;
-  if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
-  return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
+  return rowLiveWorker(currentExecutionOf.value, props.liveWorkers, tc);
 }
 
 /** The row's worker in a run the desktop app started, when the row is the test that worker runs now. */
 function desktopWorkerOf(tc: TestCaseResult): DesktopRowWorker | null {
-  const key = workerKeyOf(tc);
+  const key = rowWorkerKey(tc);
   if (!key || !props.desktopSessions?.length) return null;
   if (currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
   return desktopRowWorker(props.desktopSessions, tc);
@@ -516,7 +494,7 @@ const rows = computed<Row[]>(() => {
       out.push({
         kind: 'group',
         key,
-        label: lock,
+        label: lockLabel(lock),
         count: lockCases.length,
         icon: 'i-lucide-lock',
         stats: computeStats(lockCases),
@@ -674,9 +652,6 @@ const selectedRetryCases = computed(() => {
   }
   return [...byKey.values()];
 });
-const selectedTestsLabel = computed(
-  () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
-);
 const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 /** The Playwright projects the selected tests ran in, the ones the command can name. */
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
@@ -906,17 +881,16 @@ defineExpose({ scrollToCase });
     <div
       v-if="selectionEnabled && selectedCount > 0"
       class="mb-3 shrink-0 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2"
+      data-shot="test-selection-bar"
     >
       <span class="text-sm font-medium" aria-live="polite">{{ selectedCount }} selected</span>
       <div class="flex flex-wrap items-center gap-2 ml-auto">
-        <DesktopRunLocallyButton
-          v-if="desktopBridge"
-          :project-id="projectKey"
+        <TestSelectionRunButton
+          v-if="desktopBridge && projectKey != null"
+          :project-id="Number(projectKey)"
           :project-label="projectName"
           :cases="selectedRetryCases"
-          :label="`Re-run ${selectedTestsLabel}`"
-          :run-title="`${selectedTestsLabel} of run #${runId}`"
-          :source-run-id="runId"
+          :run-id="runId"
           :environment-id="environmentId"
         />
         <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">

@@ -11,6 +11,7 @@ import { resolveRunBranch } from '../../../utils/run-branch';
 import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
 import { pinProjectRepository } from '../../../utils/scm/project-repository';
+import { matchStartedRunToCiDispatch } from '../../../utils/ci-dispatches';
 import { withInstanceRunLock } from '../../../utils/ingest-locks';
 import { updateRunMetadata } from '../../../utils/run-metadata';
 import {
@@ -198,7 +199,10 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
     }
 
     // A private run pins nothing of the project's.
-    if (runOrigin(metadata) !== 'request') await pinProjectRepository(db, testRun.projectId, metadata);
+    if (runOrigin(metadata) !== 'request') {
+      await pinProjectRepository(db, testRun.projectId, metadata);
+      await matchStartedRunToCiDispatch(db, testRun.id);
+    }
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and
@@ -226,7 +230,10 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
         updatedAt: new Date(),
       },
     );
-    if (metadata) await pinProjectRepository(db, testRun.projectId, metadata);
+    if (metadata) {
+      await pinProjectRepository(db, testRun.projectId, metadata);
+      await matchStartedRunToCiDispatch(db, testRun.id);
+    }
   } else {
     // Run is already running and the caller presented its stream token: hand
     // the same token back so the caller can continue streaming. This can happen

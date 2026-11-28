@@ -74,6 +74,12 @@ export interface RunTargetConnectionView {
   linkedProjectIds: number[];
   /** The names the instance gave for its projects, by id; a project it did not name shows as its id. */
   projectNames: Record<number, string>;
+  /**
+   * Whether the key may compare a test with the instance's CI (Compare with team instance): false for a key made
+   * before it could, where a new connection would give one that can; null until the instance says, from one that does
+   * not, and where it gives no such key (Piwi Runner, an instance that declines it).
+   */
+  compares: boolean | null;
 }
 
 /**

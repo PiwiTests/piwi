@@ -1,7 +1,7 @@
 # Reporter architecture
 
 A map for contributors. The `@piwitests/reporter` package collects Playwright
-test results and sends them to a Piwi Dashboard server. It also ships the `piwi`
+test results and sends them to a Piwi server. It also ships the `piwi`
 command line (`src/cli/`) and the agent skills that `piwi init` installs
 (`templates/skills/`). The rules to follow when you change it are in
 [`AGENTS.md`](AGENTS.md).
@@ -87,8 +87,13 @@ What the package does to a user's run, process by process.
 - The boxed stack prefix `internal/capture/quiet-capture.ts` adds for this package's
   `dist/`, so a wrapped action is located at the test's line.
 - The resource ledger's listener on the worker's Playwright instrumentation (its
-  `runBeforeCloseBrowserContext` hook marks when a context's close began), its wrappers on
-  the browser types' `launch`/`connect` (and `connectOverCDP`), and its wrapper on the
+  `runAfterCreateBrowserContext` hook reports each context the worker opens, from inside
+  the call that opened it, and no other: `browser.on('context')`, from Playwright 1.60, also
+  reports the contexts another client opens on a browser the worker shares, through
+  `browser.bind` or a shared browser server; its `runBeforeCloseBrowserContext` hook marks
+  when a context's close began, before its `close` event), its wrappers on
+  the browser types' `launch`/`connect` (and `connectOverCDP`), which have no event for the
+  browsers they open, put back as the ledger uninstalls, and its wrapper on the
   `sendMessageToServer` of the worker's connection and of each browser it connects to,
   put back as that browser disconnects (internal, feature-checked). The wrapper reads each
   call a test makes to know when and from which line it last used each page, context,
@@ -195,7 +200,10 @@ What the package does to a user's run, process by process.
   none of another shape than the viewport's. The live view's frames are painted over as
   the instance's are (`maskSecretFields`). The titles of the stops and calls the run
   channel tells, and the call the pause bar and the terminal name, go through
-  `hideTypedText` and `hideSecretsInText`.
+  `shownTitle` (`hideTypedText`, `hideSecretsInText`, then `hideKnownValues` with the
+  attempt's known values as each is sent; each kept until then as `keptTitle` keeps it). A
+  stop's `locator` and a failure's `error`, and a call event's `error`, go with those values
+  hidden too.
 - At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
   here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
   `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own
@@ -319,7 +327,8 @@ What the package does to a user's run, process by process.
   until it is scaled down within 320 by 200 at quality 60 with `jpeg-js` (`thumbnailOf`;
   without it, a frame of 128 KB at most as it is), one every 500 ms at most, six frames
   waiting at most; kept for the test alone (40 images and 1 MB at most, the oldest let go,
-  all of them as the next test begins), sent eight a second at most, all of it again to a
+  all of them as the next test begins), sent eight a second at most, each image's title
+  through `shownTitle` as it is sent (`shownThumb`), all of it again to a
   viewer that comes later (`view-lane` asked on again, which sends the latest call log and
   takes the text again too; `layers` asking the same layers again sends nothing), those of
   a test no longer sent once the next one began. The trace's screencast images are never
@@ -432,8 +441,10 @@ What the package does to a user's run, process by process.
   400 or more), at most 50 a second, the others counted (`dropped`), their texts' and
   URLs' credentials hidden.
 - `positions` (in `features`): while the editor asks, the worker says where each call of the running test begins
-  in the user's code, its title through `hideTypedText` and `hideSecretsInText`, `POSITIONS_PER_SECOND` at most,
-  from the same listener.
+  in the user's code, `POSITIONS_PER_SECOND` at most, from the same listener. Its title is the runner's step's, as a
+  live view's call log names the call (`Click getByRole('link', { name: 'Cart' })`, `callTitle`), told once the
+  runner's own listener has named the step, through `hideTypedText`, `hideSecretsInText` and the attempt's known
+  secrets (`tests/run-channel-positions.spec.ts`).
 - `bind` shares the stopped context's browser with Playwright's own tools
   (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`, feature-checked), until the
   test ends (`unbind` on `test-end`), or stops sharing it.
@@ -588,11 +599,12 @@ What the package does to a user's run, process by process.
   flight, again after a 429 and never after a 400: the running call told last (else the one
   that ended last), its status, its log folded by `compressCallLog`, its action point and its
   error's first line, each text through `hideTypedText` or `hideSecretsInLog`, then
-  `hideSecretsInText`, before it is cut, and, as each view is told, through `hideKnownValues` with the values the
-  attempt knows are secrets then (`knownSecrets`, passed in as `FollowOptions.secrets`; values of 8 characters or more, as
-  `withoutFieldSecrets` hides them). A listener on the worker's Playwright
-  instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which
-  never hears an internal call, gives each call's start and selector, matched to the stream by
+  `hideSecretsInText`, before it is cut (`cutText`), and, as each view is told, through `hideKnownValues` with the
+  values the attempt knows are secrets then (`knownSecrets`, passed in as `FollowOptions.secrets`; values of 8
+  characters or more, as `withoutFieldSecrets` hides them, and a start of one, 4 characters or more, before a cut
+  mark: the end of a text `cutText` cut, or Playwright's own `…` in an element's preview). A listener on the worker's
+  Playwright instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which never
+  hears an internal call, gives each call's start and selector, matched to the stream by
   the id the runner gives the call. While the call shown has waited a second, and while the
   watched page is its context's only one, an internal `evaluateAll` reads, once a second, the
   elements its selector matches: how many, the first one's box (none for a selector into a
@@ -643,7 +655,7 @@ What the package does to a user's run, process by process.
   `knownSecrets` once the page closed); a snapshot whose page's secret fields could not be
   read, that cannot be read whole, or past 4 MB does not go, and stops its frame's chain until
   its next full snapshot, the viewers told why for the main frame. Its title is the runner's
-  step's. Before it, each resource it and its stylesheets name that the `.network` file
+  step's, through `shownTitle` with the same secrets. Before it, each resource it and its stylesheets name that the `.network` file
   recorded with a content type `inspectResourceType` allows (a stylesheet, a font or an image: never a script, a
   document or an SVG), read from the trace folder's
   `resources/` (a regular file, 2 MB at most), its bytes of that kind
@@ -662,8 +674,45 @@ What the package does to a user's run, process by process.
   fixtures show (`showStop`, at the bar or for the editor) is posted as it starts and ends
   (`stop`), with the test's title and the call's through `hideSecretsInText`, whoever
   watches, and the stop held is posted again on each stream the worker opens, so a run
-  shared during a stop shows it; a CI run never stops, so this is for the run a person
-  shares.
+  shared during a stop shows it.
+- **A failing CI test held for its controllers.** A CI worker names `features=hold,pause` on its
+  stream (`LIVE_HOLD_FEATURE`), and hears how long its project holds a failing test (`hold`,
+  in ms, null while the setting is off) and whether a person who may control the run shows
+  it in full (`view`'s `controller`). A test that fails while both stand, a test running and
+  the stream open (`liveViewMayHold`), is held by `holdFailure` as an interactive run's
+  failure is, in the `page` fixture's teardown, or, for a test that failed on a page of its
+  own, in `piwiCapture`'s before its view ends: its evidence read, the test timeout held
+  (`withTestTimeoutHeld`), no pause bar shown, its stop posted as `held` with its end
+  (`until`), and the run's log saying until when (UTC). The hold (`liveViewHold`) ends at
+  its length, at **Let it go** (`let-go`, taken on the worker's own stream open now, and only
+  while `hold` is set), as the instance says no controller shows the worker in full or
+  nobody watches, as `hold` turns null (which the instance also says before it closes the
+  stream of a run whose live view ends), as the stream that opens again is answered 404 or
+  409, and as the stream is refused for good or the worker ends; a stream that drops and
+  opens again keeps it. A new `hold` length applies to the hold that runs, its stop posted
+  again with its new `until`. The test then tears down as it would have, its result
+  unchanged (`tests/live-view-hold.spec.ts`, `tests/live-view-hold-worker.spec.ts`).
+- **A CI test paused for its controllers.** The worker names `features=hold,pause`, and hears
+  beside `hold` whether its project lets its controllers pause a CI test (`pause: true`);
+  while it does, its call log comes from the instrumentation (`liveViewMayPause`, as a run a
+  person may pause), and its contexts are listened to as they open. A **Pause** on its own
+  stream, while a controller watches it in full and a test runs, reaches the capture fixtures
+  (`onLiveViewPause`), which make the attempt's `PauseState` (`livePause`) and arm its
+  contexts as a local run's Pause does: the next stop of reason `pause` waits in `showStop`
+  for its controllers (`liveViewPause`, the hold's length), with no bar, its timeout held,
+  posted as a `pause` stop with its end (`until`). The worker says on its stream that it
+  took a Pause, or dropped it and why (`pause-asked`). **Resume** goes on; **End the test**
+  (`endFromPiwi`) fails the test at once with who ended it (`Ended from Piwi by Ana`), as a
+  timeout does: the runner's wait on the test function or a `beforeEach` hook is given up
+  (`_failWithError`, `_timeoutManager`, feature-checked), and the stopped call stays held by
+  its context's debugger until the context closes, its pages closed first, so it fails and
+  never runs, nor does anything after it; on a runner of another shape the test fails at its
+  next locator call or as its function ends. The pause ends at any of a hold's ends too. A
+  Pause no call took is dropped at them, at a Resume and as the test's function ends, its
+  failure then held as any other; and a test whose page was followed through Playwright's
+  call stream (`followsCallStream`: the setting turned on mid-run) takes none, since its
+  debugger would stop past the call's wait (`tests/live-view-pause.spec.ts`,
+  `tests/live-view-pause-end.spec.ts`, `tests/live-view-pause-worker.spec.ts`).
 - **Each frame is masked before it goes** (`live-mask.ts`): the page's secret fields (`SECRET_FIELD_SELECTOR`) and the
   project's `masks` are read through `internalCall` before and after the frame and painted over with the `jpeg-js` of
   `playwright-core/lib/utilsBundle`, feature-checked. Without it, a frame that shows one does not go, nor does one of
@@ -671,8 +720,9 @@ What the package does to a user's run, process by process.
 - **Its tests.** `tests/live-view.spec.ts`, `tests/live-view-share.spec.ts` and `tests/live-view-worker.spec.ts` drive
   the stream, who it posts for and when, `tests/live-view-binary.spec.ts` the two frame encodings,
   `tests/live-view-call-log.spec.ts` the call a full view follows, `tests/live-view-layers.spec.ts` its layers,
-  `tests/live-view-mask.spec.ts` the masks, and `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts`
-  Inspect (`internal/capture/live-inspect.ts`).
+  `tests/live-view-mask.spec.ts` the masks, `tests/live-view-hold.spec.ts` a failing CI test's hold,
+  `tests/live-view-pause.spec.ts` a CI test's pause, and
+  `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts` Inspect (`internal/capture/live-inspect.ts`).
 
 **In the reporter process**
 
@@ -775,6 +825,28 @@ What the package does to a user's run, process by process.
 
 Playwright runs the **reporter** in the main process and **fixtures** in each test
 worker. They never share memory: they communicate through `piwi-*` testInfo attachments.
+
+Before `onBegin`, Playwright 1.62 and later call the reporter's `preprocess` with the built suite (unsharded) and the
+`TestRun` that reads and changes what runs, which answers only until the call returns. The reporter reads there what
+it keeps for the rest of the run: each suite's mode (`testRun.mode`, Playwright 1.65 and later), which
+`MetadataCollector.readSuiteModes` keeps by suite, the same objects `onBegin` and `onTestBegin` hand over;
+`getSuiteInfo` and the serial files read it, else `_parallelMode` by the same rule.
+
+It changes the run only when asked, with the dashboard's answers, all asked within one 10-second deadline
+(`internal/support/test-run-edits.ts`, never a setup or teardown project, which `TestRun` refuses to change):
+
+- **Pass reuse** (`PIWI_PLAN` with `PIWI_PLAN_SKIP`, set by `piwi run --plan` on Playwright 1.62 and later,
+  `internal/support/plan-skip.ts`): it reads the plan and skips each reused test with `testRun.skip`, matched by the
+  test list line the plan names it with, its reason the run whose pass stands in for it. The reporter keeps their ids
+  and leaves them out of everything it counts and sends (`reusedTestIds`), and stamps `metadata.piwiPlan`. A plan it
+  cannot read runs every test, and in a shard the whole suite (`skipSharding`): Playwright splits a suite holding
+  skipped tests apart from one without, so a shard that skipped nothing would not line up with the others.
+- **Balanced shards** (`balanceShards`, `internal/support/shard-split.ts`): it lists the tests in a stable order, each
+  with its group (`MetadataCollector.shardGroup`: the tests Playwright keeps in one worker), asks the dashboard for each
+  one's shard, and with an answer that covers them all takes sharding from Playwright and excludes the others, a whole
+  suite at once. The dashboard stores the split by its listing, so every shard reads the same answer. A shard that
+  gets no usable answer lets Playwright split the run, which lines up with the other shards only when they got none
+  either.
 
 ```
             TEST WORKER                                MAIN PROCESS
@@ -998,6 +1070,7 @@ src/
                 system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, private-file (the temp files and their
                 folder: owner-only, checked before they are read), source-snippet, worker-index, errors,
+                test-run-edits, plan-skip, shard-split (what `preprocess` changes of the run),
                 selection-client, selection-env, shard-info, aria-sampling,
                 run-mode, test-paths, reporter-version, connection (the
                 commands' dashboard), playwright-spawn (how commands start

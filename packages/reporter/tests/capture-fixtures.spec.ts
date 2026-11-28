@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { describe, it, expect, vi, afterAll, afterEach, beforeAll } from 'vitest';
-import { chromium, type Browser, type Locator, type Page } from '@playwright/test';
+import { chromium, type Browser, type Locator, type Page, type Request } from '@playwright/test';
 import {
   ariaSnapshotBestEffort,
   ariaSnapshotJSONBestEffort,
@@ -1488,6 +1488,228 @@ describe('dialog capture (dialogclosed)', () => {
   });
 });
 
+describe('failure ARIA snapshot', () => {
+  /**
+   * Fail a test through the fixtures on a fake page whose root reads `own` (and
+   * its JSON tree), with `errors` as the test's errors; returns what it attached.
+   */
+  async function failWith(own: string | null, errors: unknown[]): Promise<Map<string, string>> {
+    const rootLocator = {
+      ariaSnapshot: async () => own,
+      ariaSnapshotJSON: async () => (own ? { role: 'root' } : null),
+    };
+    const factory = (..._args: unknown[]) => ({ click: async () => {}, evaluate: async () => null });
+    const fakePage = {
+      getByRole: factory,
+      getByTestId: factory,
+      getByText: factory,
+      getByLabel: factory,
+      getByPlaceholder: factory,
+      getByAltText: factory,
+      getByTitle: factory,
+      locator: (selector: string) => (selector === ':root' ? rootLocator : factory()),
+      on: () => {},
+      evaluate: async () => null,
+    };
+    const attached = new Map<string, string>();
+    const testInfo = {
+      status: 'failed',
+      errors,
+      attach: vi.fn(async (name: string, body: { body: Buffer | string }) => {
+        attached.set(name, String(body.body));
+      }),
+      annotations: [],
+    };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: unknown },
+      use: (page: typeof fakePage) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+    await captureFixture(
+      {},
+      () =>
+        pageFixture({ page: fakePage }, async (page) => {
+          await page.getByRole('button').click();
+        }),
+      testInfo,
+    );
+    return attached;
+  }
+
+  const expectError = (aria: string) => ({ message: 'expect(locator).toBeVisible() failed', errorContext: aria });
+
+  it('attaches the snapshot of the last failed expect when the fixtures read none of their own', async () => {
+    const attached = await failWith(null, [expectError('- heading "Cart"'), expectError('- heading "Checkout"')]);
+    expect(attached.get(ATTACHMENT_NAMES.ariaSnapshot)).toBe('- heading "Checkout"');
+    expect(attached.has(ATTACHMENT_NAMES.ariaSnapshotJson)).toBe(false);
+  });
+
+  it("keeps the fixtures' own read over the failed expect's", async () => {
+    const attached = await failWith('- button "Pay"', [expectError('- heading "Cart"')]);
+    expect(attached.get(ATTACHMENT_NAMES.ariaSnapshot)).toBe('- button "Pay"');
+  });
+
+  it('attaches none when no error carries a snapshot', async () => {
+    const attached = await failWith(null, [{ message: 'Test timeout of 30000ms exceeded.' }]);
+    expect(attached.has(ATTACHMENT_NAMES.ariaSnapshot)).toBe(false);
+  });
+});
+
+describe('console capture', () => {
+  /** Drive the fixtures against a fake page, fire console messages (or `event`), read the attachment. */
+  async function runConsole(messages: unknown[], event = 'console'): Promise<Array<Record<string, unknown>> | null> {
+    const handlers = new Map<string, Array<(arg?: unknown) => void>>();
+    const factory = () => ({ click: async () => {}, evaluate: async () => null });
+    const fakePage = {
+      getByRole: factory,
+      getByTestId: factory,
+      getByText: factory,
+      getByLabel: factory,
+      getByPlaceholder: factory,
+      getByAltText: factory,
+      getByTitle: factory,
+      locator: factory,
+      on: (event: string, handler: (arg?: unknown) => void) => {
+        const list = handlers.get(event) ?? [];
+        list.push(handler);
+        handlers.set(event, list);
+      },
+      evaluate: async () => null,
+    };
+    const testInfo = {
+      status: 'passed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: unknown },
+      use: (page: typeof fakePage) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+    await captureFixture(
+      {},
+      () =>
+        pageFixture({ page: fakePage }, async () => {
+          for (const message of messages) (handlers.get(event) ?? []).forEach((h) => h(message));
+        }),
+      testInfo,
+    );
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.console);
+    return call ? (JSON.parse(call[1].body.toString()) as Array<Record<string, unknown>>) : null;
+  }
+
+  const message = (text: string, location: Record<string, unknown>) => ({
+    type: () => 'error',
+    text: () => text,
+    location: () => location,
+  });
+
+  it('places a message by its line and column, and by the deprecated fields of an older Playwright', async () => {
+    const entries = await runConsole([
+      message('current', { url: 'http://shop.test/app.js', line: 11, column: 4, lineNumber: 99, columnNumber: 99 }),
+      message('older', { url: 'http://shop.test/app.js', lineNumber: 7, columnNumber: 2 }),
+    ]);
+    expect(entries?.map((entry) => [entry.text, entry.location])).toEqual([
+      ['current', 'http://shop.test/app.js:11:4'],
+      ['older', 'http://shop.test/app.js:7:2'],
+    ]);
+  });
+
+  it('records an uncaught page error, placed by the first frame of its stack that names a URL', async () => {
+    const error = new TypeError('cart is undefined');
+    error.stack = [
+      'TypeError: cart is undefined',
+      '    at new Promise (<anonymous>)',
+      '    at renderCart (http://shop.test/assets/cart.js:12:5)',
+      '    at http://shop.test/assets/app.js:3:1',
+    ].join('\n');
+    const entries = await runConsole([error, 'rejected without an error'], 'pageerror');
+    expect(entries).toEqual([
+      {
+        type: 'pageerror',
+        text: 'TypeError: cart is undefined',
+        timestamp: expect.any(Number),
+        location: 'http://shop.test/assets/cart.js:11:4',
+      },
+      { type: 'pageerror', text: 'rejected without an error', timestamp: expect.any(Number), location: null },
+    ]);
+  });
+});
+
+describe('page error capture in a browser', () => {
+  let server: http.Server;
+  let origin = '';
+  let browser: Browser | null = null;
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      if (req.url === '/cart.js') {
+        res.setHeader('Content-Type', 'text/javascript');
+        res.end(
+          "function renderCart() {\n  throw new TypeError('cart is undefined');\n}\nsetTimeout(renderCart, 0);\n",
+        );
+        return;
+      }
+      res.setHeader('Content-Type', 'text/html');
+      res.end('<!doctype html><script src="/cart.js"></script>');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      browser = await chromium.launch();
+    } catch {
+      browser = null;
+    }
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('records the error the page threw with the place it was thrown, beside the console messages', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const testInfo = {
+      status: 'passed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: Page },
+      use: (page: Page) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+    await captureFixture(
+      {},
+      async () => {
+        await pageFixture({ page }, async (p) => {
+          await Promise.all([p.waitForEvent('pageerror'), p.goto(origin)]);
+        });
+        await context.close();
+      },
+      testInfo,
+    );
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.console);
+    expect(call && JSON.parse(call[1].body.toString())).toEqual([
+      {
+        type: 'pageerror',
+        text: 'TypeError: cart is undefined',
+        timestamp: expect.any(Number),
+        location: `${origin}/cart.js:1:8`,
+      },
+    ]);
+  });
+});
+
 describe('network capture (response, requestfinished, requestfailed)', () => {
   /** A fake page that keeps the listeners the fixtures add, and fires an event at them. */
   function fakeNetworkPage() {
@@ -1898,6 +2120,18 @@ describe('network capture in Chromium', () => {
   /** The recorded requests to `path`. */
   const to = (requests: Array<Record<string, unknown>>, path: string) =>
     requests.filter((r) => r.url === `${origin}${path}`);
+  /** Resolves once the request to `path` finishes or fails, whichever the browser reports. */
+  const requestEnded = (page: Page, path: string) =>
+    new Promise<void>((resolve) => {
+      const onEnd = (request: Request) => {
+        if (!request.url().endsWith(path)) return;
+        page.off('requestfinished', onEnd);
+        page.off('requestfailed', onEnd);
+        resolve();
+      };
+      page.on('requestfinished', onEnd);
+      page.on('requestfailed', onEnd);
+    });
 
   it('records an unread no-store error response, which never finishes, with its logs and span', async (ctx) => {
     if (!browser) return ctx.skip();
@@ -1922,15 +2156,12 @@ describe('network capture in Chromium', () => {
     expect(failing[0]!.duration).toBeLessThan(500);
   });
 
-  it('records unread empty-bodied error responses, which Chromium fails as aborted, with their logs', async (ctx) => {
+  it('records unread empty-bodied error responses, finished or failed as aborted, with their logs', async (ctx) => {
     if (!browser) return ctx.skip();
     const requests = await captureTest(async (page) => {
       await page.goto(origin);
       for (const path of ['/api/empty', '/api/missing']) {
-        await Promise.all([
-          page.waitForEvent('requestfailed', (request) => request.url().endsWith(path)),
-          page.evaluate(`void fetch('${path}')`),
-        ]);
+        await Promise.all([requestEnded(page, path), page.evaluate(`void fetch('${path}')`)]);
       }
     });
     for (const [path, status] of [

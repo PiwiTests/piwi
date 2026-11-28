@@ -56,6 +56,11 @@ export interface FixtureOptions {
   attachmentsOnTestEnd?: boolean;
   /** The errors Playwright reports outside any test (`onError`), as its `TestError`s, after `onBegin`. */
   runErrors?: unknown[];
+  /** The errors workers report outside any test, each with its worker as Playwright 1.60 writes it, after those. */
+  workerErrors?: Array<{
+    error: unknown;
+    workerInfo: { workerIndex: number; parallelIndex: number; projectName: string };
+  }>;
   /** What the run wrote to stdout outside any test (`onStdIO` with no test), after `onBegin`. */
   outputOutsideTests?: string[];
   tests: FixtureTest[];
@@ -87,6 +92,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     duration = 1234,
     attachmentsOnTestEnd = false,
     runErrors = [],
+    workerErrors = [],
     outputOutsideTests = [],
     tests,
   } = options;
@@ -100,6 +106,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     { method: 'onProject', params: { project: buildProject(projectName, file, tests, projectUse) } },
     { method: 'onBegin' },
     ...runErrors.map((error) => ({ method: 'onError', params: { error } })),
+    ...workerErrors.map((params) => ({ method: 'onError', params })),
     ...outputOutsideTests.map((chunk) => stdioEvent('stdout', chunk, null)),
   ];
 

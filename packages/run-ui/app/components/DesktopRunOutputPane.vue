@@ -83,6 +83,11 @@ watch(
 );
 
 onMounted(() => pane.value?.scrollTo({ top: pane.value.scrollHeight }));
+
+// A pane shown again, or dragged to another height, follows the newest line still: a hidden pane scrolls nowhere.
+useResizeObserver(pane, () => {
+  if (pinned.value) pane.value?.scrollTo({ top: pane.value.scrollHeight });
+});
 </script>
 
 <template>

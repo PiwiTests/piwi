@@ -5,9 +5,25 @@ import {
   ciRunName,
   ciRunWhere,
   ciRunsListed,
+  CiAsks,
+  ciControlStateKey,
+  ciHoldKey,
+  ciWorkerStateOf,
+  ciHoldOf,
+  ciHoldWords,
   ciTally,
+  heldForWords,
   isCiMetadata,
   isCiOrigin,
+  offersLetGo,
+  readCiHold,
+  CI_CONTROL_WORDS,
+  ciControlsOffered,
+  ciPauseAskWords,
+  readCiPauseAsk,
+  ciPauseWords,
+  pausedByWords,
+  readCiPause,
   type CiRun,
 } from '../src/ci';
 import { englishRunSpeaker as en } from '../src/words';
@@ -82,6 +98,291 @@ describe('the CI runs of a project in progress', () => {
     expect(where(run(78), true)).toBe('Shop, on feature/pay');
     expect(where(run(78, { branch: null }), true)).toBe('Shop');
     expect(where(run(78, { branch: null }), false)).toBeNull();
-    expect(en.say(CI_READ_ONLY.key)).toContain('Read-only');
+    expect(en.say(CI_READ_ONLY.key)).toContain(
+      'nothing here steers them, except Pause, Resume, End the test and Let it go, for those who may control them',
+    );
+  });
+});
+
+describe('a CI test held at its failure for its controllers', () => {
+  const event = (over: Record<string, unknown> = {}) => ({
+    shard: null,
+    worker: 3,
+    slot: 1,
+    connected: true,
+    holds: true,
+    heldFor: ['Ana', 'Bo'],
+    paused: {
+      reason: 'held',
+      call: { title: 'Expected "Paid", received "Pending"', file: 'tests/pay.spec.ts', line: 12 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    },
+    ...over,
+  });
+
+  it('reads the held stop of a worker that can hold from the run’s live-worker event', () => {
+    expect(readCiHold(event())).toEqual({
+      worker: { shard: null, worker: 3, slot: 1 },
+      call: { title: 'Expected "Paid", received "Pending"', file: 'tests/pay.spec.ts', line: 12 },
+      until: 1_763_727_900_000,
+      heldFor: ['Ana', 'Bo'],
+    });
+    // A hold that names no end, and names the instance does not know.
+    const bare = event({ heldFor: undefined, paused: { ...event().paused, until: 'soon' } });
+    expect(readCiHold(bare)).toMatchObject({ until: null, heldFor: [] });
+  });
+
+  it('reads no hold of a worker that left, cannot hold, stands at no stop or at another', () => {
+    expect(readCiHold(event({ connected: false }))).toBeNull();
+    expect(readCiHold(event({ holds: undefined }))).toBeNull();
+    expect(readCiHold(event({ paused: null }))).toBeNull();
+    expect(readCiHold(event({ paused: { ...event().paused, reason: 'pause' } }))).toBeNull();
+    expect(readCiHold(event({ worker: -1 }))).toBeNull();
+    expect(readCiHold('held')).toBeNull();
+  });
+
+  it('finds a lane’s hold by its lane, else, from an older reporter, by its worker', () => {
+    const hold = readCiHold(event())!;
+    const older = readCiHold(event({ slot: undefined, worker: 5 }))!;
+    expect(ciHoldOf([hold, older], { shard: null, slot: 1 }, 3)).toBe(hold);
+    expect(ciHoldOf([hold, older], { shard: null, slot: 4 }, 5)).toBe(older);
+    expect(ciHoldOf([hold, older], { shard: 2, slot: 1 }, 3)).toBeNull();
+    expect(ciHoldOf([hold], { shard: null, slot: 0 }, 3)).toBeNull();
+    // A hold of a worker that left the lane is not the hold of the next worker's test there.
+    expect(ciHoldOf([hold], { shard: null, slot: 1 }, 5)).toBeNull();
+    expect(ciHoldOf([hold], { shard: null, slot: 1 }, null)).toBe(hold);
+  });
+
+  it('says where it stands, for whom and until when, its place, and that the CI job’s timeout still runs', () => {
+    const clock = (time: number) => (time === 1_763_727_900_000 ? '12:05' : '?');
+    expect(ciHoldWords(readCiHold(event())!, en, clock)).toEqual({
+      state: 'Failed, held at its line',
+      heldFor: 'Held for Ana and Bo · until 12:05',
+      place: 'tests/pay.spec.ts:12',
+      note: 'The CI job’s own timeout still runs.',
+    });
+    const nobody = readCiHold(event({ heldFor: [], paused: { ...event().paused, call: { title: 'Timed out' } } }))!;
+    expect(ciHoldWords(nobody, en, clock)).toMatchObject({ heldFor: 'Held · until 12:05', place: null });
+    expect(heldForWords(undefined, ['Ana'], en, clock)).toBeNull();
+    expect(heldForWords(1_763_727_900_000, ['Ana'], en, clock)).toBe('Held for Ana · until 12:05');
+  });
+
+  it('offers Let it go only on a held lane the surface’s own watch shows, as a controller’s', () => {
+    const hold = readCiHold(event());
+    expect(offersLetGo(hold, { shows: true, controller: true })).toBe(true);
+    expect(offersLetGo(hold, { shows: true, controller: false })).toBe(false);
+    expect(offersLetGo(hold, { shows: false, controller: true })).toBe(false);
+    expect(offersLetGo(null, { shows: true, controller: true })).toBe(false);
+  });
+});
+
+describe('a CI test paused for its controllers', () => {
+  const event = (over: Record<string, unknown> = {}) => ({
+    shard: null,
+    worker: 3,
+    slot: 1,
+    connected: true,
+    holds: true,
+    heldFor: [],
+    pauses: true,
+    pausedBy: 'Ana',
+    paused: {
+      reason: 'pause',
+      call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/pay.spec.ts', line: 12 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    },
+    ...over,
+  });
+  const running = (over: Record<string, unknown> = {}) => event({ paused: null, pausedBy: undefined, ...over });
+  const CONTROLLER = { shows: true, controller: true };
+
+  it('reads the paused stop of a worker that can pause, and who paused it', () => {
+    expect(readCiPause(event())).toEqual({
+      worker: { shard: null, worker: 3, slot: 1 },
+      call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/pay.spec.ts', line: 12 },
+      until: 1_763_727_900_000,
+      pausedBy: 'Ana',
+    });
+    expect(readCiPause(event({ pausedBy: undefined }))).toMatchObject({ pausedBy: null });
+    expect(readCiPause(event({ pausedBy: 'x'.repeat(300) }))!.pausedBy).toHaveLength(100);
+  });
+
+  it('reads no pause of a worker that left, cannot pause, stands at no stop or at a hold', () => {
+    expect(readCiPause(event({ connected: false }))).toBeNull();
+    expect(readCiPause(event({ pauses: undefined }))).toBeNull();
+    expect(readCiPause(running())).toBeNull();
+    expect(readCiPause(event({ paused: { ...event().paused, reason: 'held' } }))).toBeNull();
+    // A local run's pause, shared live, names no end: it is no controller's.
+    expect(readCiPause(event({ paused: { ...event().paused, until: undefined } }))).toBeNull();
+  });
+
+  it('says it is paused, by whom and until when, its place, and that the CI job’s timeout still runs', () => {
+    const clock = (time: number) => (time === 1_763_727_900_000 ? '12:05' : '?');
+    expect(ciPauseWords(readCiPause(event())!, en, clock)).toEqual({
+      state: 'Paused',
+      pausedBy: 'Paused by Ana · until 12:05',
+      place: 'tests/pay.spec.ts:12',
+      note: 'The CI job’s own timeout still runs.',
+    });
+    expect(pausedByWords(1_763_727_900_000, null, en, clock)).toBe('Paused · until 12:05');
+    expect(pausedByWords(null, 'Ana', en, clock)).toBeNull();
+  });
+
+  it('offers a controller’s own watch Pause while the test runs, Resume and End the test while it is paused', () => {
+    expect(ciControlsOffered(running(), CONTROLLER, true)).toEqual(['pause']);
+    expect(ciControlsOffered(event(), CONTROLLER, true)).toEqual(['resume', 'end']);
+    // No test runs, a test held at its failure, a worker that cannot pause, a watch of another lane or a Viewer's.
+    expect(ciControlsOffered(running(), CONTROLLER, false)).toEqual([]);
+    expect(ciControlsOffered(event({ paused: { ...event().paused, reason: 'held' } }), CONTROLLER, true)).toEqual([]);
+    expect(ciControlsOffered(running({ pauses: undefined }), CONTROLLER, true)).toEqual([]);
+    expect(ciControlsOffered(running(), { shows: false, controller: true }, true)).toEqual([]);
+    expect(ciControlsOffered(running(), { shows: true, controller: false }, true)).toEqual([]);
+    expect(ciControlsOffered(null, CONTROLLER, true)).toEqual([]);
+  });
+
+  it('reads a Pause the worker has not stopped for yet, and why it dropped the last one', () => {
+    expect(readCiPauseAsk(running({ pauseAsked: { by: 'Ana' } }))).toEqual({ asked: { by: 'Ana' }, dropped: null });
+    expect(readCiPauseAsk(running({ pauseAsked: {} }))).toEqual({ asked: { by: null }, dropped: null });
+    expect(readCiPauseAsk(running({ pauseDropped: 'No test runs on this worker now.' }))).toEqual({
+      asked: null,
+      dropped: 'No test runs on this worker now.',
+    });
+    expect(readCiPauseAsk(running({ pauses: undefined, pauseAsked: { by: 'Ana' } }))).toEqual({
+      asked: null,
+      dropped: null,
+    });
+    expect(ciPauseAskWords({ asked: { by: 'Ana' }, dropped: null }, en)).toBe('Pause asked by Ana');
+    expect(ciPauseAskWords({ asked: { by: null }, dropped: null }, en)).toBe('Pause asked');
+    expect(ciPauseAskWords({ asked: null, dropped: 'Resume came before the test paused.' }, en)).toBe(
+      'The Pause was dropped: Resume came before the test paused.',
+    );
+    expect(ciPauseAskWords({ asked: null, dropped: null }, en)).toBeNull();
+  });
+
+  it('offers Resume alone while a Pause waits for the test’s next call, which takes it back', () => {
+    expect(ciControlsOffered(running({ pauseAsked: { by: 'Ana' } }), CONTROLLER, true)).toEqual(['resume']);
+  });
+
+  it('words each control as a local run’s', () => {
+    expect(en.say(CI_CONTROL_WORDS.pause.label.key)).toBe('Pause');
+    expect(en.say(CI_CONTROL_WORDS.resume.label.key)).toBe('Resume');
+    expect(en.say(CI_CONTROL_WORDS.end.label.key)).toBe('End the test');
+    expect(en.say(CI_CONTROL_WORDS.resume.title.key)).toBe('Let the test go on from where it is paused');
+  });
+});
+
+describe('Let it go and the controls asked of a CI lane', () => {
+  const hold = (worker: number, until: number | null = 1_763_727_900_000) => ({
+    worker: { shard: null, worker, slot: 1 },
+    call: { title: 'boom', file: null, line: null },
+    until,
+    heldFor: [],
+  });
+
+  it('names each hold of each worker apart', () => {
+    expect(ciHoldKey(hold(4))).toBe(':4:1763727900000');
+    expect(ciHoldKey(hold(4, null))).toBe(':4:');
+    expect(ciHoldKey({ ...hold(4), worker: { shard: 2, worker: 4, slot: 1 } })).toBe('2:4:1763727900000');
+  });
+
+  it('is asked once per hold of each lane, again only after a refusal or for the lane’s next hold', () => {
+    const asks = new CiAsks();
+    expect(asks.ask('lane-2', 'a')).toBe(true);
+    expect(asks.asked('lane-2', 'a')).toBe(true);
+    // Asked again, the same hold waits or went through: no second ask.
+    expect(asks.ask('lane-2', 'a')).toBe(false);
+    // Another lane's ask is its own.
+    expect(asks.asked('lane-3', 'b')).toBe(false);
+    expect(asks.ask('lane-3', 'b')).toBe(true);
+    asks.refused('lane-3', 'b');
+    expect(asks.asked('lane-3', 'b')).toBe(false);
+    expect(asks.asked('lane-2', 'a')).toBe(true);
+    // The lane's next hold is asked anew.
+    expect(asks.asked('lane-2', 'c')).toBe(false);
+    expect(asks.ask('lane-2', 'c')).toBe(true);
+    // A refusal of a hold no longer asked changes nothing.
+    asks.refused('lane-2', 'a');
+    expect(asks.asked('lane-2', 'c')).toBe(true);
+  });
+});
+
+describe('the controls of a CI lane, asked once per state', () => {
+  const state = (over: Record<string, unknown> = {}) => ({
+    shard: null,
+    worker: 3,
+    slot: 1,
+    connected: true,
+    holds: true,
+    pauses: true,
+    paused: null,
+    ...over,
+  });
+  const PAUSED = {
+    reason: 'pause',
+    call: { title: 'Click', file: null, line: null },
+    test: 'pays',
+    until: 1_763_727_900_000,
+  };
+
+  it('names each state of a lane’s worker apart: running, a Pause asked, paused until its end, a Pause dropped', () => {
+    expect(ciControlStateKey(state(), 't1')).toBe(':3:t1:0:running:');
+    expect(ciControlStateKey(state({ pauseAsked: { by: 'Ana' }, pauseSeq: 1 }), 't1')).toBe(':3:t1:1:asked');
+    expect(ciControlStateKey(state({ paused: PAUSED, pausedBy: 'Ana', pauseSeq: 3 }), 't1')).toBe(
+      ':3:t1:3:paused:1763727900000',
+    );
+    expect(ciControlStateKey(state({ pauseDropped: 'No test runs.', pauseSeq: 2 }), 't1')).toBe(
+      ':3:t1:2:running:No test runs.',
+    );
+    // A Pause dropped again for the same reason, or the worker's next test, is another state.
+    expect(ciControlStateKey(state({ pauseDropped: 'No test runs.', pauseSeq: 4 }), 't1')).not.toBe(
+      ciControlStateKey(state({ pauseDropped: 'No test runs.', pauseSeq: 2 }), 't1'),
+    );
+    expect(ciControlStateKey(state(), 't2')).not.toBe(ciControlStateKey(state(), 't1'));
+    expect(ciControlStateKey(state({ pauses: undefined }), 't1')).toBeNull();
+    expect(ciControlStateKey(null, 't1')).toBeNull();
+  });
+
+  it('finds the state of a lane’s worker: by its lane and its worker, else, from an older reporter, its worker', () => {
+    const lane1 = state();
+    const older = state({ worker: 5, slot: undefined });
+    expect(ciWorkerStateOf([older, lane1], { shard: null, slot: 1 }, 3)).toBe(lane1);
+    expect(ciWorkerStateOf([older, lane1], { shard: null, slot: 1 }, null)).toBe(lane1);
+    // A worker that left the lane is none of its next test's.
+    expect(ciWorkerStateOf([lane1], { shard: null, slot: 1 }, 4)).toBeNull();
+    expect(ciWorkerStateOf([older], { shard: null, slot: 2 }, 5)).toBe(older);
+    expect(ciWorkerStateOf([lane1], { shard: 2, slot: 1 }, 3)).toBeNull();
+  });
+
+  it('forgets an ask the instance took once the lane shows anything new, whatever its state’s key', () => {
+    const asks = new CiAsks();
+    expect(asks.ask('lane', 'k')).toBe(true);
+    asks.seen('lane', 'k', 'shown-1');
+    asks.took('lane', 'k', 'shown-1');
+    // Redrawn as it was: still asked.
+    asks.seen('lane', 'k', 'shown-1');
+    expect(asks.asked('lane', 'k')).toBe(true);
+    // Anything new of the lane after the answer, even under the same key: asked anew.
+    asks.seen('lane', 'k', 'shown-2');
+    expect(asks.asked('lane', 'k')).toBe(false);
+    // An ask not answered yet stays while the lane's key stays.
+    asks.ask('lane', 'k');
+    asks.seen('lane', 'k', 'shown-3');
+    expect(asks.asked('lane', 'k')).toBe(true);
+  });
+
+  it('forgets an ask as the lane’s state changes, so the same state coming back is asked anew', () => {
+    const asks = new CiAsks();
+    expect(asks.ask('lane', ':3:running:')).toBe(true);
+    asks.seen('lane', ':3:running:');
+    expect(asks.asked('lane', ':3:running:')).toBe(true);
+    // The Pause waits, then is dropped: Pause is offered, and may be asked, again.
+    asks.seen('lane', ':3:asked');
+    expect(asks.asked('lane', ':3:running:')).toBe(false);
+    expect(asks.ask('lane', ':3:running:No test runs.')).toBe(true);
+    asks.seen('lane', ':3:asked');
+    asks.seen('lane', ':3:running:No test runs.');
+    expect(asks.asked('lane', ':3:running:No test runs.')).toBe(false);
   });
 });

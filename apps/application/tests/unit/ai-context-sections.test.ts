@@ -277,6 +277,36 @@ describe('extractPageSnapshotSection — Playwright error-context parsing (0.5.4
   test('returns null when there is no snapshot section', () => {
     expect(extractPageSnapshotSection('# Error details\nboom')).toBeNull();
   });
+
+  test('reads the snapshot Playwright ≥ 1.60 writes under the error of an expect that found no element', () => {
+    const md = [
+      '# Test info',
+      '',
+      '- Name: checkout shows the total',
+      '',
+      '# Error details',
+      '',
+      '```',
+      'Error: expect(locator).toBeVisible() failed',
+      '',
+      "Locator: getByRole('heading', { name: 'Total' })",
+      'Expected: visible',
+      'Error: element(s) not found',
+      '```',
+      '',
+      '```yaml',
+      '- heading "Cart" [level=1]',
+      '- button "Pay"',
+      '```',
+      '',
+      '# Test source',
+      '',
+      '```ts',
+      "  12 |   await expect(page.getByRole('heading', { name: 'Total' })).toBeVisible();",
+      '```',
+    ].join('\n');
+    expect(extractPageSnapshotSection(md)).toBe('- heading "Cart" [level=1]\n- button "Pay"');
+  });
 });
 
 describe('locator-literal SCM matching (diff-content relevance)', () => {

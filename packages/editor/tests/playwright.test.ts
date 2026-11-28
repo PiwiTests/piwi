@@ -14,13 +14,25 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** A folder whose `node_modules` holds packages made of an `index.js`, and of a `cli.js` when listed in `cli`. */
+/**
+ * A folder whose `node_modules` holds packages made of an `index.js`, and of a `cli.js` when listed in `cli`. The
+ * `playwright` package exports its index and manifest alone and names its CLI as its bin, as Playwright's does.
+ */
 function project(name: string, packages: string[], cli: string[] = []): string {
   const root = path.join(dir, name);
   for (const id of packages) {
     const folder = path.join(root, 'node_modules', id);
     fs.mkdirSync(folder, { recursive: true });
-    fs.writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name: id, main: 'index.js' }));
+    const manifest =
+      id === 'playwright'
+        ? {
+            name: id,
+            main: 'index.js',
+            bin: { playwright: 'cli.js' },
+            exports: { '.': './index.js', './package.json': './package.json' },
+          }
+        : { name: id, main: 'index.js' };
+    fs.writeFileSync(path.join(folder, 'package.json'), JSON.stringify(manifest));
     fs.writeFileSync(path.join(folder, 'index.js'), 'module.exports = {};\n');
     if (cli.includes(id)) fs.writeFileSync(path.join(folder, 'cli.js'), '\n');
   }
@@ -58,6 +70,19 @@ describe('the project’s Playwright', () => {
     fs.symlinkSync(path.join(store, 'node_modules'), path.join(linked, 'node_modules'), 'dir');
     expect(resolvePlaywrightLibrary(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'index.js'));
     expect(resolvePlaywrightCli(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'cli.js'));
+  });
+
+  test('a package the project’s node_modules links to from elsewhere is the project’s too', () => {
+    const checkout = project('checkout', ['@playwright/test', 'playwright'], ['@playwright/test', 'playwright']);
+    const shop = path.join(dir, 'shop');
+    fs.mkdirSync(path.join(shop, 'node_modules', '@playwright'), { recursive: true });
+    fs.symlinkSync(
+      path.join(checkout, 'node_modules', '@playwright', 'test'),
+      path.join(shop, 'node_modules', '@playwright', 'test'),
+      'dir',
+    );
+    expect(resolvePlaywrightCli(shop)).toBe(path.join(checkout, 'node_modules', '@playwright', 'test', 'cli.js'));
+    expect(resolvePlaywrightLibrary(shop)).toBe(path.join(checkout, 'node_modules', '@playwright', 'test', 'index.js'));
   });
 
   test('the real path of a linked folder, and the path as given when it does not exist', () => {

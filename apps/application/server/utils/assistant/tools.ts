@@ -293,7 +293,7 @@ export function createAssistantToolbox(opts: {
       }
       const tool = offered().has(call.name) ? byName.get(call.name) : undefined;
       if (!tool) return { data: null, error: `Unknown tool: ${call.name}. Call find_tools to look for one.` };
-      return { data: await tool.handler(opts.db, call.arguments, opts.ctx) };
+      return { data: await tool.handler(opts.db, call.arguments, { ...opts.ctx, textOnly: true }) };
     } catch (err) {
       return { data: null, error: errorText(err) };
     }

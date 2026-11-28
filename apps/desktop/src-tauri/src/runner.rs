@@ -45,8 +45,11 @@ pub(crate) const COLOR_ENV: [(&str, &str); 2] = [("FORCE_COLOR", "1"), ("NO_COLO
 const MAX_NODE_MODULES_WALK: usize = 12;
 
 /// `playwright test` flags the dashboard may pass. Anything else dash-like is
-/// rejected, so the webview cannot redirect config, output or reporters.
-const ALLOWED_FLAGS: [&str; 12] = [
+/// rejected, so the webview cannot redirect config, output or reporters. `-G`
+/// is the run's own `--grep-invert`, kept in a protected environment's
+/// ([`crate::environments::RunSettings::args`]); only the shell writes
+/// `--grep-invert`.
+const ALLOWED_FLAGS: [&str; 16] = [
     "--headed",
     "--debug",
     "--ui",
@@ -54,12 +57,19 @@ const ALLOWED_FLAGS: [&str; 12] = [
     "--repeat-each",
     "--project",
     "--grep",
+    "-G",
     "--workers",
     "--retries",
     "--max-failures",
+    "-x",
     "--timeout",
     "--last-failed",
+    "--shuffle",
+    "--pass-with-no-tests",
 ];
+
+/// The modes `--debug` takes (Playwright 1.63 and later).
+const DEBUG_MODES: [&str; 2] = ["inspector", "cli"];
 
 /// The child a reproduce/bisect job is running right now. A pid rather than a
 /// handle so the same stop path reaches a Tauri sidecar child and a plain
@@ -127,6 +137,8 @@ const ENDED_KEPT: usize = 64;
 pub struct EndedRun {
     pub id: u32,
     pub code: Option<i32>,
+    /// Whether it was stopped ([`LocalRuns::stopped`]), whoever asked.
+    pub stopped: bool,
     /// What a repro spec recorded, a lab's report, a bisect's result: the
     /// events the window was sent, for one that missed them as it reloaded.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -146,6 +158,8 @@ pub struct RunOrigin {
 pub struct LocalRunsState {
     /// The runs still going, by id.
     pub running: Vec<u32>,
+    /// The runs of `running` asked to stop, which wind down ([`LocalRuns::stopped`]).
+    pub stopping: Vec<u32>,
     /// The latest runs that ended, with their exit codes and verdicts.
     pub ended: Vec<EndedRun>,
     /// The origin reference of each plain run the window started that is
@@ -192,15 +206,25 @@ impl LocalRuns {
             .collect()
     }
 
-    /// Remember that run `id` ended with `code`, before it leaves the running
-    /// runs and its `exit` event goes to the window: a window that asks in
-    /// between finds it among the ended ones.
-    pub(crate) fn note_exit(&self, id: u32, code: Option<i32>) {
+    /// Whether run `id` was asked to stop, whoever asked (a plain run's stop,
+    /// a job's stop flag), or goes on as the app quits.
+    fn stopped(&self, id: u32) -> bool {
+        self.quitting.load(Ordering::SeqCst)
+            || self.stopping.lock().unwrap().contains(&id)
+            || self.jobs.lock().unwrap().get(&id).is_some_and(|job| job.stop.load(Ordering::SeqCst))
+    }
+
+    /// Remember that run `id` ended with `code`, and whether it was stopped,
+    /// before it leaves the running runs and its `exit` event goes to the
+    /// window: a window that asks in between finds it among the ended ones.
+    /// Answers whether it was stopped.
+    pub(crate) fn note_exit(&self, id: u32, code: Option<i32>) -> bool {
+        let stopped = self.stopped(id);
         let events = self.verdicts.lock().unwrap().remove(&id).unwrap_or_default();
         let mut dropped = Vec::new();
         {
             let mut ended = self.ended.lock().unwrap();
-            ended.push_back(EndedRun { id, code, events });
+            ended.push_back(EndedRun { id, code, stopped, events });
             while ended.len() > ENDED_KEPT {
                 if let Some(old) = ended.pop_front() {
                     dropped.push(old.id);
@@ -211,6 +235,7 @@ impl LocalRuns {
         for old in dropped {
             origins.remove(&old);
         }
+        stopped
     }
 
     /// Keep an event that carries run `id`'s verdict, sent to the window as
@@ -227,7 +252,8 @@ impl LocalRuns {
     /// The runs still going, then the latest that ended: read in that order,
     /// a run that ends meanwhile is in one list or both, never in neither.
     pub fn state(&self) -> LocalRunsState {
-        let running = self.listed().into_iter().map(|(id, _)| id).collect();
+        let running: Vec<u32> = self.listed().into_iter().map(|(id, _)| id).collect();
+        let stopping = running.iter().copied().filter(|&id| self.stopped(id)).collect();
         let ended = self.ended.lock().unwrap().iter().cloned().collect();
         let mut origins: Vec<RunOrigin> = self
             .origins
@@ -240,7 +266,7 @@ impl LocalRuns {
             })
             .collect();
         origins.sort_by_key(|origin| origin.id);
-        LocalRunsState { running, ended, origins }
+        LocalRunsState { running, stopping, ended, origins }
     }
 
     /// Name run `id` for the tray (`run_label`).
@@ -312,7 +338,7 @@ impl LocalRuns {
     /// Forget plain run `id` once its process has exited, and answer whether
     /// it was stopped: asked to stop, or still going when the app quit.
     fn end_child(&self, id: u32) -> bool {
-        let stopped = self.stopping.lock().unwrap().contains(&id) || self.quitting.load(Ordering::SeqCst);
+        let stopped = self.stopped(id);
         self.drop_child(id);
         stopped
     }
@@ -325,10 +351,10 @@ impl LocalRuns {
         self.folders.lock().unwrap().remove(&id);
     }
 
-    /// Kill a plain run's process tree now, if it is still running.
+    /// Kill a plain run's process tree now, if it is still running. It stays
+    /// among the runs asked to stop until its exit is heard (`end_child`).
     fn kill_child(&self, id: u32) {
         let child = self.children.lock().unwrap().remove(&id);
-        self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
         self.folders.lock().unwrap().remove(&id);
         if let Some(child) = child {
@@ -770,6 +796,16 @@ pub fn desktop_check_local_env(
     Ok(local_env(&folder))
 }
 
+/// Refuses `args` unless each option is one of [`ALLOWED_FLAGS`], written
+/// `--name`, `--name=value` or `--name value`, a short one (`-G`, `-x`) without
+/// `=`, which Playwright would read as the start of its value. The last
+/// argument is never an option waiting for its value
+/// ([`crate::spec_filter::VALUE_FLAGS`] given apart): Playwright would take the
+/// argument the shell writes after it, such as a protected environment's
+/// `--grep-invert`, as that value. A mode of `--debug` is one of
+/// [`DEBUG_MODES`], and Playwright reads the argument after a bare `--debug`
+/// as its mode unless it is an option ([`crate::spec_filter::read_args`]), so
+/// a test filter there is refused.
 pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
     for arg in args {
         if arg.contains('\0') {
@@ -780,15 +816,43 @@ pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
             if !ALLOWED_FLAGS.contains(&flag) {
                 return Err(format!("flag not allowed: {flag}"));
             }
+            if !flag.starts_with("--") && flag != arg {
+                return Err(format!("write {flag} without '='"));
+            }
+        }
+    }
+    if let Some(last) = args
+        .last()
+        .filter(|last| crate::spec_filter::VALUE_FLAGS.contains(&last.as_str()))
+    {
+        return Err(format!("{last} needs a value"));
+    }
+    let read = crate::spec_filter::read_args(args);
+    for (index, arg) in args.iter().enumerate() {
+        if read[index] != crate::spec_filter::Arg::Flag {
+            continue;
+        }
+        if let Some(mode) = arg.strip_prefix("--debug=") {
+            if !DEBUG_MODES.contains(&mode) {
+                return Err(format!("--debug takes inspector or cli, not {mode:?}"));
+            }
+        } else if arg == "--debug" && read.get(index + 1) == Some(&crate::spec_filter::Arg::Value) {
+            let mode = &args[index + 1];
+            if !DEBUG_MODES.contains(&mode.as_str()) {
+                return Err(format!(
+                    "Playwright reads {mode} after --debug as its mode, inspector or cli: write the test filter before --debug"
+                ));
+            }
         }
     }
     Ok(())
 }
 
 /// A `piwi:local-run` event. `kind` selects which of the optional fields carries
-/// the payload: `stdout`/`stderr`/`error` use `line`, `exit` uses `code`, `phase`
-/// uses `phase` (a reproduce/bisect step header), `bisect` uses `bisect`, and
-/// `repro` uses `repro` (what a repro spec recorded about its run).
+/// the payload: `stdout`/`stderr`/`error` use `line`, `exit` uses `code` and
+/// `stopped`, `phase` uses `phase` (a reproduce/bisect step header), `bisect`
+/// uses `bisect`, and `repro` uses `repro` (what a repro spec recorded about its
+/// run). `stopping` carries nothing: the run was asked to stop and winds down.
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct RunEventPayload {
     pub id: u32,
@@ -797,6 +861,9 @@ pub(crate) struct RunEventPayload {
     pub line: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<i32>,
+    /// For `exit`: whether the run was stopped (asked to stop, or still going as the app quit), whoever asked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -810,77 +877,40 @@ pub(crate) struct RunEventPayload {
 }
 
 impl RunEventPayload {
-    pub(crate) fn line(id: u32, kind: &'static str, text: String) -> Self {
+    /// An event of `kind` for run `id` that carries nothing yet.
+    fn of(id: u32, kind: &'static str) -> Self {
         Self {
             id,
             kind,
-            line: Some(text),
+            line: None,
             code: None,
+            stopped: None,
             phase: None,
             bisect: None,
             repro: None,
             lab: None,
         }
     }
-    pub(crate) fn exit(id: u32, code: Option<i32>) -> Self {
-        Self {
-            id,
-            kind: "exit",
-            line: None,
-            code,
-            phase: None,
-            bisect: None,
-            repro: None,
-            lab: None,
-        }
+    pub(crate) fn line(id: u32, kind: &'static str, text: String) -> Self {
+        Self { line: Some(text), ..Self::of(id, kind) }
+    }
+    pub(crate) fn exit(id: u32, code: Option<i32>, stopped: bool) -> Self {
+        Self { code, stopped: Some(stopped), ..Self::of(id, "exit") }
+    }
+    pub(crate) fn stopping(id: u32) -> Self {
+        Self::of(id, "stopping")
     }
     pub(crate) fn phase(id: u32, phase: &str) -> Self {
-        Self {
-            id,
-            kind: "phase",
-            line: None,
-            code: None,
-            phase: Some(phase.to_string()),
-            bisect: None,
-            repro: None,
-            lab: None,
-        }
+        Self { phase: Some(phase.to_string()), ..Self::of(id, "phase") }
     }
     pub(crate) fn bisect(id: u32, event: crate::worktree::BisectEvent) -> Self {
-        Self {
-            id,
-            kind: "bisect",
-            line: None,
-            code: None,
-            phase: None,
-            bisect: Some(event),
-            repro: None,
-            lab: None,
-        }
+        Self { bisect: Some(event), ..Self::of(id, "bisect") }
     }
     pub(crate) fn repro(id: u32, recorded: Option<serde_json::Value>) -> Self {
-        Self {
-            id,
-            kind: "repro",
-            line: None,
-            code: None,
-            phase: None,
-            bisect: None,
-            repro: Some(recorded.unwrap_or(serde_json::Value::Null)),
-            lab: None,
-        }
+        Self { repro: Some(recorded.unwrap_or(serde_json::Value::Null)), ..Self::of(id, "repro") }
     }
     pub(crate) fn lab(id: u32, report: Option<serde_json::Value>) -> Self {
-        Self {
-            id,
-            kind: "lab",
-            line: None,
-            code: None,
-            phase: None,
-            bisect: None,
-            repro: None,
-            lab: Some(report.unwrap_or(serde_json::Value::Null)),
-        }
+        Self { lab: Some(report.unwrap_or(serde_json::Value::Null)), ..Self::of(id, "lab") }
     }
 }
 
@@ -1054,8 +1084,11 @@ pub async fn desktop_run_local_tests(
 
     let settings =
         crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
-    let mut args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
-    args.extend(settings.args());
+    let args = settings.args(crate::spec_filter::anchored_filters(
+        &playwright_folder(&folder),
+        &args,
+        cfg!(windows),
+    ))?;
     let id = spawn_tests(&app, &folder, &cli, args, settings.envs(), origin, |_, _| {}).await?;
     if let Some(origin_ref) = origin_ref {
         app.state::<LocalRuns>().note_origin(id, origin_ref);
@@ -1145,14 +1178,15 @@ pub(crate) async fn spawn_tests(
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
                     let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| {
-                        runs.note_exit(id, status.code);
-                        runs.end_child(id)
+                        let stopped = runs.note_exit(id, status.code);
+                        runs.end_child(id);
+                        stopped
                     });
                     crate::run_target::hand_local_runs(&emit_app);
                     if let Some(on_exit) = on_exit.take() {
                         on_exit(status.code, stopped);
                     }
-                    RunEventPayload::exit(id, status.code)
+                    RunEventPayload::exit(id, status.code, stopped)
                 }
                 _ => continue,
             };
@@ -1174,13 +1208,23 @@ pub fn desktop_local_runs(app: AppHandle) -> LocalRunsState {
 /// `interrupt.rs`): Playwright stops its workers and the reporter still sends
 /// the run's end. A process still running `STOP_GRACE` later — or asked to stop
 /// a second time, or one that cannot be interrupted — is killed with its process
-/// tree (the test may have spawned browsers or a webServer).
+/// tree (the test may have spawned browsers or a webServer). With `graceful`, a
+/// stop asked while one goes on does nothing ([`stop_local_run`]).
 ///
 /// For a reproduce/bisect job the stop flag is raised first, so its driver
 /// starts no further step once the current child exits, then resets any bisect
 /// and removes the worktree. A run that already exited is a no-op.
 #[tauri::command]
-pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
+pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32, graceful: Option<bool>) -> Result<(), String> {
+    stop_local_run(&app, run_id, graceful.unwrap_or(false));
+    Ok(())
+}
+
+/// Ask run `run_id` to stop ([`desktop_stop_local_tests`]), saying so with a
+/// `stopping` event the first time. Asked again, it is killed at once, unless
+/// `graceful`: a stop nobody pressed twice (a team instance's, or one the
+/// window asks as the run starts) leaves a stop that goes on to wind down.
+pub(crate) fn stop_local_run(app: &AppHandle, run_id: u32, graceful: bool) {
     let state = app.state::<LocalRuns>();
     let job = state.jobs.lock().unwrap().get(&run_id).map(|job| {
         (
@@ -1189,28 +1233,39 @@ pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(),
         )
     });
     if let Some((already_stopping, child)) = job {
+        if !already_stopping {
+            let _ = app.emit(RUN_EVENT, &RunEventPayload::stopping(run_id));
+        }
         let Some(child) = child else {
-            return Ok(());
+            return;
         };
+        if already_stopping && graceful {
+            return;
+        }
         if already_stopping || !child.interruptible || !crate::interrupt::interrupt(child.pid) {
             state.kill_job_child(run_id, child.pid);
         } else {
-            after_grace(&app, move |runs| runs.kill_job_child(run_id, child.pid));
+            after_grace(app, move |runs| runs.kill_job_child(run_id, child.pid));
         }
-        return Ok(());
+        return;
     }
 
     let pid = state.children.lock().unwrap().get(&run_id).map(|c| c.pid());
     let Some(pid) = pid else {
-        return Ok(());
+        return;
     };
     let already_stopping = !state.stopping.lock().unwrap().insert(run_id);
+    if !already_stopping {
+        let _ = app.emit(RUN_EVENT, &RunEventPayload::stopping(run_id));
+    }
+    if already_stopping && graceful {
+        return;
+    }
     if already_stopping || !crate::interrupt::interrupt(pid) {
         state.kill_child(run_id);
     } else {
-        after_grace(&app, move |runs| runs.kill_child(run_id));
+        after_grace(app, move |runs| runs.kill_child(run_id));
     }
-    Ok(())
 }
 
 /// Run `force` once `STOP_GRACE` has passed — on a plain thread, since the wait
@@ -1257,13 +1312,13 @@ mod tests {
         let runs = LocalRuns::default();
         assert_eq!(
             serde_json::to_value(runs.state()).unwrap(),
-            json!({ "running": [], "ended": [], "origins": [] })
+            json!({ "running": [], "stopping": [], "ended": [], "origins": [] })
         );
         runs.note_exit(3, Some(1));
         runs.note_exit(4, None);
         assert_eq!(
             serde_json::to_value(runs.state().ended).unwrap(),
-            json!([{ "id": 3, "code": 1 }, { "id": 4, "code": null }])
+            json!([{ "id": 3, "code": 1, "stopped": false }, { "id": 4, "code": null, "stopped": false }])
         );
         for id in 10..(10 + ENDED_KEPT as u32) {
             runs.note_exit(id, Some(0));
@@ -1286,6 +1341,7 @@ mod tests {
             json!([{
                 "id": 5,
                 "code": 1,
+                "stopped": false,
                 "events": [{ "id": 5, "kind": "repro", "repro": { "status": "failed" } }]
             }])
         );
@@ -1316,6 +1372,76 @@ mod tests {
         assert_eq!(others_linked_to_folder(&links, "7"), vec!["3".to_string(), "12".to_string()]);
         assert!(others_linked_to_folder(&links, "9").is_empty());
         assert!(others_linked_to_folder(&links, "4").is_empty());
+    }
+
+    #[test]
+    fn takes_the_allowed_flags_in_the_forms_playwright_reads_as_written() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        for taken in [
+            args(&["tests/a.spec.ts:3", "-G", "@slow", "-x"]),
+            args(&["--shuffle", "--pass-with-no-tests"]),
+            args(&["--shuffle=42", "--grep", "pays"]),
+            args(&["--shuffle", "42", "--max-failures=1"]),
+            args(&["--project", "chromium", "--grep=a=b", "--last-failed"]),
+        ] {
+            assert!(validate_args(&taken).is_ok(), "{taken:?}");
+        }
+        for refused in [
+            args(&["--grep-invert=x"]),
+            args(&["--grep-invert", "x"]),
+            args(&["--config=x"]),
+            args(&["-g", "x"]),
+            args(&["-Gx"]),
+            args(&["-G=x"]),
+            args(&["-x=1"]),
+            args(&["-xG", "x"]),
+            args(&["a\0b"]),
+        ] {
+            assert!(validate_args(&refused).is_err(), "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn a_debug_mode_is_inspector_or_cli() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        for taken in [
+            args(&["tests/a.spec.ts", "--debug"]),
+            args(&["tests/a.spec.ts", "--debug", "cli"]),
+            args(&["--debug", "inspector", "tests/a.spec.ts"]),
+            args(&["--debug=cli", "tests/a.spec.ts"]),
+            args(&["--debug", "--headed", "tests/a.spec.ts"]),
+            args(&["--grep", "--debug", "tests/a.spec.ts"]),
+        ] {
+            assert!(validate_args(&taken).is_ok(), "{taken:?}");
+        }
+        for refused in [
+            args(&["--debug", "tests/a.spec.ts"]),
+            args(&["--debug", "Cli"]),
+            args(&["--debug="]),
+            args(&["--debug=tests/a.spec.ts"]),
+        ] {
+            let error = validate_args(&refused).unwrap_err();
+            assert!(error.contains("inspector or cli"), "{refused:?}: {error}");
+        }
+    }
+
+    #[test]
+    fn the_last_argument_never_waits_for_a_value() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        // Playwright gives such an option the argument the shell writes next, such as a protected environment's
+        // `--grep-invert`.
+        for refused in [
+            args(&["--grep"]),
+            args(&["tests/a.spec.ts", "-G"]),
+            args(&["--project", "api", "--timeout"]),
+        ] {
+            assert!(validate_args(&refused).is_err(), "{refused:?}");
+        }
+        assert!(validate_args(&args(&["--shuffle"])).is_ok());
+        assert!(validate_args(&args(&["--project", "api", "web"])).is_ok());
+        for flag in crate::spec_filter::VALUE_FLAGS {
+            assert!(ALLOWED_FLAGS.contains(&flag), "{flag}");
+        }
     }
 
     #[test]
@@ -1357,6 +1483,61 @@ mod tests {
         assert!(!runs.end_child(4), "a run that ends on its own");
         runs.kill_all();
         assert!(runs.end_child(5), "killed as the app quits");
+    }
+
+    #[test]
+    fn a_run_killed_after_it_was_asked_to_stop_ends_stopped() {
+        let runs = LocalRuns::default();
+        runs.stopping.lock().unwrap().insert(4);
+        runs.kill_child(4);
+        assert!(runs.end_child(4), "killed by a second stop, or after the grace");
+        assert!(!runs.end_child(4), "its stop goes with its end");
+    }
+
+    #[test]
+    fn a_window_that_reloads_reads_which_runs_were_asked_to_stop() {
+        let job = |stop: bool| Job {
+            stop: Arc::new(AtomicBool::new(stop)),
+            child: Arc::new(Mutex::new(None)),
+            cleanup: crate::worktree::Cleanup {
+                git: PathBuf::from("git"),
+                folder: PathBuf::from("/work/shop"),
+                worktree: PathBuf::from("/tmp/wt"),
+                bisect: false,
+            },
+            cleaned: Arc::new(AtomicBool::new(false)),
+        };
+        let runs = LocalRuns::default();
+        runs.register_job(4, job(false));
+        runs.register_job(5, job(true));
+        assert_eq!(runs.state().running, [4, 5]);
+        assert_eq!(runs.state().stopping, [5], "a job asked to stop winds down");
+
+        runs.stopping.lock().unwrap().insert(6);
+        assert!(runs.note_exit(6, Some(130)), "a plain run asked to stop");
+        runs.end_child(6);
+        assert!(!runs.note_exit(4, Some(1)));
+        runs.drop_job(4);
+        assert!(runs.note_exit(5, Some(1)));
+        runs.drop_job(5);
+        let ended: Vec<(u32, bool)> = runs.state().ended.iter().map(|end| (end.id, end.stopped)).collect();
+        assert_eq!(ended, [(6, true), (4, false), (5, true)]);
+    }
+
+    #[test]
+    fn the_exit_says_whether_the_run_was_stopped_and_a_stop_says_it_began() {
+        assert_eq!(
+            serde_json::to_value(RunEventPayload::exit(3, Some(130), true)).unwrap(),
+            json!({ "id": 3, "kind": "exit", "code": 130, "stopped": true })
+        );
+        assert_eq!(
+            serde_json::to_value(RunEventPayload::exit(3, Some(1), false)).unwrap(),
+            json!({ "id": 3, "kind": "exit", "code": 1, "stopped": false })
+        );
+        assert_eq!(
+            serde_json::to_value(RunEventPayload::stopping(3)).unwrap(),
+            json!({ "id": 3, "kind": "stopping" })
+        );
     }
 
     #[test]

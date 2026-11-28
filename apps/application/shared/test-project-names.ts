@@ -13,6 +13,7 @@
  */
 
 export const PROJECT = {
+  ADMIN_ACTIVITY: 'admin-activity-test',
   ANALYTICS_TEST: 'analytics-widgets-test',
   ANALYTICS_SCOPE_TEST: 'analytics-scope-test',
   ANALYTICS_TREND_DEPTH: 'analytics-trend-depth-test',
@@ -64,7 +65,9 @@ export const PROJECT = {
   DESKTOP_LOCAL_RUN_UNNAMED: 'desktop-local-run-unnamed-test',
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
+  DESKTOP_RUN_BUTTON: 'desktop-run-button-test',
   DESKTOP_RUN_VIEW: 'desktop-run-view-test',
+  DESKTOP_SKILLS: 'desktop-skills-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
   DOM_SNAPSHOT_STATE: 'dom-snapshot-state-test',
   DOWNLOAD_TEST: 'download-test-project',
@@ -138,8 +141,11 @@ export const PROJECT = {
   LATEST_RUN_TEST: 'latest-run-test',
   LIST_VISIBLE: 'list-visible-project',
   LIVE_RUN_LISTS: 'live-run-lists-test',
+  LIVE_VIEW_HOLD: 'live-view-hold-test',
   LIVE_VIEW_OFF: 'live-view-off-test',
   LIVE_VIEW_ON: 'live-view-on-test',
+  LIVE_VIEW_PAUSE_OFF: 'live-view-pause-off-test',
+  LIVE_VIEW_PAUSE: 'live-view-pause-test',
   LIVE_VIEW_READINESS: 'live-view-readiness-test',
   LIVE_VIEW_STREAM: 'live-view-stream-test',
   LOCATOR_HEAL_NAVIGATION: 'locator-heal-navigation-test',
@@ -157,6 +163,7 @@ export const PROJECT = {
   NOTIFY_EMAIL: 'notify-email-test',
   NO_FILES: 'no-files-project',
   NO_METADATA: 'no-metadata-test',
+  OPERATOR_USAGE: 'operator-usage-test',
   PAGE_DIFF: 'page-diff-test',
   PERFETTO_EXPORT: 'perfetto-export-test',
   PERF_TEST: 'perf-test-project',
@@ -168,6 +175,7 @@ export const PROJECT = {
   QUALITY_REPORT_SCHEDULES: 'quality-report-schedules-test',
   QUALITY_REPORT: 'quality-report-test',
   QUARANTINE: 'quarantine-test',
+  RELATIVE_TIMES: 'relative-times-test',
   REPORTER_API_KEY_E2E: 'reporter-api-key-e2e-test',
   REPORTER_API_KEY_LIB: 'reporter-api-key-lib-test',
   REPORTER_AUTH_LIB: 'reporter-auth-lib-test',
@@ -178,9 +186,11 @@ export const PROJECT = {
   REPORT_SHARE_LINKS: 'report-share-links-test',
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
+  RUN_BUTTON: 'run-button-test',
   RUN_CHANGES_FALLBACK: 'run-changes-fallback-test',
   RUN_COMPARE: 'run-compare',
   RUN_DELETE_MANY: 'run-delete-many-test',
+  RUN_DIALOG_TAGS: 'run-dialog-tags-test',
   RUN_ERRORS_COLLAPSE: 'run-errors-collapse-test',
   RUN_GOES_LIVE: 'run-goes-live-test',
   RUN_KEEP_OTHER: 'run-keep-other-test',
@@ -237,6 +247,8 @@ export const PROJECT = {
   VIDEO_CHECKLIST_SEARCH: 'video-checklist-search-test',
   VIDEO_MAXIMIZE: 'video-maximize-test',
   VIDEO_REVIEW_FIT: 'video-review-fit-test',
+  WAITING_RUNS_AUTH: 'waiting-runs-auth-test',
+  WAITING_RUNS: 'waiting-runs-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

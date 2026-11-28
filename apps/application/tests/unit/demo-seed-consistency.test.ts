@@ -28,6 +28,12 @@ import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
 import { isEligibleRun } from '#shared/run-eligibility';
+import { matchCiDispatch, type CiDispatchState } from '#shared/ci-dispatches';
+import { pickCiAction, resolveCiActionsSettings, type CiActionKind } from '#shared/ci-actions';
+import { ciServerTargetOf } from '#shared/ci-targets';
+import { ciServerTemplateValues } from '#shared/handlers/ci-rerun-target';
+import { buildRetryArgs } from '#shared/retry-command';
+import type { CiRerunProvider } from '#shared/ci-rerun';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
@@ -128,6 +134,16 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     'Error: browserType.launch: profile /tmp/playwright_chromiumdev_profile-Xo8n2p is locked',
     'Test timeout of 30000ms exceeded.\n    at /Users/alice/shop/tests/cart.spec.ts:4:1',
     "TypeError: Cannot read properties of undefined (reading 'id')\n    at C:\\Users\\alice\\shop\\tests\\orders.spec.ts:20:15",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator().getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+    "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator().locator('#my-frame').contentFrame().getByRole('button', { name: 'Pay' })",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator('#pay').getByLabel('Card number')",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('#pay').contentFrame().getByRole('row', { name: 'Order 42' })",
+    'TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\'#outer\').contentFrame().frameLocator("iframe[title=\\"Pay\\"]").getByText(\'Pay\')',
+    `Error: frameLocator().getByRole('row', { name: '${'x'.repeat(100)}`,
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('iframe').first().contentFrame().getByLabel('Expiry')",
+    "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('checkout').frameLocator('iframe').filter({ hasText: 'a' }).getByLabel('Card')",
+    `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByText("frameLocator('#x')")`,
+    `Error: locator('iframe').nth(2).contentFrame().getByRole('row', { name: '${'x'.repeat(100)}`,
   ];
 
   for (const [i, err] of corpus.entries()) {
@@ -1368,6 +1384,88 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     expect(flakeLabTestState(experiments, fix), `${label}: the test's lab state`).toBe(want.lab);
   }
 }
+
+describe('CI dispatches hold as the server stores them', () => {
+  const dispatches = () => q('SELECT * FROM ci_dispatches');
+
+  test('each runs the action the server picks for its run, with the arguments it builds from that run', () => {
+    expect(dispatches().length).toBeGreaterThan(0);
+    for (const d of dispatches()) {
+      const [run] = q(
+        `SELECT project_id, environment, environment_id, branch FROM test_runs WHERE id = ${d.source_run_id}`,
+      );
+      const [project] = q(`SELECT ci_rerun FROM projects WHERE id = ${d.project_id}`);
+      const settings = resolveCiActionsSettings(JSON.parse(String(project!.ci_rerun)));
+      const pick = pickCiAction(settings, d.kind as CiActionKind, {
+        provider: null,
+        environment: (run!.environment as string | null) ?? null,
+        environmentId: (run!.environment_id as number | null) ?? null,
+      });
+      expect(pick.action?.id, `dispatch ${d.id}`).toBe(d.action_id);
+      const target = pick.action!.target;
+      expect(target.type, `dispatch ${d.id}`).toBe('ci-server');
+      if (target.type !== 'ci-server') continue;
+      // The branch the request sends: none for a job that runs its configured branch.
+      const sent = ciServerTemplateValues(
+        ciServerTargetOf(target),
+        String(d.args),
+        String(d.id),
+        run!.branch as string,
+        null,
+      );
+      expect(d.ref, `dispatch ${d.id}`).toBe(sent.ref || null);
+      const cases = q(
+        `SELECT tc.file_path, trc.line, trc.browser_name FROM test_runs_cases trc JOIN test_cases tc ON tc.id = trc.test_case_id
+         WHERE trc.test_run_id = ${d.source_run_id} AND trc.failure_cluster_id = ${d.cluster_id} ORDER BY trc.id DESC`,
+      ).map((c) => ({
+        filePath: String(c.file_path),
+        title: '',
+        line: c.line as number,
+        projectName: (c.browser_name as string | null) ?? null,
+      }));
+      expect(d.args, `dispatch ${d.id}`).toBe(buildRetryArgs(cases));
+    }
+  });
+
+  test('each answered one is the dispatch its run matches, and each other one went past the window unanswered', () => {
+    for (const d of dispatches()) {
+      if (d.run_id == null) {
+        expect(d.state).toBe('unreported');
+        expect(Date.now() - Number(d.created_at)).toBeGreaterThan(6 * 60 * 60 * 1000);
+        continue;
+      }
+      const [run] = q(`SELECT metadata, branch, start_time, origin FROM test_runs WHERE id = ${d.run_id}`);
+      const metadata = JSON.parse(String(run!.metadata)) as {
+        piwiOrigin?: { ref?: string };
+        ci?: { buildNumber?: string };
+      };
+      const candidate = {
+        id: String(d.id),
+        kind: d.kind as CiActionKind,
+        provider: d.provider as CiRerunProvider,
+        ref: (d.ref as string | null) ?? null,
+        files: JSON.parse(String(d.files)) as string[],
+        providerRunId: (d.provider_run_id as string | null) ?? null,
+        testCaseId: (d.test_case_id as number | null) ?? null,
+        state: 'dispatched' as CiDispatchState,
+        runId: null,
+        at: Number(d.created_at),
+      };
+      const facts = {
+        originRef: metadata.piwiOrigin?.ref ?? null,
+        githubRunId: null,
+        pipelineId: null,
+        buildNumber: metadata.ci?.buildNumber ?? null,
+        branch: (run!.branch as string | null) ?? null,
+        startedAt: Number(run!.start_time) * 1000,
+        files: null,
+      };
+      expect(matchCiDispatch(facts, [candidate]), `dispatch ${d.id}`).toBe(candidate);
+      expect(run!.origin).toBe(d.kind === 'tests' ? 'ci-rerun' : run!.origin);
+      expect(d.state).toBe('ended');
+    }
+  });
+});
 
 describe('demo examples hold in the seed', () => {
   test('ids are unique', () => {

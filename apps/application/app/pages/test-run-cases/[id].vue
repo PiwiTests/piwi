@@ -16,7 +16,6 @@ import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import type { RerunInfo } from '~/composables/useCiRerun';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
@@ -35,6 +34,7 @@ import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import { suspectLinesSentence } from '~/utils/suspect-lines';
 import { coverageLossPreview } from '~/utils/coverage-insights';
 import { refetchKeeping } from '~/utils/refetch-keeping';
+import type { RunWhat } from '~/composables/useRunPlace';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -54,6 +54,13 @@ provideTestManagementKeys(() => testCase.value?.testRun?.project?.id);
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();
+
+// Compare with team instance (desktop app): the team instance's CI for this test, once the page shows.
+const { comparison: teamComparison, shown: teamComparisonShown } = useTeamComparison('execution', () =>
+  String(testCaseId),
+);
+/** The execution failed or timed out: the Team CI line has a failure to explain. */
+const failedExecution = computed(() => testCase.value?.status === 'failed' || testCase.value?.status === 'timedOut');
 
 // The rows ride in the SSR payload, so the server and the client agree on the
 // History block's strip at hydration.
@@ -105,9 +112,7 @@ const hasTrace = computed(() => (traceData.value?.length ?? 0) > 0);
 
 useHead(
   computed(() => ({
-    title: testCase.value?.title
-      ? `${testCase.value.title} — execution — Piwi Dashboard`
-      : `Execution #${testCaseId} — Piwi Dashboard`,
+    title: testCase.value?.title ? `${testCase.value.title} — execution — Piwi` : `Execution #${testCaseId} — Piwi`,
   })),
 );
 
@@ -273,11 +278,25 @@ const showLocatorFix = computed(
   () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
 
+// ── What the viewer may do on the execution's project ───────────────────────
+const { can } = useAuth();
+const executionProjectId = computed(() => testCase.value?.testRun?.project?.id ?? null);
+const canQuarantine = computed(() => can('quarantine:write', executionProjectId.value));
+const canTriage = computed(() => can('triage:write', executionProjectId.value));
+const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
+const canEditLinks = computed(() => can('link:write', executionProjectId.value));
+const canRerun = computed(() => can('run:control', executionProjectId.value));
+
 // CI re-run of this test, or of its cluster's tests, for the Verify section, with the cluster's last re-run.
-const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
-  `test-run-case-rerun-${testCaseId}`,
-  () => requestFetch<RerunInfo>(`/api/test-run-cases/${testCaseId}/rerun`).catch(() => null),
-  { default: (): RerunInfo | null => null },
+const testRerunPlace = computed(() =>
+  executionProjectId.value
+    ? { projectId: executionProjectId.value, source: { executionId: Number(testCaseId), scope: 'test' as const } }
+    : null,
+);
+const { rerunInfo, refreshRerun } = await useRerunInfo(`test-run-case-rerun-${testCaseId}`, () =>
+  testRerunPlace.value
+    ? { ...testRerunPlace.value, clusterId: failureCluster.value?.id ?? null, mayDispatch: canRerun.value }
+    : null,
 );
 // "Fixed before" for the cluster this failure belongs to.
 const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncData<FixedBeforeMatch[]>(
@@ -334,24 +353,52 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
-const { rerunning: rerunningTest, triggerRerun: triggerTestRerun } = useCiRerun(
-  `/api/test-run-cases/${testCaseId}/rerun`,
-  refreshRerun,
-  'This test is re-running in CI.',
-);
-const { rerunning, triggerRerun } = useCiRerun(
-  () => (failureCluster.value ? `/api/failure-clusters/${failureCluster.value.id}/rerun` : null),
-  refreshRerun,
-  "The cluster's tests are re-running in CI.",
-);
+// This one test, as the retry command and a run on this computer name it: in the next-step line's overflow menu, the
+// More menu, the Verify section and the run button.
+const retryCases = computed(() => [
+  {
+    filePath: testCase.value?.filePath ?? '',
+    title: testCase.value?.title ?? '',
+    line: testCase.value?.line ?? null,
+    projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
+  },
+]);
 
-/**
- * The Verify section shows when a CI re-run is configured, to a viewer who may start one or once a re-run happened; the
- * desktop app re-runs the test from the navbar.
- */
-const showVerify = computed(
-  () => Boolean(rerunInfo.value?.available) && (canRerun.value || Boolean(rerunInfo.value?.lastDispatch)),
-);
+// The run button: this test, and every test of its cluster, which CI re-runs; a request to an app and a run on this
+// computer name the test only.
+const runPlace = await useRunPlace({
+  projectId: executionProjectId.value ?? 0,
+  machine: await useRunOnMyMachine(executionProjectId.value ?? 0),
+  whats: () => {
+    const tc = testCase.value;
+    if (!tc) return [];
+    const test = executionTestWhat(tc.id, testLabel(tc));
+    const whats: RunWhat[] = [
+      {
+        ...test,
+        local: tc.filePath ? { label: 'Re-run this test', cases: retryCases.value, runTitle: testLabel(tc) } : null,
+      },
+    ];
+    if (failureCluster.value) {
+      whats.push({
+        ...clusterTestsWhat('Every test of its cluster', { executionId: tc.id, scope: 'cluster' }),
+        local: { reason: 'Runs this test here; the cluster’s page runs every test of it.' },
+      });
+    }
+    return whats;
+  },
+  prefersCi: () => true,
+  shownEnvironment: () => testCase.value?.testRun?.environmentId ?? null,
+  onDispatched: () => refreshRerun(),
+  thisComputer: {
+    projectLabel: () => testCase.value?.testRun?.project?.label ?? testCase.value?.testRun?.project?.name,
+    sourceRunId: () => testCase.value?.testRun?.id,
+    environmentId: () => testCase.value?.testRun?.environmentId ?? null,
+  },
+});
+
+/** The Verify section shows the cluster's last re-run in CI, to every viewer; the run button starts one. */
+const showVerify = computed(() => Boolean(rerunInfo.value?.lastDispatch));
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -385,10 +432,7 @@ const reproduceSummary = computed(() =>
     Boolean(reproduceData.value?.bisect?.available),
   ),
 );
-const verifySummary = computed(() => {
-  if (!canRerun.value) return 'When CI last re-ran it';
-  return failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI';
-});
+const verifySummary = 'When CI last re-ran its cluster, and the run that answered';
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
 /** The execution was ended at a stop (End the test): its status chip says so, in place of Skipped. */
@@ -456,15 +500,6 @@ const headerBadges = computed(() => {
 });
 
 // ── Retry command ────────────────────────────────────────────────────────────
-// In the next-step line's overflow menu, the More menu and the Verify section.
-const retryCases = computed(() => [
-  {
-    filePath: testCase.value?.filePath ?? '',
-    title: testCase.value?.title ?? '',
-    line: testCase.value?.line ?? null,
-    projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
-  },
-]);
 // This one test by its file and line, with the run options the browser remembers from the run page.
 const { optionsFor: retryOptionsFor } = useRetryOptions();
 // The environment the commands and run requests are for: the run's, unless protected or archived.
@@ -487,15 +522,6 @@ const { copy: copyRetry } = useCopy();
 onMounted(() => {
   desktopBridge.value = !!tauriCore();
 });
-
-// ── What the viewer may do on the execution's project ───────────────────────
-const { can } = useAuth();
-const executionProjectId = computed(() => testCase.value?.testRun?.project?.id ?? null);
-const canQuarantine = computed(() => can('quarantine:write', executionProjectId.value));
-const canTriage = computed(() => can('triage:write', executionProjectId.value));
-const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
-const canEditLinks = computed(() => can('link:write', executionProjectId.value));
-const canRerun = computed(() => can('run:control', executionProjectId.value));
 
 // ── Quarantine ──────────────────────────────────────────────────────────────
 const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
@@ -770,9 +796,19 @@ const evidenceTabs = ref<{
 const toolbox = ref<{
   openSection: (k: FixSectionKey) => Promise<void>;
   scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
+  closePanel: () => void;
 } | null>(null);
 
+// The locator fix sits in the side panel; the page diff it points at is evidence,
+// so the panel closes before the evidence card shows it.
+function showPageDiff() {
+  toolbox.value?.closePanel();
+  evidenceTabs.value?.revealSection('pageDiff');
+}
+
+// A block of the page it scrolls to sits under More ways to fix's side panel: it closes first.
 function scrollToEl(el: HTMLElement | null) {
+  toolbox.value?.closePanel();
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 // The raw error is a disclosure on the facts line; the locator fix lives in the
@@ -787,6 +823,7 @@ provide(clusterSectionLocatorKey, {
   // not only once the evidence card has mounted and registered its ref.
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
   open: (id: string, index?: number) => {
+    toolbox.value?.closePanel();
     if (id in pageSections) pageSections[id]!();
     else evidenceTabs.value?.revealSection(id, index);
   },
@@ -807,12 +844,14 @@ const { handle: handleNextStepAction } = useNextStepActions({
   diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
   scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
   selectAttemptsTab: () => {
+    toolbox.value?.closePanel();
     evidenceTabs.value?.selectTab('attempts');
     nextTick(() => scrollToEl(evidenceEl.value));
   },
   setClusterStatus,
   quarantine: () => toggleQuarantine(),
-  rerunInCi: () => triggerTestRerun(),
+  rerunInCi: () => runPlace.openDialog({ what: 'test', where: 'ci' }),
+  flakeLabInCi: (id, kind) => runPlace.openDialog({ whats: [flakeLabWhat(id, kind)], where: 'ci' }),
   whatChanged: () => {
     if (failureCluster.value) navigateTo(`/failure-clusters/${failureCluster.value.id}`);
   },
@@ -850,25 +889,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
         </template>
         <template #right>
           <div class="flex items-center gap-1 shrink-0 min-w-0">
-            <!-- Desktop app only: runs this test again in the project's linked folder -->
-            <DesktopRunLocallyButton
-              v-if="testCase?.filePath"
-              class="mr-2"
-              :project-id="testCase?.testRun?.project?.id"
-              :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
-              :cases="retryCases"
-              label="Re-run this test"
-              :run-title="testLabel(testCase)"
-              :source-run-id="testCase?.testRun?.id"
-              :environment-id="testCase?.testRun?.environmentId ?? null"
-            />
-            <RunOnMyMachineButton
-              v-if="testCase?.testRun?.project?.id"
-              class="mr-2"
-              :project-id="testCase.testRun.project.id"
-              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.id } }]"
-              :shown-environment-id="testCase.testRun.environmentId ?? null"
-            />
+            <RunButton :place="runPlace" class="mr-2" />
             <NuxtLink
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"
@@ -1028,7 +1049,17 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Line 7: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 7: the test's recent executions, each square opening its execution, then the failing streak and last pass -->
+          <template v-if="historyData?.length" #history>
+            <ExecutionHistoryLine :history="historyData" :current-id="Number(testCaseId)" />
+          </template>
+
+          <!-- Line 8, in the desktop app, for a failure: how the test does in the team instance's CI, and the conclusion -->
+          <template v-if="teamComparisonShown && failedExecution" #teamCi>
+            <TeamComparisonLine :comparison="teamComparison!" with-conclusion />
+          </template>
+
+          <!-- Line 9: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"
@@ -1042,26 +1073,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
 
         <AssistantNudge page="/test-run-cases/[id]" :facts="nudgeFacts" class="max-sm:rounded-none max-sm:border-x-0" />
 
-        <!-- ── Evidence ───────────────────────────────────────────────── -->
-        <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
-        <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
-          <EvidenceTabs
-            ref="evidenceTabs"
-            :test-case="testCase"
-            :traces="(traceData as TraceInfo[]) ?? []"
-            :has-trace="hasTrace"
-            :default-hint="defaultHint"
-            :fixtures-state="projectCapState('fixtures')"
-            :coverage-state="projectCapState('coverage')"
-            :suspect-lines="suspectLinesData ?? null"
-            :what-changed-to="failureCluster ? `/failure-clusters/${failureCluster.id}#what-changed` : null"
-            :can-decide-fixtures="canDecideCap"
-            help="case.evidence"
-            @decline-fixtures="declineFixtures"
-          />
-        </div>
-
-        <!-- ── More ways to fix ───────────────────────────────────────── -->
+        <!-- ── More ways to fix: one line, each section in a side panel ── -->
         <div v-if="showFix" class="scroll-mt-4">
           <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
             <template #diagnosis-summary>{{ diagnosisSummary }}</template>
@@ -1087,7 +1099,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 :ai-intents="aiIntents"
                 :chrome="false"
                 :has-page-diff="true"
-                @show-page-diff="evidenceTabs?.revealSection('pageDiff')"
+                @show-page-diff="showPageDiff"
               />
             </template>
 
@@ -1162,37 +1174,11 @@ const { handle: handleNextStepAction } = useNextStepActions({
               />
             </template>
 
-            <!-- Re-run this test, or its cluster's tests, in CI -->
+            <!-- The cluster's last re-run in CI -->
             <template v-if="showVerify" #verify>
-              <div class="flex flex-wrap items-center gap-2">
-                <UButton
-                  v-if="canRerun"
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-refresh-cw"
-                  title="Dispatches CI to run this test at its line, in its Playwright project, on the branch of its run"
-                  :loading="rerunningTest"
-                  @click="triggerTestRerun"
-                >
-                  Re-run this test in CI
-                </UButton>
-                <UButton
-                  v-if="canRerun && failureCluster"
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-refresh-cw"
-                  title="Dispatches CI to run each test of this failure's cluster at the line of its latest failure"
-                  :loading="rerunning"
-                  @click="triggerRerun"
-                >
-                  Re-run the cluster in CI
-                </UButton>
-                <ClientOnly>
-                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
-                </ClientOnly>
-              </div>
+              <ClientOnly>
+                <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
+              </ClientOnly>
             </template>
 
             <!-- Reproduce locally, then bisect the regression -->
@@ -1219,28 +1205,29 @@ const { handle: handleNextStepAction } = useNextStepActions({
           </Toolbox>
         </div>
 
-        <!-- ── History ────────────────────────────────────────────────── -->
-        <SectionCard icon="i-lucide-history" title="History" data-shot="execution-history">
-          <template #actions>
-            <UButton
-              v-if="testCase?.testCaseId"
-              :to="`/test-cases/${testCase.testCaseId}`"
-              size="xs"
-              variant="outline"
-              color="neutral"
-              trailing-icon="i-lucide-arrow-right"
-            >
-              Test history
-            </UButton>
-          </template>
-          <ClientOnly>
-            <HistoryStrip v-if="historyData?.length" :history="historyData" :current-id="Number(testCaseId)" />
-            <p v-else class="text-sm text-muted">No prior executions of this test yet.</p>
-          </ClientOnly>
-        </SectionCard>
+        <!-- ── Evidence, last: it is long, so nothing follows it ──────── -->
+        <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
+        <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
+          <EvidenceTabs
+            ref="evidenceTabs"
+            :test-case="testCase"
+            :traces="(traceData as TraceInfo[]) ?? []"
+            :has-trace="hasTrace"
+            :default-hint="defaultHint"
+            :fixtures-state="projectCapState('fixtures')"
+            :coverage-state="projectCapState('coverage')"
+            :suspect-lines="suspectLinesData ?? null"
+            :what-changed-to="failureCluster ? `/failure-clusters/${failureCluster.id}#what-changed` : null"
+            :can-decide-fixtures="canDecideCap"
+            help="case.evidence"
+            @decline-fixtures="declineFixtures"
+          />
+        </div>
       </div>
     </template>
   </UDashboardPanel>
+
+  <RunDialog :place="runPlace" />
 
   <!-- Link an issue to the execution's cluster: its known issue, on every execution of it. -->
   <LinkIssueModal

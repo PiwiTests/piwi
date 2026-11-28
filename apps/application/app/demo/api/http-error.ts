@@ -14,11 +14,19 @@ import { type ErrorCode, errorCodeForStatus } from '#shared/utils/error-codes';
 export interface DemoHttpError extends Error {
   statusCode: number;
   errorCode: ErrorCode;
+  /** Fields the answer's `data` carries beside `errorCode`, as the real API's do. */
+  data?: Record<string, unknown>;
 }
 
-export function demoHttpError(statusCode: number, message: string, errorCode?: ErrorCode): DemoHttpError {
+export function demoHttpError(
+  statusCode: number,
+  message: string,
+  errorCode?: ErrorCode,
+  data?: Record<string, unknown>,
+): DemoHttpError {
   const error = new Error(message) as DemoHttpError;
   error.statusCode = statusCode;
   error.errorCode = errorCode ?? errorCodeForStatus(statusCode);
+  if (data) error.data = data;
   return error;
 }

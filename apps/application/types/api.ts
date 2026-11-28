@@ -451,6 +451,8 @@ export interface ProjectWithTestRuns {
   scmCredentialId?: number | null;
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
+  /** The action inputs a request carrying the instance's CI server credential may send; null unless `ciServerInstanceUrl` is set. */
+  ciServerInstanceAllowedInputs?: string[] | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
   defaultBranch?: string | null;
@@ -476,6 +478,12 @@ export interface ProjectWithTestRuns {
   askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
+  /** Whether a CI test that fails while someone with `run:control` watches its worker in full waits at its failure. */
+  liveViewHold?: boolean;
+  /** How long such a test waits at most, in minutes: 1 to 15. */
+  liveViewHoldMinutes?: number;
+  /** Whether someone with `run:control` watching a CI worker in full may pause its test, resume and end it. */
+  liveViewPause?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -510,6 +518,8 @@ export interface ProjectDetails {
   scmCredentialId?: number | null;
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
+  /** The action inputs a request carrying the instance's CI server credential may send; null unless `ciServerInstanceUrl` is set. */
+  ciServerInstanceAllowedInputs?: string[] | null;
   defaultBranch?: string | null;
   /** The project's CI actions (secrets excluded). */
   ciRerun?: import('#shared/ci-actions').CiActionsSettings | null;
@@ -523,6 +533,12 @@ export interface ProjectDetails {
   askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
+  /** Whether a CI test that fails while someone with `run:control` watches its worker in full waits at its failure. */
+  liveViewHold?: boolean;
+  /** How long such a test waits at most, in minutes: 1 to 15. */
+  liveViewHoldMinutes?: number;
+  /** Whether someone with `run:control` watching a CI worker in full may pause its test, resume and end it. */
+  liveViewPause?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -1048,6 +1064,7 @@ export interface ConsoleEntry {
   type: string;
   text: string;
   timestamp: number;
+  /** `url:line:column`, both 0-based as Playwright places a console message. */
   location?: string | null;
 }
 
@@ -1516,6 +1533,8 @@ export interface ConnectedApp {
     projectIds: number[];
     lastSeenAt: Date | null;
     online: boolean;
+    /** Its key holds `project:read`: the desktop app may compare a test with the team's CI (Compare with team instance). */
+    compares: boolean;
   } | null;
 }
 
@@ -1629,6 +1648,8 @@ export interface StorageAnalysis extends StorageAnalysisData {
   databaseLocation: string;
   /** Where files live: a resolved local storage path, or a label for S3. */
   storageLocation: string;
+  /** The storage quota (`PIWI_STORAGE_QUOTA_BYTES`) `totalBytes` is shown against; null without one. */
+  quotaBytes: number | null;
 }
 
 // ============================================================================

@@ -49,6 +49,7 @@ import { IntegrationHttpError } from './http-error';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
 import { applySyncResults, SyncUploadError } from './test-management/sync';
 import { CredentialRefusedError } from '../credentials';
+import { privateAddressRefusal } from '../safe-fetch';
 import { RequestLimiterBusyError } from './test-management/limiter';
 import { readTestManagementBinding } from './test-management/binding';
 import {
@@ -490,12 +491,12 @@ const UNSENT_ERROR_CODES = new Set([
 
 /**
  * Whether a create's error says the issue was not created: the tracker answered with a refusal, a rate limit or a
- * 503, or the request never left (the credential's rules refused it, a refused connection, an unknown host, a
- * certificate refused). A timeout, a
+ * 503, or the request never left (the credential's rules refused it, a private address refused, a refused
+ * connection, an unknown host, a certificate refused). A timeout, a
  * connection lost after sending or another 5xx may come after the tracker created it.
  */
 function trackerDeclined(err: unknown): boolean {
-  if (err instanceof CredentialRefusedError) return true;
+  if (err instanceof CredentialRefusedError || privateAddressRefusal(err)) return true;
   const status = (err as { status?: unknown } | null)?.status;
   if (typeof status === 'number') return status < 500 || status === 503;
   for (let cause: unknown = err, depth = 0; cause && depth < 4; depth++) {

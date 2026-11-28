@@ -1,13 +1,15 @@
 /**
  * Error-text assembly shared by the reporter (live runs) and the dashboard
  * (imported blob reports), so a failure fingerprints identically no matter
- * which path it arrived through.
+ * which path it arrived through, and an uncaught page error reads and is placed
+ * alike whether the capture fixtures recorded it or a trace's import did.
  *
  * Path relativization stays with the callers: the reporter resolves against
  * `process.cwd()`, while an import resolves against the recorded config
  * directory of the machine that produced the archive.
  */
 
+import { extractStackFrames } from './error-parse';
 import { hideSecretsInError } from './mask';
 
 /**
@@ -73,4 +75,25 @@ export function appendErrorLocation(
 ): string {
   if (!location?.file || /\n[ \t]+at\s/.test(text)) return text;
   return `${text}\n    at ${location.file}:${location.line}:${location.column}`;
+}
+
+/**
+ * An uncaught page error (Playwright's `pageerror`) as its console entry says it: the first line of its stack,
+ * `TypeError: cart is undefined`.
+ */
+export function pageErrorText(error: { name?: unknown; message?: unknown }): string {
+  const name = typeof error.name === 'string' ? error.name : '';
+  const message = typeof error.message === 'string' ? error.message : '';
+  return name && message ? `${name}: ${message}` : message || name;
+}
+
+/**
+ * Where an uncaught page error was thrown, read from its stack: the first frame that names a URL, as
+ * `url:line:column`, 0-based as Playwright places a console message (a stack's frames are 1-based). Null when no
+ * frame names one.
+ */
+export function pageErrorStackPlace(stack: unknown): string | null {
+  if (typeof stack !== 'string') return null;
+  const frame = extractStackFrames(stack).find((f) => /^[a-z][\w+.-]*:\/\//i.test(f.file));
+  return frame ? `${frame.file}:${frame.line - 1}:${frame.column - 1}` : null;
 }

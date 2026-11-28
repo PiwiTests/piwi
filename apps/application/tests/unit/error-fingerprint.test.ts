@@ -190,6 +190,46 @@ describe('computeErrorFingerprint', () => {
     expect(new Set([row.fingerprint, button.fingerprint, testId.fingerprint]).size).toBe(3);
   });
 
+  describe('an action timeout inside a frame', () => {
+    const timeoutOn = (locator: string, spec = 'tests/checkout.spec.ts') =>
+      [
+        'TimeoutError: locator.fill: Timeout 30000ms exceeded.',
+        'Call log:',
+        `  - waiting for ${locator}`,
+        `    at /app/${spec}:31:7`,
+      ].join('\n');
+
+    const fingerprint = async (locator: string, spec?: string) =>
+      (await computeErrorFingerprint(timeoutOn(locator, spec))).fingerprint;
+    const FRAMES = [
+      'frameLocator()',
+      "frameLocator('#pay')",
+      "locator('#pay').contentFrame()",
+      "locator('iframe').first().contentFrame()",
+      "locator('iframe').nth(2).contentFrame()",
+      "locator('iframe').filter({ hasText: 'a' }).contentFrame()",
+      "getByTestId('checkout').locator('iframe').contentFrame()",
+    ];
+
+    test.each(FRAMES)('in %s, is told apart by the locator inside the frame', async (frame) => {
+      const card = await computeErrorFingerprint(timeoutOn(`${frame}.getByLabel('Card number')`));
+      expect(card.fingerprint).not.toBe(await fingerprint(`${frame}.getByLabel('Expiry date')`));
+      expect(card.selector).toBe(`${frame}.getByLabel('Card number')`);
+    });
+
+    test.each(FRAMES)('in %s, groups the same locator across spec files and row names', async (frame) => {
+      const row = (name: string, spec: string) => fingerprint(`${frame}.getByRole('row', { name: '${name}' })`, spec);
+      expect(await row('Alice', 'tests/a.spec.ts')).toBe(await row('Bob', 'tests/b.spec.ts'));
+    });
+
+    test('in a named frame, is told apart by the frame, and groups both spellings of one frame', async () => {
+      const card = await fingerprint("locator('#pay').contentFrame().getByLabel('Card number')");
+      expect(await fingerprint("locator('#billing').contentFrame().getByLabel('Card number')")).not.toBe(card);
+      expect(await fingerprint("frameLocator().getByLabel('Card number')")).not.toBe(card);
+      expect(await fingerprint("frameLocator('#pay').getByLabel('Card number')", 'tests/other.spec.ts')).toBe(card);
+    });
+  });
+
   test('exposes a positive fingerprint version', () => {
     expect(FINGERPRINT_VERSION).toBeGreaterThan(0);
   });
@@ -272,19 +312,19 @@ describe('a failure as ingest keeps it, its secrets hidden (`hiddenErrorText`)',
   const fingerprintOf = async (error: string) => (await computeErrorFingerprint(hiddenErrorText(error)!)).fingerprint;
 
   test('that holds no credential fingerprints as it did', async () => {
-    // What version 5 stored for these, before a credential's shape was hidden in an error.
+    // What version 6 computes for these errors, which hold no credential's shape to hide.
     const STORED = [
       [
         'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2\n    at tests/basic.spec.ts:12:5',
-        '98483b64c6e87c0ed2dea770bbc3515a68e00a70a01c71571267ea92d333da1a',
+        'cf54b1563c3cd917187c1c992ea79387bd09dca239423ccc1e21e83e2f07371e',
       ],
       [
         'TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByLabel(\'Password\')\n  - fill("hunter2")\n    at tests/login.spec.ts:20:7',
-        '6734fd28ff010ea335ac5ec8865a1b945bcad59f34c594e27dc0066e8121316c',
+        'a7e806ff40bb523a8658f456dc4a90d2e4c215d0eb70acaf86e1941962a4e359',
       ],
       [
         'Error: 401 Unauthorized: token expired for session sk_live_short and Bearer abc\n    at tests/api.spec.ts:4:1',
-        'e05d3a642c9285281e891ce4a55a67d9af9ce941f6b946f590136b6a9dd82f7a',
+        'ce190b2a175b5e8ce5d1cfb3c74d00d64c40c947a2040728fb28a1c7dbfc1059',
       ],
     ] as const;
     for (const [error, stored] of STORED) expect(await fingerprintOf(error), error).toBe(stored);
@@ -339,6 +379,26 @@ describe('errorFingerprintV4', () => {
     [
       "Error: ENOENT: no such file or directory, open '/home/runner/work/app/app/fixtures/order_5f3a9c1e2b.json' at 2024-05-01T10:30:00Z",
       '72909a236f188f7e482590a32e422ed0859bcf748075f7b9e86ad94b5e79dcb0',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator().getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+      '7664641eec870b179648740cd5d9a76ccc2147af370f6cfbf3402f20a1616003',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('#pay').contentFrame().getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+      '8331be188f69a038422dd9e640393f6c1bb68ae6a4d6d79068417537ed23d3df',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for frameLocator('#pay').getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+      '904824428190ba83a8a749af144e9cacc1c04b4eb4d6a7e82b216669bdac065d',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('iframe').first().contentFrame().getByLabel('Expiry')\n    at tests/checkout.spec.ts:31:7",
+      '82cbef3b0580b6fa6dcf824cc423cc1c3c2a9afe3df002bba200e6914493b652',
+    ],
+    [
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('checkout').locator('iframe').contentFrame().getByLabel('Card number')\n    at tests/checkout.spec.ts:31:7",
+      '49ef5b2b76f6b47fa14be9084582d08610e2633e48bedbe59b94ff8ef3f13246',
     ],
   ] as const;
 

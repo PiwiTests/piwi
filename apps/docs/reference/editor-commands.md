@@ -7,7 +7,8 @@ lang: en-US
 # Editor commands
 
 Every command the two editors offer, by what it acts on. VS Code lists them in the command palette under **Piwi:**;
-a JetBrains IDE lists them under **Tools → Piwi** and in **Find Action**, says caret for cursor and project for window,
+a JetBrains IDE lists them under **Tools → Piwi**, a run's in its **Run control** submenu, and in
+**Find Action**, says caret for cursor and project for window,
 and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Some commands have a
 shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's keys
 ([The controls](/features/editor-run-control#the-controls)).
@@ -119,7 +120,7 @@ an issue** and, on a flaky test in VS Code, **Look into this flake…**:
   editor title, Pause or Resume, Step, Finish and Stop (on a run this window started) in the debug toolbar's order, the
   others under `…`; and, while a test is stopped, in the editor's context menu, right after its Go to entries, and on
   its worker's page (Resume, Step, Finish and Write code…).
-- **In a JetBrains IDE**: **Tools → Piwi** and the **Run** menu, enabled while they apply; the toolbar of the run's
+- **In a JetBrains IDE**: **Tools → Piwi → Run control** and the **Run** menu, enabled while they apply; the toolbar of the run's
   Run tab, acting on that run; the status bar item's menu; and, while a test is stopped, first in the editor's context
   menu, and on its worker's tab (Resume, Step, Finish and Write code…).
 

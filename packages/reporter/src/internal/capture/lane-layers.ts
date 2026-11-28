@@ -20,6 +20,8 @@ import {
 } from '@piwitests/core/live-layers';
 import {
   ariaMaskProblem,
+  cutText,
+  hideKnownValues,
   hideSecretsInText,
   hideTypedText,
   isSecretLocator,
@@ -128,10 +130,37 @@ export function layersTest(): LayersTest | null {
   return current;
 }
 
-/** The title the runner gives the call `id` of the running test, the text it types and its credentials hidden. */
+/** The longest title of a call the layers send, as Inspect's and the filmstrip's readers keep it. */
+const MAX_TITLE = 300;
+
+/**
+ * A call's title as the worker keeps it: the text it types (`hideTypedText`) and its credentials hidden, cut to `max`
+ * characters when given (`cutText`). The values the attempt knows are hidden as it is sent, once (`shownTitle`):
+ * hidden twice, a value that holds one hidden before shows the rest of it.
+ */
+export function keptTitle(title: string, max?: number): string {
+  const hidden = hideSecretsInText(hideTypedText(title));
+  return max === undefined ? hidden : cutText(hidden, max);
+}
+
+/**
+ * A call's title as it leaves the worker: kept as `keptTitle` keeps it, then the values the attempt knows are secrets
+ * hidden (`hideKnownValues`): `secrets`, else those known now (`knownSecrets`). Given a title it kept, never one it
+ * showed.
+ */
+export function shownTitle(title: string, options: { max?: number; secrets?: readonly string[] } = {}): string {
+  return hideKnownValues(keptTitle(title, options.max), options.secrets ?? knownSecrets());
+}
+
+/** The title the runner gives the call `id` of the running test, kept as `keptTitle` keeps it, 300 characters at most. */
 export function layersTitleOf(id: string): string | null {
   const title = current?.titleOf(id) ?? null;
-  return title === null ? null : hideSecretsInText(hideTypedText(title)).slice(0, 300);
+  return title === null ? null : keptTitle(title, MAX_TITLE);
+}
+
+/** An image of the filmstrip as a wire is sent it: its kept title shown as `shownTitle` shows it. */
+export function shownThumb(thumb: LaneThumb): LaneThumb {
+  return { ...thumb, title: shownTitle(thumb.title, { max: MAX_TITLE }) };
 }
 
 /** A wire's subscription to the page events: its pace, and how many it did not send since it last sent one. */

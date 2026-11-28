@@ -40,6 +40,33 @@ describe('rankBaselineCandidates', () => {
     expect(ids(rankBaselineCandidates({ environment: null, branch: null }, candidates))).toEqual([1, 2, 3, 4, 5]);
   });
 
+  test('a known Playwright release ranks after the environment and before the branch', () => {
+    const failing = { environment: 'production', branch: 'main', playwrightVersion: '1.65.1' };
+    const versioned = [
+      { id: 1, environment: 'production', branch: 'main', playwrightVersion: '1.64.1' },
+      { id: 2, environment: 'staging', branch: 'main', playwrightVersion: '1.65.1' },
+      { id: 3, environment: 'production', branch: 'feature/x', playwrightVersion: '1.65.1' },
+      { id: 4, environment: 'production', branch: 'main', playwrightVersion: null },
+      { id: 5, environment: 'production', branch: 'main', playwrightVersion: '1.65.1' },
+    ];
+    expect(ids(rankBaselineCandidates(failing, versioned))).toEqual([5, 3, 1, 4, 2]);
+  });
+
+  test('a patch release is the same Playwright release', () => {
+    const failing = { environment: null, branch: 'main', playwrightVersion: '1.65.1' };
+    const versioned = [
+      { id: 1, environment: null, branch: 'feature/x', playwrightVersion: '1.65.1' },
+      { id: 2, environment: null, branch: 'main', playwrightVersion: '1.65.0' },
+    ];
+    expect(ids(rankBaselineCandidates(failing, versioned))).toEqual([2, 1]);
+  });
+
+  test('a failing run with no Playwright version ranks no candidate by version', () => {
+    const versioned = candidates.map((c, i) => ({ ...c, playwrightVersion: i % 2 ? '1.65.1' : '1.64.1' }));
+    const failing = { environment: 'development', branch: 'main' };
+    expect(ids(rankBaselineCandidates(failing, versioned))).toEqual([4, 2, 1, 3, 5]);
+  });
+
   test('does not mutate the input', () => {
     const copy = [...candidates];
     rankBaselineCandidates({ environment: 'development', branch: 'main' }, candidates);

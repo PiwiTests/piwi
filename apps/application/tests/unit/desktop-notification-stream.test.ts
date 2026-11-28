@@ -18,7 +18,7 @@ describe('desktopNotification', () => {
     ).toEqual({
       type: 'run.failed',
       projectId: 3,
-      title: 'Piwi Dashboard',
+      title: 'Piwi',
       body: 'acme-web on main: 3/120 tests failed\n3 failed, 120 total\ncheckout › pays',
       path: '/test-runs/146',
       defaultOn: true,

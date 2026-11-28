@@ -180,8 +180,10 @@ self.addEventListener('fetch', (event) => {
         const message = e instanceof Error ? e.message : String(e);
         const statusCode = (e as { statusCode?: number } | null)?.statusCode ?? 500;
         const errorCode = (e as { errorCode?: ErrorCode } | null)?.errorCode ?? errorCodeForStatus(statusCode);
+        const data = (e as { data?: unknown } | null)?.data;
+        const extra = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
         console.error('[Demo SW] handler error for', apiPath, e);
-        return new Response(JSON.stringify({ statusCode, message, data: { errorCode } }), {
+        return new Response(JSON.stringify({ statusCode, message, data: { ...extra, errorCode } }), {
           status: statusCode,
           headers: { 'Content-Type': 'application/json' },
         });

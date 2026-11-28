@@ -90,7 +90,10 @@ an icon of its own (the Piwi mark on a teal tile, with a play sign) and a tray w
 default, and **Start on login**. Runner updates itself from
 `latest-runner.json`, one manifest keyed by installer, signed with the desktop app's key, from its tray's **Check for
 updates…** and a startup check. What remains of 4c: signing the installers (a Developer ID on macOS, a certificate on
-Windows) and Runner's own installer art. The instance's side of PR 2 is done. The
+Windows) and Runner's own installer art. The instance's side of PR 2 is done. Since [compare-with-team.md](../adr/compare-with-team.md), the key the device flow
+gives the desktop app also holds `project:read` (Compare with team instance), the desktop app connects where Run on my
+machine is off for the comparison alone, and
+`requireRunTarget` takes each route's own permission. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner
 take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
 confirmed in the target (D2); a request carries resolved tests and is
@@ -153,7 +156,7 @@ tools, the `agent-diagnoses` capability and "Paused by the agent".
 
 | Piece | Where | What this plan takes |
 | --- | --- | --- |
-| Run locally | `DesktopRunLocallyButton.vue`, `useDesktopLocalRuns.ts`, `runner.rs` | The plan per Playwright project (`buildLocalRunPlan`), the allowed flags (`validate_args`), the stop with a grace period (`interrupt.rs`), the checks for the folder, the specs and Playwright. Missing: a check of the browsers and of the branch. |
+| Run locally | `useThisComputer.ts` (the run button's This computer), `useDesktopLocalRuns.ts`, `runner.rs` | The plan per Playwright project (`buildLocalRunPlan`), the allowed flags (`validate_args`), the stop with a grace period (`interrupt.rs`), the checks for the folder, the specs and Playwright. Missing: a check of the browsers and of the branch. |
 | Copy retry command | `RunHeader.vue`, `useRunRetryCommand.ts`, `TestCasesList.vue`, `test-run-cases/[id].vue`, `retry-command.ts` | A copyable `npx playwright test` command for a run's failures, an execution or a selection, by line or by title. Missing: the run options (headed, trace, repeat). |
 | Test selection by title | `buildBisectArgs` in `local-run-args.ts` | The files and an escaped `--grep` of the titles, so a test whose line moved still matches. |
 | Folder links | `projectLinks` in the shell's `settings.json` | Links stay on the machine. They are keyed by the bundled server's project ids, so they need the instance in their key. |

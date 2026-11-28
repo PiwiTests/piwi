@@ -8,6 +8,8 @@
 
 import { mergeTestCases } from '#shared/handlers/test-case-merge';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
+import { parseCiDispatchRequest, parseCiDispatchSource } from '#shared/ci-dispatch-request';
+import { findCiDispatch, listCiDispatches } from '#shared/handlers/ci-dispatches';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z, type ZodType } from 'zod';
 import {
@@ -148,7 +150,8 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
-import { apiGetDemoLiveSnapshot } from './live-view';
+import { apiDemoControl, apiDemoLetGo, apiGetDemoLiveSnapshot, apiPostDemoLiveStop } from './live-view';
+import { findDemoUser } from '../demo-users';
 import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
@@ -207,6 +210,8 @@ import {
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
   INVALID_LIVE_VIEW_MASKS,
+  INVALID_LIVE_VIEW_HOLD_MINUTES,
+  LIVE_VIEW_PAUSE_NEEDS_HOLD,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   InvalidRunVariablesError,
@@ -494,7 +499,7 @@ import {
   apiListAssistantNudgeDismissals,
   apiUndoAssistantNudgeDismissal,
 } from './assistant-nudges';
-import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
+import { apiGetAdminActivity, apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { apiListProjectStars, apiStarProject, apiUnstarProject } from './project-stars';
 import { demoHttpError } from './http-error';
 import {
@@ -528,10 +533,12 @@ import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiActions,
   demoCiActionCheck,
-  demoClusterRerunInfo,
-  demoExecutionRerunInfo,
-  demoRerunCluster,
-  demoRerunExecution,
+  demoCiJobFields,
+  demoCiJobs,
+  demoCiBranches,
+  demoCiOffered,
+  demoDispatchCi,
+  demoQueryRecord,
 } from './ci-rerun';
 import {
   demoAllCredentialUses,
@@ -540,6 +547,12 @@ import {
   demoDeleteCredential,
   demoGetCredential,
   demoListCredentials,
+  demoListUserTokens,
+  demoMyCredentials,
+  demoRemoveUserToken,
+  demoRemoveUserTokens,
+  demoSaveUserToken,
+  demoTestUserToken,
   demoUpdateCredential,
 } from './credentials';
 import { ciActionsCredentialProblem, projectScmCredentialProblem } from '#shared/handlers/credentials';
@@ -557,6 +570,7 @@ import {
   apiGetLocale,
   apiPutLocale,
 } from './settings';
+import { version as demoAppVersion } from '../../../package.json';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -1051,7 +1065,7 @@ const routes: RouteEntry[] = [
         ciServerToken: _ciServerToken,
         ...rest
       } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
-      return { ...rest, ciServerInstanceUrl: null };
+      return { ...rest, ciServerInstanceUrl: null, ciServerInstanceAllowedInputs: null };
     },
   },
   {
@@ -1120,6 +1134,8 @@ const routes: RouteEntry[] = [
           (e.message === INVALID_COVERAGE_SCOPE ||
             e.message === INVALID_COVERAGE_AREAS ||
             e.message === INVALID_LIVE_VIEW_MASKS ||
+            e.message === INVALID_LIVE_VIEW_HOLD_MINUTES ||
+            e.message === LIVE_VIEW_PAUSE_NEEDS_HOLD ||
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
@@ -1447,6 +1463,102 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'POST',
+    // A Jenkins target's jobs from the demo's catalog; a repository host has no files to read.
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/jobs$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiJobs(await getDemoDb(), +m[1]!, body);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/fields$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiJobFields(await getDemoDb(), +m[1]!, body);
+    },
+  },
+  {
+    method: 'GET',
+    // What a place is offered: CI server actions as the server offers them, a repository host's with why the demo cannot.
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/offered$/,
+    permission: 'run:control',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const source = parseCiDispatchSource(demoQueryRecord(q));
+      if (!source.ok) throw demoHttpError(400, source.message);
+      return demoCiOffered(await getDemoDb(), +m[1]!, source.value, ctx?.actingUserId ?? null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/([^/]+)\/branches$/,
+    permission: 'run:control',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const search = q?.get('q') ?? null;
+      if (search != null && search.length > 200) {
+        throw demoHttpError(400, 'q must be text of at most 200 characters');
+      }
+      return demoCiBranches(await getDemoDb(), +m[1]!, decodeURIComponent(m[2]!), search);
+    },
+  },
+  {
+    method: 'POST',
+    // A CI server action's dispatch is recorded without sending anything; a repository host's answers 400.
+    pattern: /^\/api\/projects\/(\d+)\/ci-dispatches$/,
+    permission: 'run:control',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const request = parseCiDispatchRequest(body ?? null);
+      if (!request.ok) throw demoHttpError(400, request.message);
+      return demoDispatchCi(await getDemoDb(), +m[1]!, request.value, ctx?.actingUserId ?? null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/ci-dispatches$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const state = q?.get('state') || 'all';
+      if (state !== 'open' && state !== 'taken' && state !== 'all') {
+        throw demoHttpError(400, 'state must be open, taken or all');
+      }
+      const idOf = (name: string) => {
+        const raw = q?.get(name);
+        if (raw == null || raw === '') return null;
+        const id = parseRouteId(raw);
+        if (id === null) throw demoHttpError(400, `${name} must be a positive integer`);
+        return id;
+      };
+      // As the server: an empty value is none.
+      const limit = Number(q?.get('limit') || 20);
+      if (!Number.isInteger(limit)) throw demoHttpError(400, 'Invalid query parameter "limit": expected an integer');
+      return {
+        items: await listCiDispatches(await getDemoDb(), +m[1]!, {
+          state,
+          clusterId: idOf('clusterId'),
+          testCaseId: idOf('testCaseId'),
+          limit: Math.min(100, Math.max(1, limit)),
+        }),
+      };
+    },
+  },
+  {
+    method: 'GET',
+    // A dispatch of a project the acting user cannot read answers as missing, as the server's does.
+    pattern: /^\/api\/ci-dispatches\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => {
+      const id = m[1]!;
+      const found = /^[0-9a-f]{16}$/.test(id) ? await findCiDispatch(await getDemoDb(), id) : null;
+      if (!found || !demoCan(ctx, 'project:read', found.projectId)) throw demoHttpError(404, 'CI dispatch not found');
+      return found.dispatch;
+    },
+  },
+  {
+    method: 'POST',
     pattern: /^\/api\/projects\/(\d+)\/flaky-classify$/,
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
@@ -1508,6 +1620,38 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
     handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
+  },
+  // A simulated CI worker's held failure and its end, which the run page hears as the instance tells it; the demo
+  // names who it is held for: the person acting, when they may control the run.
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view$/,
+    handler: async (m, body, _query, ctx) => {
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
+      const controls = demoCan(ctx, 'run:control', projectId ?? undefined);
+      return apiPostDemoLiveStop(+m[1]!, body, { controls, heldFor: controls && acting ? [acting.name] : [] });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/let-go$/,
+    permission: 'run:control',
+    handler: async (m, body, _query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiDemoLetGo(+m[1]!, body);
+    },
+  },
+  // **Pause**, **Resume** and **End the test** of a simulated CI worker's test, named by who asked.
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/control$/,
+    permission: 'run:control',
+    handler: async (m, body, _query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
+      return apiDemoControl(+m[1]!, body, acting?.name ?? '');
+    },
   },
   // The page of a simulated worker at a call, for Inspect: a moment of the committed checkout trace, as the server
   // serves a live page. The rest of the live view runs in the page (`app/demo/live-watch.ts`).
@@ -2134,35 +2278,6 @@ const routes: RouteEntry[] = [
     },
   },
   {
-    method: 'GET',
-    // CI re-run availability: on for a project that dispatches to a CI server,
-    // off with a clear reason for every other project.
-    pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return demoClusterRerunInfo(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'POST',
-    // A CI server dispatch is recorded without sending anything; other projects answer not available.
-    pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
-    permission: 'run:control',
-    handler: async (m, b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const action = (b as { action?: unknown } | null)?.action;
-      if (action != null && (typeof action !== 'string' || action.length > 100)) {
-        throw demoHttpError(400, 'action must be a CI action id or name');
-      }
-      return demoRerunCluster(
-        await getDemoDb(),
-        +m[1]!,
-        ctx?.actingUserId ?? null,
-        typeof action === 'string' && action.trim() ? action.trim() : null,
-      );
-    },
-  },
-  {
     method: 'POST',
     pattern: /^\/api\/test-cases\/(\d+)\/merge$/,
     permission: 'project:manage',
@@ -2178,16 +2293,6 @@ const routes: RouteEntry[] = [
         );
       }
       return outcome;
-    },
-  },
-  {
-    method: 'POST',
-    // No-op dispatch: the demo has no CI to run the lab in.
-    pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
-    permission: 'run:control',
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      return { ok: false, demo: true, message: 'Flake Lab in CI is not available in the demo.' };
     },
   },
   {
@@ -2314,6 +2419,21 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
     handler: () => {
       throw demoHttpError(401, 'This endpoint takes the token of a running answer');
+    },
+  },
+  // It takes POST alone, as the server's does.
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(405, 'The MCP endpoint takes POST alone.');
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(405, 'The MCP endpoint takes POST alone.');
     },
   },
   {
@@ -2727,25 +2847,6 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return buildExecutionReproduce(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'GET',
-    // CI re-run of one execution's test, available as a cluster's is.
-    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return demoExecutionRerunInfo(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'POST',
-    // A CI server dispatch is recorded without sending anything; other projects answer not available.
-    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
-    permission: 'run:control',
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return demoRerunExecution(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -3972,6 +4073,44 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/credentials\/mine$/,
+    handler: async (_m, _b, _q, ctx) => demoMyCredentials(await getDemoDb(), demoViewer(ctx)),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/credentials\/(\d+)\/token$/,
+    handler: async (m, body, _q, ctx) => demoSaveUserToken(await getDemoDb(), demoViewer(ctx), +m[1]!, body),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)\/token$/,
+    handler: async (m, _b, _q, ctx) => demoRemoveUserToken(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/credentials\/(\d+)\/token\/test$/,
+    handler: async (m, _b, _q, ctx) => demoTestUserToken(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)\/tokens$/,
+    permission: 'credentials:manage',
+    handler: async (m) => demoListUserTokens(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)\/tokens$/,
+    permission: 'credentials:manage',
+    handler: async (m) => demoRemoveUserTokens(await getDemoDb(), +m[1]!, null),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)\/tokens\/(\d+)$/,
+    permission: 'credentials:manage',
+    handler: async (m) => demoRemoveUserTokens(await getDemoDb(), +m[1]!, +m[2]!),
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/credentials\/uses$/,
     permission: 'credentials:manage',
     handler: async (_m, _b, q) => demoAllCredentialUses(await getDemoDb(), Object.fromEntries(q ?? [])),
@@ -4517,15 +4656,14 @@ const routes: RouteEntry[] = [
 
   // Version — demo runs entirely client-side (sql.js in the browser, no Node
   // server), so `node`/`dbBackend` describe that rather than a real backend.
-  // `appVersion`/`buildSha`/`buildTime` are already available via
-  // `config.public` in the demo build; this mirrors the server shape for
-  // parity with any caller that hits the endpoint directly.
+  // `appVersion` is the version the demo was built from, which the sidebar,
+  // the changelog and Settings → About read here.
   {
     method: 'GET',
     pattern: /^\/api\/version$/,
     handler: () =>
       Promise.resolve({
-        appVersion: null,
+        appVersion: demoAppVersion,
         buildSha: null,
         buildTime: null,
         node: 'N/A (browser demo)',
@@ -4539,6 +4677,14 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/changelog$/,
     handler: (_, _body, query) => apiDemoChangelog(query),
+  },
+
+  // The operator's notice and invitations, and the storage quota's warning: the demo has no operator, no token to set
+  // or send one with, and no quota.
+  {
+    method: 'GET',
+    pattern: /^\/api\/notice$/,
+    handler: () => Promise.resolve({ notice: null, invitations: [], storage: null }),
   },
 
   // Health — demo runs entirely client-side, so "the database" is always the
@@ -4560,6 +4706,12 @@ const routes: RouteEntry[] = [
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, permission: 'storage:manage', handler: () => apiGetAdminStats() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/admin\/activity$/,
+    permission: 'settings:manage',
+    handler: () => apiGetAdminActivity(),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/admin\/storage$/,

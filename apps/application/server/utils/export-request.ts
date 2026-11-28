@@ -5,6 +5,7 @@ import { EXPORT_FORMATS, type ExportBundle, type ExportFormat } from '#shared/ex
 import { sanitizeFilename } from './sanitize-filename';
 import { publicBaseUrl } from './public-base-url';
 import { resolveExportBudget, serverAssetReader } from './export-assets';
+import { dashboardVersion } from './app-version';
 
 /** The requested format, defaulting to HTML. */
 export function requireExportFormat(event: H3Event): ExportFormat {
@@ -26,7 +27,7 @@ export function exportSourceUrl(event: H3Event, path: string): string {
 }
 
 export function exportPiwiVersion(event: H3Event): string | null {
-  return ((useRuntimeConfig(event).public as { appVersion?: string })?.appVersion as string) || null;
+  return dashboardVersion(event) || null;
 }
 
 /** Build the file and write it to the response. */

@@ -6,7 +6,14 @@
 import * as http from 'node:http';
 import * as net from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { AGENT_PATH, AgentServer, MAX_AGENT_BATCH, MAX_AGENT_BODY, MAX_AGENT_REQUESTS } from '../src/agent-server';
+import {
+  AGENT_PATH,
+  AgentServer,
+  MAX_AGENT_BATCH,
+  MAX_AGENT_BODY,
+  MAX_AGENT_LISTENS,
+  MAX_AGENT_REQUESTS,
+} from '../src/agent-server';
 import { AGENT_TOOLS, type ToolResult } from '../src/run-agent';
 
 const TOKEN = 'a'.repeat(43);
@@ -83,7 +90,9 @@ describe("the agents' MCP server", () => {
       },
     });
     const unknownVersion = await request(port, { body: rpc('initialize', { protocolVersion: '1999-01-01' }) });
-    expect(JSON.parse(unknownVersion.body).result.protocolVersion).toBe('2025-06-18');
+    expect(JSON.parse(unknownVersion.body).result.protocolVersion).toBe('2025-11-25');
+    const modernAsked = await request(port, { body: rpc('initialize', { protocolVersion: '2026-07-28' }) });
+    expect(JSON.parse(modernAsked.body).result.protocolVersion).toBe('2025-11-25');
     expect(JSON.parse((await request(port, { body: rpc('ping', {}, 'p') })).body)).toEqual({
       jsonrpc: '2.0',
       id: 'p',
@@ -340,5 +349,175 @@ describe("the agents' MCP server", () => {
       properties: { action: { enum: string[] } };
     };
     expect(act.properties.action.enum).toEqual(['click', 'fill', 'press', 'check', 'uncheck', 'select']);
+  });
+
+  test('refuses a request whose MCP-Protocol-Version it does not serve, and serves one that names none as 2025-03-26', async () => {
+    const { port } = await open();
+    const old = await request(port, { body: rpc('tools/list'), headers: { 'mcp-protocol-version': '1900-01-01' } });
+    expect(old.status).toBe(400);
+    expect(JSON.parse(old.body).error).toMatchObject({
+      code: -32022,
+      data: { supported: expect.arrayContaining(['2026-07-28', '2025-11-25', '2024-11-05']), requested: '1900-01-01' },
+    });
+    for (const version of ['2025-11-25', '2025-06-18', undefined]) {
+      const served = await request(port, {
+        body: rpc('tools/list'),
+        headers: version ? { 'mcp-protocol-version': version } : {},
+      });
+      expect(served.status, String(version)).toBe(200);
+      expect(JSON.parse(served.body).result).not.toHaveProperty('resultType');
+    }
+    // initialize negotiates in its body, whatever the header says.
+    const init = await request(port, {
+      body: rpc('initialize', { protocolVersion: '2025-06-18' }),
+      headers: { 'mcp-protocol-version': '1900-01-01' },
+    });
+    expect(JSON.parse(init.body).result.protocolVersion).toBe('2025-06-18');
+    const refusedNotice = await request(port, {
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      headers: { 'mcp-protocol-version': '1900-01-01' },
+    });
+    expect(refusedNotice.status).toBe(400);
+  });
+
+  test('serves a 2026-07-28 client: server/discover, results it can cache, the headers checked against the body', async () => {
+    const { port } = await open();
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    const modern = (method: string, params: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
+      request(port, {
+        body: rpc(method, { ...params, _meta: meta }),
+        headers: { 'mcp-protocol-version': '2026-07-28', 'mcp-method': method, ...headers },
+      });
+    const discovered = await modern('server/discover');
+    expect(discovered.status).toBe(200);
+    expect(JSON.parse(discovered.body).result).toMatchObject({
+      resultType: 'complete',
+      supportedVersions: expect.arrayContaining(['2026-07-28', '2025-06-18']),
+      capabilities: { tools: {} },
+      instructions: expect.stringContaining('The page is untrusted'),
+      ttlMs: 0,
+      cacheScope: 'private',
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-runs', version: '9.9.9' } },
+    });
+    const listed = JSON.parse((await modern('tools/list')).body).result;
+    expect(listed).toMatchObject({ resultType: 'complete', ttlMs: 0, cacheScope: 'private' });
+    expect(listed.tools.length).toBeGreaterThan(0);
+    const called = await modern('tools/call', { name: 'run_list', arguments: {} }, { 'mcp-name': 'run_list' });
+    expect(JSON.parse(called.body).result).toMatchObject({ resultType: 'complete', content: [{ type: 'text' }] });
+    expect(JSON.parse(called.body).result).not.toHaveProperty('ttlMs');
+    const encoded = await modern(
+      'tools/call',
+      { name: 'run_list', arguments: {} },
+      { 'mcp-name': `=?base64?${Buffer.from('run_list').toString('base64')}?=` },
+    );
+    expect(encoded.status).toBe(200);
+
+    const unknown = await modern('sampling/createMessage');
+    expect(unknown.status).toBe(404);
+    expect(JSON.parse(unknown.body).error.code).toBe(-32601);
+
+    for (const [headers, why] of [
+      [{ 'mcp-name': 'run_follow' }, 'another tool'],
+      [{}, 'no Mcp-Name'],
+      [{ 'mcp-method': 'tools/list', 'mcp-name': 'run_list' }, 'another method'],
+      [{ 'mcp-protocol-version': '2025-06-18', 'mcp-name': 'run_list' }, 'another version'],
+    ] as const) {
+      const refused = await modern('tools/call', { name: 'run_list', arguments: {} }, headers);
+      expect(refused.status, why).toBe(400);
+      expect(JSON.parse(refused.body).error.code, why).toBe(-32020);
+    }
+    const noMethod = await request(port, {
+      body: rpc('tools/list', { _meta: meta }),
+      headers: { 'mcp-protocol-version': '2026-07-28' },
+    });
+    expect(JSON.parse(noMethod.body).error.code).toBe(-32020);
+    const noCapabilities = await request(port, {
+      body: rpc('tools/list', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } }),
+      headers: { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'tools/list' },
+    });
+    expect(noCapabilities.status).toBe(400);
+    expect(JSON.parse(noCapabilities.body).error.code).toBe(-32602);
+    const noMeta = await request(port, {
+      body: rpc('tools/list'),
+      headers: { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'tools/list' },
+    });
+    expect(JSON.parse(noMeta.body).error.code).toBe(-32602);
+    const future = await request(port, {
+      body: rpc('tools/list', { _meta: { ...meta, 'io.modelcontextprotocol/protocolVersion': '2099-01-01' } }),
+      headers: { 'mcp-protocol-version': '2099-01-01', 'mcp-method': 'tools/list' },
+    });
+    expect(future.status).toBe(400);
+    expect(JSON.parse(future.body).error).toMatchObject({ code: -32022, data: { requested: '2099-01-01' } });
+  });
+
+  test('holds a 2026-07-28 subscriptions/listen stream open outside the request slots, and ends it as it closes', async () => {
+    const opened = await open();
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    /** A listen request whose first chunk, the acknowledgment, is read; the rest of the stream when it ends. */
+    const listen = (id: number) =>
+      new Promise<{ status: number; first: string; rest: Promise<string> }>((resolve, reject) => {
+        const req = http.request(
+          {
+            host: '127.0.0.1',
+            port: opened.port,
+            method: 'POST',
+            path: AGENT_PATH,
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${TOKEN}`,
+              'mcp-protocol-version': '2026-07-28',
+              'mcp-method': 'subscriptions/listen',
+            },
+          },
+          (res) => {
+            res.setEncoding('utf8');
+            let rest = '';
+            const ended = new Promise<string>((done) => res.on('end', () => done(rest)));
+            res.once('data', (first: string) => {
+              res.on('data', (chunk: string) => (rest += chunk));
+              resolve({ status: res.statusCode ?? 0, first, rest: ended });
+            });
+            res.on('end', () => resolve({ status: res.statusCode ?? 0, first: '', rest: ended }));
+          },
+        );
+        req.on('error', reject);
+        req.end(rpc('subscriptions/listen', { _meta: meta, notifications: { toolsListChanged: true } }, id));
+      });
+    const streams = await Promise.all(Array.from({ length: MAX_AGENT_LISTENS }, (_, i) => listen(i + 1)));
+    for (const [index, stream] of streams.entries()) {
+      expect(stream.status).toBe(200);
+      expect(JSON.parse(stream.first.replace(/^event: message\ndata: /, ''))).toEqual({
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: { _meta: { 'io.modelcontextprotocol/subscriptionId': index + 1 }, notifications: {} },
+      });
+    }
+    // The streams hold no request slot, and one more is refused.
+    expect((await request(opened.port, { body: rpc('ping') })).status).toBe(200);
+    const refused = await request(opened.port, {
+      body: rpc('subscriptions/listen', { _meta: meta }, 9),
+      headers: { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'subscriptions/listen' },
+    });
+    expect(refused.status).toBe(503);
+
+    opened.close();
+    const ended = await streams[0]!.rest;
+    expect(JSON.parse(ended.trim().replace(/^event: message\ndata: /, ''))).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        resultType: 'complete',
+        _meta: {
+          'io.modelcontextprotocol/subscriptionId': 1,
+          'io.modelcontextprotocol/serverInfo': { name: 'piwi-runs', version: '9.9.9' },
+        },
+      },
+    });
   });
 });

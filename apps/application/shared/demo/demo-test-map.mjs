@@ -1218,21 +1218,22 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
 }
 
 /**
- * The console lines a passing execution logs, per test. The chart's own script
- * throws and the chart still renders; a chat widget's script errors on another
- * origin; the browser repeats a 403 the test meant to get. Only the first is the
- * application's error.
+ * The console lines a passing execution logs, per test, each placed 0-based as
+ * the capture fixtures store it. The chart's own script throws and the chart
+ * still renders; a chat widget's script errors on another origin; the browser
+ * repeats a 403 the test meant to get. Only the first is the application's
+ * error.
  */
 const PASSING_CONSOLE = {
   'renders the revenue chart': [
     {
       type: 'error',
       text: "TypeError: Cannot read properties of undefined (reading 'forecast')",
-      location: `${WEB_DASHBOARD_ORIGIN}/assets/reports-4f2a.js:1:20480`,
+      location: `${WEB_DASHBOARD_ORIGIN}/assets/reports-4f2a.js:0:20479`,
     },
   ],
   'Users table paginates 25 rows per page': [
-    { type: 'error', text: 'widget: session expired', location: 'https://widget.chat-example.io/loader.js:2:311' },
+    { type: 'error', text: 'widget: session expired', location: 'https://widget.chat-example.io/loader.js:1:310' },
   ],
   'shows an error for a revoked account': [
     {

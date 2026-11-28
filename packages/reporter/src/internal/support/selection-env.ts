@@ -23,7 +23,8 @@ export function readSelectionStamp(env: NodeJS.ProcessEnv = process.env): Select
  * The pass reuse plan `piwi run` left in the environment, or null unless it is
  * a plan id and the run passed Playwright the plan's skip list
  * (`--test-list-invert`): a `PIWI_PLAN` left in a shell for another run
- * claims nothing.
+ * claims nothing. A run whose reporter skipped the plan's tests itself
+ * (`PIWI_PLAN_SKIP`) is the plan's once its `preprocess` read the plan.
  */
 export function readPlanStamp(
   env: NodeJS.ProcessEnv = process.env,

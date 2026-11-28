@@ -6,6 +6,7 @@ import {
   childExitCode,
   playwrightInvocation,
   resolveNpmEntry,
+  resolvePlaywrightCli,
   spawnPlaywright,
 } from '../src/internal/support/playwright-spawn.js';
 
@@ -44,6 +45,24 @@ describe('playwrightInvocation', () => {
       npx ? { file: process.execPath, args: [npx, 'playwright', 'test', 'x'] } : null,
     );
     expect(playwrightInvocation(['x'], { cwd, runner: 'pnpm', platform: 'win32' })).toBeNull();
+  });
+});
+
+describe('resolvePlaywrightCli', () => {
+  it('finds @playwright/test’s CLI, else the bin of a project’s `playwright` alone', () => {
+    expect(resolvePlaywrightCli(process.cwd())).toMatch(/@playwright[\\/]test[\\/]cli\.js$/);
+
+    const project = tempDir();
+    const pkg = path.join(project, 'node_modules', 'playwright');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, 'package.json'),
+      JSON.stringify({ name: 'playwright', bin: { playwright: 'cli.js' }, exports: { './package.json': './package.json' } }),
+    );
+    fs.writeFileSync(path.join(pkg, 'cli.js'), '');
+    expect(resolvePlaywrightCli(project)).toBe(path.join(pkg, 'cli.js'));
+    expect(resolvePlaywrightCli(path.join(project, 'tests'))).toBe(path.join(pkg, 'cli.js'));
+    expect(resolvePlaywrightCli(tempDir())).toBeNull();
   });
 });
 
@@ -90,7 +109,7 @@ describe('spawnPlaywright', () => {
     const project = tempDir();
     const cli = path.join(project, 'node_modules', 'playwright');
     fs.mkdirSync(cli, { recursive: true });
-    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }));
+    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', bin: { playwright: 'cli.js' } }));
     fs.writeFileSync(path.join(cli, 'cli.js'), "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n");
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

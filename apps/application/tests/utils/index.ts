@@ -37,3 +37,18 @@ export async function retryPost(
   }
   throw lastError;
 }
+
+/**
+ * Presses a two-key chord with the page's clock paused, then lets it run again. A chord's second key counts only
+ * until a timer its first key starts runs out (800 ms in Nuxt UI's `defineShortcuts`), and each press waits for the
+ * page to take its key before the next is sent, so a busy page takes the two further apart than a person's keys.
+ * `pauseAt` only moves the clock forward, and the page's clock runs until the call reaches it, so it pauses a minute
+ * past the page's time. The page needs `page.clock.install()` before it loads.
+ */
+export async function pressChord(page: Page, first: string, second: string) {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 60_000);
+  await page.keyboard.press(first);
+  await page.keyboard.press(second);
+  await page.clock.resume();
+}

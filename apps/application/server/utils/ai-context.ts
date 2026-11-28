@@ -16,6 +16,7 @@ import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stepLabel, orderedStepParams, pausedOverlap, pauseSpans } from '@piwitests/core/step-analysis';
 import { stepFailureRoles, type StepFailureRole } from '#shared/step-tree';
+import { isConsoleErrorType } from '#shared/console-entries';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
@@ -76,6 +77,7 @@ import type {
 } from './ai-context.types';
 import type { AiAttachedImage } from './ai-provider';
 import { getStorage } from '../storage';
+import { parseErrorContext } from './import-evidence';
 import type { DbClient } from '../database';
 import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 import { shownWorkerNumber } from '#shared/worker-lane';
@@ -628,9 +630,10 @@ export function runContextSection(rep: RepresentativeRow): string | null {
   return `## Run Context\n${lines.join('\n')}`;
 }
 
+/** The console errors and uncaught page errors of an execution. */
 function countConsoleErrors(logs: ConsoleLogEntry[] | null): number {
   if (!Array.isArray(logs)) return 0;
-  return logs.filter((l) => l?.type === 'error').length;
+  return logs.filter((l) => isConsoleErrorType(l?.type)).length;
 }
 
 function relativeDays(d: Date): string {
@@ -743,7 +746,9 @@ export async function baselineComparisonSection(
   const failErrors = countConsoleErrors(rep.consoleLogs as ConsoleLogEntry[] | null);
   const passErrors = countConsoleErrors(last.consoleLogs as ConsoleLogEntry[] | null);
   if (failErrors !== passErrors) {
-    lines.push(`- Console errors: ${failErrors} in the failing run vs ${passErrors} when it last passed`);
+    lines.push(
+      `- Console errors (uncaught page errors included): ${failErrors} in the failing run vs ${passErrors} when it last passed`,
+    );
   }
 
   const failSteps = Array.isArray(rep.steps) ? rep.steps.length : null;
@@ -1116,17 +1121,20 @@ async function artifactsSection(db: DbClient, rep: RepresentativeRow): Promise<s
 }
 
 /**
- * Extract the "Page snapshot" section from a Playwright `error-context.md`
- * body. Playwright (1.53 through at least 1.61) writes it as an h1 —
- * `# Page snapshot` — followed by a ```yaml fence; h2 is tolerated for other
- * generators. Returns the snapshot YAML (fence contents when fenced), or null
- * when no section is found. Exported for unit testing.
+ * Extract the page snapshot from a Playwright `error-context.md` body.
+ * Playwright (1.53 and later) writes it as an h1 — `# Page snapshot` —
+ * followed by a ```yaml fence; h2 is tolerated for other generators. When an
+ * `expect` failed because it found no element, Playwright 1.60 and later write
+ * the page's snapshot as a ```yaml fence under `# Error details`, after that
+ * error, and no `# Page snapshot` section: the first such fence stands in.
+ * Returns the snapshot YAML (fence contents when fenced), or null when the body
+ * holds none. Exported for unit testing.
  */
 export function extractPageSnapshotSection(text: string): string | null {
   const snapshotMatch = text.match(
     /(?:^|\n)#{1,2} Page snapshot\s*\n(```(?:ya?ml)?\s*\n[\s\S]*?\n```|[\s\S]*?)(?=\n#{1,2} |\n---\n|$)/,
   );
-  if (!snapshotMatch) return null;
+  if (!snapshotMatch) return parseErrorContext(text).ariaSnapshot;
   let snapshot = snapshotMatch[1]!.trim();
   const fenceMatch = snapshot.match(/^```(?:ya?ml)?\s*\n([\s\S]*?)\n```$/);
   if (fenceMatch) snapshot = fenceMatch[1]!;
@@ -1139,8 +1147,11 @@ export function extractPageSnapshotSection(text: string): string | null {
  * snapshot` that carries the full DOM hierarchy with `[ref=eXX]` /
  * `[cursor=pointer]` / `[active]` annotations. This is richer than the stored
  * flat snapshot and works retroactively — the file is already uploaded, it
- * just wasn't read. The attachment is stored under Playwright's attachment
- * *name* (`error-context`), not its on-disk file name (`error-context.md`).
+ * just wasn't read. For an `expect` that found no element it holds that
+ * expect's snapshot of the page instead, without refs (Playwright 1.60 and
+ * later, `extractPageSnapshotSection`). The attachment is stored under
+ * Playwright's attachment *name* (`error-context`), not its on-disk file name
+ * (`error-context.md`).
  *
  * Returns the extracted snapshot YAML block (without the heading), or null
  * when no error-context attachment exists or parsing fails.

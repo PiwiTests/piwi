@@ -318,7 +318,7 @@ const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => (
 // The matched page's component file, which the build records on its route
 // (`sourceFile`, from the `pages:extend` hook); the pages directory otherwise.
 const pageSourceUrl = computed(() => {
-  const repository = 'https://github.com/piwitests/piwi';
+  const repository = 'https://github.com/PiwiTests/piwi';
   const file = route.matched.at(-1)?.meta.sourceFile;
   return typeof file === 'string'
     ? `${repository}/blob/main/apps/application/app/pages/${file}`
@@ -482,7 +482,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
 
 const isDemo = config.public.demoMode;
 const demoDataVersion = config.public.demoDataVersion as string;
-const appVersion = config.public.appVersion as string;
+const appVersion = useAppVersion();
 
 const { resetDemo } = useDemoReset();
 
@@ -593,7 +593,7 @@ onMounted(async () => {
           <DesktopLocalRunsIndicator :collapsed="collapsed" />
           <UserMenu :collapsed="collapsed" />
           <ULink
-            v-if="!collapsed"
+            v-if="!collapsed && appVersion"
             to="/settings/about"
             data-tour="app-version"
             class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-center"
@@ -617,6 +617,8 @@ onMounted(async () => {
     <!-- The real main landmark the skip link targets. Fills the group's content
          area so the page panel keeps its full width/height. -->
     <main id="main-content" tabindex="-1" class="flex-1 min-w-0 flex flex-col outline-none">
+      <!-- The notice whoever runs the instance set, above every page -->
+      <OperatorNoticeBanner />
       <!-- The page in a column of its own, so its panel stays a last child, with no edge for the tray beside it. -->
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         <slot />

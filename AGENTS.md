@@ -3,32 +3,12 @@
 > **Note:** Piwi is **not affiliated with, endorsed by, or connected to Microsoft Corporation**. The project was
 > originally called "Playwright Dashboard" and was renamed to avoid confusion with Microsoft's Playwright.
 
-Root guide for any AI agent (Claude Code, opencode, Copilot, Cursor, …): what lives where, how to verify a change, and
-the conventions that apply everywhere. Each area has its own guide next to its code: Claude Code loads it through the
-`CLAUDE.md` beside it when you open a file there, and other agents read it before editing. A guide's table may send a
-file outside its directory to another guide: read that one yourself, whatever the agent.
-
-| Editing… | Read first |
-| --- | --- |
-| `apps/application/`: the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md) |
-| `packages/reporter/`: the Playwright reporter package | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
-| `apps/desktop/`: the Tauri desktop shell | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md) |
-| `packages/run-ui/`: the Nuxt layer the dashboard and Runner share | [`packages/run-ui/AGENTS.md`](packages/run-ui/AGENTS.md) |
-| `packages/run-model/`: the run model the Runs window and the desktop tray share | [`packages/run-model/AGENTS.md`](packages/run-model/AGENTS.md) |
-| `apps/runner/`: Piwi Runner, the window and Node host that run a team instance's requests | [`apps/runner/AGENTS.md`](apps/runner/AGENTS.md) |
-| `apps/extension/`: the browser extension (Manifest V3) | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md) |
-| `packages/editor/`: the editor service (language server) | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md) |
-| `packages/turbo/`: faster Playwright suites | [`packages/turbo/AGENTS.md`](packages/turbo/AGENTS.md) |
-| `apps/vscode/`: the VS Code extension | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md) |
-| `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin) | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md) |
-| `apps/docs/`: the VitePress documentation site | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md) |
-| `apps/showcase/`: the showcase's story, played on every tool | [`apps/showcase/AGENTS.md`](apps/showcase/AGENTS.md) |
-| `.github/`: the CI workflows and the actions they share | [`.github/AGENTS.md`](.github/AGENTS.md) |
-| `proposals/`: design records for work proposed or being built | [`proposals/AGENTS.md`](proposals/AGENTS.md) |
-| `adr/`: architecture decision records for shipped work | [`adr/AGENTS.md`](adr/AGENTS.md) |
-
-The dashboard's guide lists the topic guides of its subsystems. An `ARCHITECTURE.md` beside a guide is the map of
-that area (what exists and how it works): open it when you need to understand the code, not before every edit.
+Root guide for any AI agent (Claude Code, opencode, Copilot, Cursor, …): the repository's layout, how to verify a
+change, and the conventions that apply everywhere. Each area linked under [Repository layout](#repository-layout) has
+its own guide next to its code: Claude Code loads it through the `CLAUDE.md` beside it when you open a file there, and
+other agents read it before editing. A guide may send a file outside its directory to another guide: read that one
+yourself, whatever the agent. An `ARCHITECTURE.md` beside a guide maps that area (what exists and how it works): open
+it when you need to understand the code, not before every edit.
 
 ## Project overview
 
@@ -39,28 +19,36 @@ locator healing, notifications and an MCP server for AI agents. Self-hosted only
 
 ## Repository layout
 
-```
-apps/application/     Nuxt 4 dashboard: app (UI), server (API), demo SPA, MCP server; `shared/` imported as `#shared/...`
-apps/desktop/         Tauri desktop shell that bundles and runs the same server locally
-apps/runner/          Piwi Runner: the window (Nuxt, `ssr: false`) and Node host the desktop crate's `runner` feature bundles
-apps/extension/       Piwi Picker, the browser extension (Manifest V3), standalone
-apps/vscode/          VS Code extension, a thin client of packages/editor (scope `ide`)
-apps/jetbrains/       JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)
-apps/docs/            VitePress documentation site, published to GitHub Pages
-apps/showcase/        The showcase: one story on every tool together, checked nightly and filmed (not a workspace)
-packages/core/        @piwitests/core: private, zero-dependency logic shared by the app and the reporter
-packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, dashboard, extension)
-packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
-packages/editor/      @piwitests/editor: the language server both editor clients bundle (scope `ide`)
-packages/run-ui/      @piwitests/run-ui: the Nuxt layer the dashboard and Piwi Runner share (run request UI, Tauri bridge)
-packages/run-model/   @piwitests/run-model: the run model Piwi Picker's Runs window and the desktop app's tray share
-packages/server/      @piwitests/server: the published npm run option (`npx @piwitests/server`)
-packages/turbo/       @piwitests/turbo: faster Playwright suites without a fork, and the benchmark that measures it
-integrations/         Instrumentation adapters: nitro/ (npm), aspnetcore/ and serilog/ (NuGet, .NET tests, .slnx)
-examples/sample-app/  One web app and its Playwright suite, served by each supported backend
-shared/               Base lint/format configs and the catalog checks
-plans/                The maintainer's local planning folder: gitignored, absent in a fresh clone
-```
+A linked directory has a guide: read it before editing there.
+
+- [`apps/application/`](apps/application/AGENTS.md): the Nuxt 4 dashboard: app (UI), server (API), demo SPA, MCP
+  server; `shared/` imported as `#shared/...`. Its guide lists the topic guides of its subsystems.
+- [`apps/desktop/`](apps/desktop/AGENTS.md): the Tauri desktop shell that bundles and runs the same server locally
+- [`apps/runner/`](apps/runner/AGENTS.md): Piwi Runner, the window (Nuxt, `ssr: false`) and Node host that run a team
+  instance's requests, bundled by the desktop crate's `runner` feature
+- [`apps/extension/`](apps/extension/AGENTS.md): Piwi Picker, the browser extension (Manifest V3), standalone
+- [`apps/vscode/`](apps/vscode/AGENTS.md): the VS Code extension, a thin client of `packages/editor` (scope `ide`)
+- [`apps/jetbrains/`](apps/jetbrains/AGENTS.md): the JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)
+- [`apps/docs/`](apps/docs/AGENTS.md): the VitePress documentation site, published to GitHub Pages
+- [`apps/showcase/`](apps/showcase/AGENTS.md): one story on every tool together, checked nightly and filmed
+- `packages/core/`: `@piwitests/core`, private, zero-dependency logic shared by the app and the reporter
+- `packages/picker-dom/`: `@piwitests/picker-dom`, the DOM picker overlay (reporter, dashboard, extension)
+- [`packages/reporter/`](packages/reporter/AGENTS.md): `@piwitests/reporter`, the Playwright reporter (tsup bundle)
+- [`packages/editor/`](packages/editor/AGENTS.md): `@piwitests/editor`, the language server both editor clients bundle
+- [`packages/run-ui/`](packages/run-ui/AGENTS.md): `@piwitests/run-ui`, the Nuxt layer the dashboard and Piwi Runner
+  share (run request UI, Tauri bridge)
+- [`packages/run-model/`](packages/run-model/AGENTS.md): `@piwitests/run-model`, the run model Piwi Picker's Runs
+  window and the desktop app's tray share
+- `packages/server/`: `@piwitests/server`, the published npm run option (`npx @piwitests/server`)
+- [`packages/turbo/`](packages/turbo/AGENTS.md): `@piwitests/turbo`, faster Playwright suites without a fork, and the
+  benchmark that measures it
+- `integrations/`: instrumentation adapters: `nitro/` (npm), `aspnetcore/` and `serilog/` (NuGet, .NET tests, `.slnx`)
+- `examples/sample-app/`: one web app and its Playwright suite, served by each supported backend
+- `shared/`: base lint/format configs and the catalog checks
+- [`.github/`](.github/AGENTS.md): the CI workflows and the actions they share
+- [`proposals/`](proposals/AGENTS.md) holds the design records of work proposed or being built, [`adr/`](adr/AGENTS.md)
+  those of shipped work; public direction is [`ROADMAP.md`](ROADMAP.md)
+- `plans/`: the maintainer's local planning folder, gitignored (layout in the `plan-management` skill)
 
 - **A new workspace goes where its kind is**: `apps/*` for a deployable surface, `packages/*` for a package consumed by
   name (published, or imported or bundled by another workspace), `integrations/*` for a framework adapter. Every JS
@@ -71,9 +59,6 @@ plans/                The maintainer's local planning folder: gitignored, absent
   `package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please bumps only
   the root package natively; a missing lockfile entry leaves the workspace a release behind and makes `npm install`
   rewrite the lockfile on every checkout.
-- Design records live in [`proposals/`](proposals/) while their work is proposed or being built, and move to
-  [`adr/`](adr/) once it has shipped. Public direction is [`ROADMAP.md`](ROADMAP.md). `plans/` is the maintainer's local
-  planning folder (layout in the `plan-management` skill).
 
 ## Setup and repository-wide commands
 
@@ -163,6 +148,9 @@ form exists show a bash and a PowerShell version. The mappings and the VitePress
   `npx @piwitests/reporter init` writes, and what the connect wizard (`GetStartedWizard`) shows. The bare reporter
   entry appears only as the fallback for a config that cannot be wrapped, saying what it gives up. The wizard's
   snippets come from `app/utils/setup-snippets.ts`, which `tests/unit/setup-snippets.test.ts` holds to `init`'s output.
+- **The product is called Piwi.** "Piwi Dashboard" stays only where something matches on it: the reporter's
+  `[Piwi Dashboard]` log prefix, the markers of Piwi's pull-request comments and the desktop app's former install
+  name. `apps/application/tests/unit/product-name.test.ts` scans what people read.
 - **Repository links point at `https://github.com/PiwiTests/piwi`**: docs, package metadata (`repository`,
   `RepositoryUrl`), app links, the desktop updater endpoints. Two names stay as they are: the container image
   `ghcr.io/piwitests/platform`, which users pull by name, and the links release-please already wrote into
@@ -175,9 +163,9 @@ form exists show a bash and a PowerShell version. The mappings and the VitePress
 Piwi is not a product being sold. Copy is informative, specific and honest, never promotional (voice rules:
 [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#voice)). The project describes itself the same way everywhere:
 
-> **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, then groups
-> the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted,
-> zero telemetry.
+> **Your Playwright results, kept and explained.** Free, self-hosted, zero telemetry. CI throws away every report it
+> makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you
+> should have used.
 
 Eight surfaces carry it; update them **in the same commit**: `README.md` (subtitle), `apps/docs/index.md` (hero `text`
 and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` title and description), `DOCKER_HUB.md`
@@ -199,12 +187,11 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
 - **A generated file is regenerated, never merged by hand.** Take either side of the conflict, run its generator on the
   merged tree, and commit the output:
 
-  | File                                                        | Regenerate with                                                                                    |
-  | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-  | `package-lock.json`                                         | `npm install` (repo root)                                                                          |
-  | `apps/application/public/demo/seed.version.json`            | `npm run app:seed:demo` (`apps/application/`)                                                      |
-  | `render.yaml`, `fly.toml`, `railway.json`, `deploy/**`      | `npm run app:generate:deploy` (`apps/application/`)                                                |
-  | Drizzle migrations, `_journal.json`, `meta/*_snapshot.json` | the procedure in [`server/database/AGENTS.md`](apps/application/server/database/AGENTS.md)         |
+  - `package-lock.json`: `npm install` (repo root)
+  - `apps/application/public/demo/seed.version.json`: `npm run app:seed:demo` (`apps/application/`)
+  - `render.yaml`, `fly.toml`, `railway.json`, `deploy/**`: `npm run app:generate:deploy` (`apps/application/`)
+  - Drizzle migrations, `_journal.json`, `meta/*_snapshot.json`: the procedure in
+    [`server/database/AGENTS.md`](apps/application/server/database/AGENTS.md)
 
 - A branch's migrations follow extra rules through a merge (keep them unless the base branch added migrations, never
   edit a committed one): see [`apps/application/server/database/AGENTS.md`](apps/application/server/database/AGENTS.md).
@@ -220,7 +207,9 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
   reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
   ones, and open the pull request after.
 - **Screenshots go in the pull request**: one that changes what people see embeds in its description the screenshots
-  already captured for it (the docs images it updates, the scenes it ran), not only the chat.
+  already captured for it (the docs images it updates, the scenes it ran), not only the chat. Upload them with
+  `gh pr create` or `gh pr edit --attach` (gh 2.99+, `.claude/skills/playwright-cli/references/pr-attachments.md`); where
+  that gh cannot run, link a committed docs image by its raw URL at the commit's SHA, never at the branch.
 - **Report what you find**: bugs, inconsistencies and tech debt discovered along the way go in your final report and
   in a GitHub issue on `PiwiTests/piwi`, after searching open and closed issues: comment on a match instead of opening
   a duplicate. A security finding never goes in an issue or a comment: describe it to the user and let them decide.

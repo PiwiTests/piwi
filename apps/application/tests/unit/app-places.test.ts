@@ -78,7 +78,7 @@ describe('the readers of the registry', () => {
     }
   });
 
-  // A reader that wrote a place's label itself would drift from the list: none holds one as a literal.
+  // A reader that wrote a place's label itself would drift from the list: none holds one as a whole literal.
   test.each([
     ['pages/projects/[id]/index.vue', [...PROJECT_TABS, ...PROJECT_FAILURE_VIEWS, ...PROJECT_MENU_PAGES]],
     ['pages/test-runs/[id].vue', [...RUN_TABS]],
@@ -87,7 +87,7 @@ describe('the readers of the registry', () => {
     const text = source(file);
     const written = places
       .map((place) => place.label)
-      .filter((label) => new RegExp(`label:\\s*['"\`]${label}\\b`).test(text));
+      .filter((label) => new RegExp(`label:\\s*(['"\`])${label}\\1`).test(text));
     expect(written).toEqual([]);
   });
 

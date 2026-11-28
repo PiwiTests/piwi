@@ -1,6 +1,6 @@
 # PiwiTests.Instrumentation.Core
 
-The per-request backend log capture buffer shared by the [Piwi Dashboard](https://piwitests.dev) instrumentation packages. It has no ASP.NET Core dependency — only `Microsoft.Extensions.Logging.Abstractions`, for `LogLevel`.
+The per-request backend log capture buffer shared by the [Piwi](https://piwitests.dev) instrumentation packages. It has no ASP.NET Core dependency — only `Microsoft.Extensions.Logging.Abstractions`, for `LogLevel`.
 
 You normally don't reference this package directly. Install the one that fits your stack, and it comes along:
 

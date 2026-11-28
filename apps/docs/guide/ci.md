@@ -47,6 +47,13 @@ jobs:
           PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
 ```
 
+Piwi keeps every result, so the job's output can hold the failures alone: Playwright 1.65's `failures` reporter
+prints only them, and `onlyFailures: true` keeps an `html`, `json` or `junit` report to them (`wrapConfig` adds Piwi):
+
+```ts
+reporter: process.env.CI ? [['failures'], ['junit', { outputFile: 'junit.xml', onlyFailures: true }]] : 'list',
+```
+
 The shallow clone `actions/checkout` makes is enough for the reporter: Piwi reads diffs from your Git host's API
 ([Source control](./source-control)). [`run impact --base`](/reference/cli#select-run) and
 [`preflight --base`](/reference/cli#preflight) diff the checkout itself and need the base commit: set
@@ -56,7 +63,7 @@ The shallow clone `actions/checkout` makes is enough for the reporter: Piwi read
 
 ```yaml
 e2e:
-  image: mcr.microsoft.com/playwright:v1.64.1-noble   # the version of your @playwright/test
+  image: mcr.microsoft.com/playwright:v1.65.1-noble   # the version of your @playwright/test
   script:
     - npm ci
     - npx playwright test
@@ -120,7 +127,11 @@ How the merge works:
 
 **All shards must use the same `projectName`.**
 
-Jobs sharded with `piwi run --shard` merge the same way ([details](/features/test-selection#print-shard-and-reorder)).
+Playwright counts a sharded run's tests before it splits them, so a shard left with none passes. From Playwright 1.65,
+a sharded run fails with `No tests found` when its whole selection is empty, as an unsharded one does, unless it passes
+`--pass-with-no-tests`, which `piwi run --plan` adds unless its arguments filter tests.
+
+Jobs sharded with `piwi run --shard`, or [balanced by duration](/features/test-selection#balanced-playwright-shards), merge the same way.
 
 If your CI isn't detected, set the label yourself to anything common to all shards:
 

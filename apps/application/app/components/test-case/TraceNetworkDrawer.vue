@@ -83,7 +83,7 @@ watch(
   <USlideover
     :open="open"
     title="Request detail"
-    :ui="{ content: 'max-w-xl' }"
+    :ui="{ content: 'sm:max-w-xl' }"
     @update:open="emit('update:open', $event)"
   >
     <template #body>

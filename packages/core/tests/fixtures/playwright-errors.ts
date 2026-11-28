@@ -1,7 +1,8 @@
 /**
  * Real Playwright error texts, one per message shape the parser covers:
- * action timeouts with their call log, web-first assertions in the 1.49+
- * `Locator:/Expected:/Received:/Timeout:` layout and the older `Timed out …
+ * action timeouts with their call log (an inert element's included, 1.65),
+ * web-first assertions in the 1.49+ `Locator:/Expected:/Received:/Timeout:`
+ * layout (a locator given a `describe()` included) and the older `Timed out …
  * waiting for expect(…)` layout, value assertions, strict-mode violations,
  * navigation errors, test timeouts (bare, joined with the pending action, in a
  * hook, during teardown), closed pages, thrown errors, ANSI-colored output and
@@ -58,6 +59,27 @@ Call log:
   - waiting for element to be visible, enabled and editable
   - element is not visible
   - retrying fill action
+${STACK}`,
+
+  clickInert: `TimeoutError: locator.click: Timeout 5000ms exceeded.
+Call log:
+  - waiting for getByRole('button', { name: 'Place order' })
+    - locator resolved to <button type="submit" class="btn-primary">Place order</button>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is inert
+  - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is inert
+    - retrying click action
+      - waiting 100ms
+    8 × waiting for element to be visible, enabled and stable
+      - element is inert
+    - retrying click action
+      - waiting 500ms
+    - waiting for element to be visible, enabled and stable
+    - element is inert
 ${STACK}`,
 
   clickChained: `TimeoutError: locator.click: Timeout 30000ms exceeded.
@@ -150,6 +172,18 @@ Call log:
   - waiting for getByRole('heading', { level: 1 })
   - 9 × locator resolved to <h1>Sign in</h1>
     - unexpected value "Sign in"
+${STACK}`,
+
+  toHaveTextDescribed: `Error: expect(locator).toHaveText(expected) failed
+
+Locator: Order total
+Expected: "$42.00"
+Timeout: 5000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toHaveText" with timeout 5000ms
+  - waiting for getByTestId('cart').getByTestId('order-total')
 ${STACK}`,
 
   toHaveAttribute: `Error: expect(locator).toHaveAttribute(expected) failed

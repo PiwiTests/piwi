@@ -1,34 +1,21 @@
 <script setup lang="ts">
 /**
- * A failure page's line about its cluster's last CI re-run: what it re-ran,
- * where it was dispatched, when (the full date and time on hover) and by whom, and a link to it in CI (the
- * build the run recorded, once it finished; before, what the CI answered).
+ * A failure page's line about its last CI re-run, as the follow-up view reads it (`RunFollowUp`): what it re-ran,
+ * where it was dispatched, when (the full date and time on hover) and by whom, a link to it in CI, and the run that
+ * answered it with its result, or that none did. While the page is open it reads the dispatch again until it is final.
  */
-import { safeHttpUrl } from '#shared/utils/safe-url';
-import { lastRerunScope, rerunDispatchTarget, type RerunInfo } from '~/composables/useCiRerun';
+import type { CiDispatchView } from '#shared/ci-dispatches';
 
-const props = defineProps<{ dispatch: NonNullable<RerunInfo['lastDispatch']> }>();
+const props = defineProps<{ dispatch: CiDispatchView }>();
 
-const link = computed(() => safeHttpUrl(props.dispatch.url));
+const { view, follow } = useRunFollowUp();
+watch(
+  () => props.dispatch,
+  (dispatch) => follow({ kind: 'dispatch', view: dispatch }),
+  { immediate: true },
+);
 </script>
 
 <template>
-  <span class="text-xs text-muted" data-testid="ci-rerun-last-dispatch">
-    Last re-run{{ lastRerunScope(dispatch) }}, dispatched to {{ rerunDispatchTarget(dispatch) }}
-    <ClientOnly>
-      <span :title="prettyDateFormat(dispatch.at)">{{ formatRelativeTime(dispatch.at) }}</span>
-      <template #fallback>{{ formatRelativeTime(dispatch.at) }}</template>
-    </ClientOnly>
-    <template v-if="dispatch.byName">by {{ dispatch.byName }}</template>
-    <template v-if="link">
-      ·
-      <a
-        :href="link"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-        >Open in CI</a
-      >
-    </template>
-  </span>
+  <RunFollowUp v-if="view" :follow-up="view" line="Last re-run" />
 </template>

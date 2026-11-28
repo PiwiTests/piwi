@@ -20,7 +20,7 @@ npx @piwitests/reporter <command> [options]
 
 | Command | What it does |
 |---|---|
-| [`init`](#init) | Wire a Playwright project up to a Piwi Dashboard |
+| [`init`](#init) | Wire a Playwright project up to a Piwi server |
 | [`skills`](#skills) | Install the Piwi agent skills into this project |
 | [`gate`](#gate) | Fail a CI job on the dashboard's analysis of a run |
 | [`report`](#report) | Print a [quality report](/features/quality-reports) as Markdown, PDF, HTML, CSV or JSON |
@@ -259,10 +259,15 @@ npx @piwitests/reporter plan full
 npx @piwitests/reporter run --plan 42 --shard 2/4
 ```
 
-In a CI matrix, one job runs `plan` and hands the id to the shard jobs. `run --plan` runs the plan's selection with
-Playwright's `--test-list-invert` naming the reused tests, so a test the dashboard has not seen yet runs, and each
-shard passes Playwright's own `--shard`. A shard that cannot use the plan runs the whole suite, or exits `2` under
-`--strict`.
+In a CI matrix, one job runs `plan` and hands the id to the shard jobs. `run --plan` runs the plan's selection less
+the reused tests, and the plan names only those, so a test the dashboard has not seen yet runs. With
+Playwright 1.62 or later in the project, it sets `PIWI_PLAN` and `PIWI_PLAN_SKIP=true` for the reporter, which reads the
+plan and skips each reused test itself, naming the run whose pass stands in for it; below 1.62, it passes Playwright's
+`--test-list-invert` naming them. Each shard passes Playwright's own `--shard`. A run whose own arguments after `--`
+choose no tests also passes `--pass-with-no-tests`, so a plan whose tests were all renamed or deleted runs none and
+passes; one that chooses its own (a file filter, `--grep`, `--grep-invert`, `--last-failed`, `--only-changed`,
+`--test-list`, `--test-list-invert`) fails as Playwright does when they match nothing. A shard that cannot use the plan
+runs the whole suite, or exits `2` under `--strict`; a shard whose reporter cannot read it runs the whole suite too.
 
 | Flag | Description |
 |---|---|

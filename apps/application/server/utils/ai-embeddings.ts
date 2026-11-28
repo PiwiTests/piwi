@@ -8,6 +8,7 @@
 
 import type { ResolvedAiRole } from '~~/types/api';
 import { assertAiKey } from './ai-credentials';
+import { connectionFetch } from './connection-fetch';
 
 export async function embedTexts(role: ResolvedAiRole, texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
@@ -18,7 +19,7 @@ export async function embedTexts(role: ResolvedAiRole, texts: string[]): Promise
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (role.apiKey) headers['authorization'] = `Bearer ${role.apiKey}`;
 
-  const res = await fetch(`${baseUrl}/embeddings`, {
+  const res = await connectionFetch(`${baseUrl}/embeddings`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ model: role.model, input: texts }),

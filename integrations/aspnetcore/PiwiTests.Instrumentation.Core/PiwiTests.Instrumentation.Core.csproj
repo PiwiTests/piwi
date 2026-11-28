@@ -4,8 +4,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
     <PackageId>PiwiTests.Instrumentation.Core</PackageId>
-    <Version>0.74.0</Version> <!-- x-release-please-version -->
-    <Description>Per-request backend log capture buffer shared by the Piwi Dashboard instrumentation packages — no ASP.NET Core dependency</Description>
+    <Version>0.78.0</Version> <!-- x-release-please-version -->
+    <Description>Per-request backend log capture buffer shared by the Piwi instrumentation packages — no ASP.NET Core dependency</Description>
     <Authors>piwitests</Authors>
     <RepositoryUrl>https://github.com/PiwiTests/piwi</RepositoryUrl>
     <PackageProjectUrl>https://piwitests.dev</PackageProjectUrl>

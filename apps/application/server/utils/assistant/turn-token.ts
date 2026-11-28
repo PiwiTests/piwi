@@ -28,19 +28,56 @@ export interface AssistantTurnTools {
   call(call: AiToolCall): Promise<AiToolResult>;
 }
 
+/** A `subscriptions/listen` stream of a turn's endpoint. */
+export interface AssistantTurnListener {
+  /** The turn's tools changed. */
+  toolsChanged(): void;
+  /** The turn ended: the stream ends too. */
+  end(): void;
+}
+
+/** The `subscriptions/listen` streams of one turn: told when its tools change, and ended when it ends. */
+export class AssistantTurnListeners {
+  private readonly listeners = new Set<AssistantTurnListener>();
+  private ended = false;
+
+  /** Add a stream, ended at once when the turn has; the function returned removes it. */
+  add(listener: AssistantTurnListener): () => void {
+    if (this.ended) {
+      listener.end();
+      return () => {};
+    }
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  toolsChanged(): void {
+    for (const listener of [...this.listeners]) listener.toolsChanged();
+  }
+
+  end(): void {
+    this.ended = true;
+    const listeners = [...this.listeners];
+    this.listeners.clear();
+    for (const listener of listeners) listener.end();
+  }
+}
+
 /** One live turn, as its token opens it. */
 export interface AssistantTurnSession extends AssistantTurnTools {
   conversationId: number;
   /** The asking user's id; null with authentication off. */
   ownerId: number | null;
   expiresAt: number;
+  listeners: AssistantTurnListeners;
 }
 
 const turns = new Map<string, AssistantTurnSession>();
 
 /**
  * Mint the token of one turn: valid for `ttlMs` at most, and until `revoke`,
- * which the turn calls when it ends, whatever way it ends.
+ * which the turn calls when it ends, whatever way it ends, and which ends the
+ * streams its endpoint holds open.
  */
 export function mintAssistantTurnToken(
   turn: { conversationId: number; ownerId: number | null; tools: AssistantTurnTools },
@@ -49,14 +86,22 @@ export function mintAssistantTurnToken(
 ): { token: string; revoke: () => void } {
   const token = `${TURN_TOKEN_PREFIX}${randomBytes(32).toString('hex')}`;
   const key = hashToken(token);
+  const listeners = new AssistantTurnListeners();
   turns.set(key, {
     conversationId: turn.conversationId,
     ownerId: turn.ownerId,
     expiresAt: now + ttlMs,
+    listeners,
     definitions: () => turn.tools.definitions(),
     call: (call) => turn.tools.call(call),
   });
-  return { token, revoke: () => turns.delete(key) };
+  return {
+    token,
+    revoke: () => {
+      turns.delete(key);
+      listeners.end();
+    },
+  };
 }
 
 /** The live turn `token` opens for `conversationId`, or null: unknown, ended, expired, or another conversation's. */
@@ -71,14 +116,18 @@ export function liveAssistantTurn(
   if (!turn) return null;
   if (turn.expiresAt <= now) {
     turns.delete(key);
+    turn.listeners.end();
     return null;
   }
   return turn.conversationId === conversationId ? turn : null;
 }
 
-/** The conversation of a request to a turn's MCP endpoint, or null for any other request. */
+/**
+ * The conversation of a request to a turn's MCP endpoint, or null for any other
+ * request: a POST, or the GET and DELETE it answers with 405.
+ */
 export function assistantTurnRouteConversation(method: string, path: string): number | null {
-  if (method !== 'POST') return null;
+  if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') return null;
   const match = /^\/api\/assistant\/conversations\/([1-9]\d{0,15})\/mcp$/.exec(path.split('?')[0]!);
   return match ? Number(match[1]) : null;
 }

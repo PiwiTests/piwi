@@ -2,6 +2,7 @@ import { getDatabase } from '../../../database';
 import { readBranchFailures } from '../../../utils/branch-failures';
 import { jsonEtag, notModified } from '../../../utils/json-etag';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
+import { dashboardVersion } from '../../../utils/app-version';
 
 defineRouteMeta({
   openAPI: {
@@ -46,7 +47,7 @@ export default eventHandler(async (event) => {
     apiError({ statusCode, message }),
   );
   // The server's version and what the answer is computed from, read without computing it.
-  const appVersion = (useRuntimeConfig(event).public as { appVersion?: string }).appVersion ?? null;
+  const appVersion = dashboardVersion(event) || null;
   if (notModified(event, jsonEtag([appVersion, await read.version()]))) return null;
   return read.answer();
 });

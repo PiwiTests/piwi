@@ -13,7 +13,7 @@ export interface ShardInfo {
 }
 
 /**
- * Options for configuring the Piwi Dashboard reporter.
+ * Options for configuring the Piwi reporter.
  *
  * Piwi options only — the Playwright config belongs in `defineConfig` (i.e. in
  * `wrapConfig`'s first argument). These go in `wrapConfig`'s second argument or
@@ -24,7 +24,7 @@ export interface PiwiDashboardOptions {
   /** Explicitly enable or disable the reporter. Defaults to `true` when `serverUrl` is set. Set to `false` to disable even if `serverUrl` is provided. */
   enabled?: boolean;
   /**
-   * URL of the Piwi Dashboard server: a whole `http://` or `https://` address. Any other value leaves the reporter
+   * URL of the Piwi server: a whole `http://` or `https://` address. Any other value leaves the reporter
    * off, with a warning.
    */
   serverUrl?: string;
@@ -313,13 +313,13 @@ export interface PiwiDashboardOptions {
    * runs no test and reaches no dashboard. The check runs in the reporter's
    * global setup, after `webServer` has started and before the config's own
    * `globalSetup`, so leave it off when that setup is what starts the app. Only
-   * the projects the run selects are checked, with their dependencies: the ones
-   * `--project` names, or every project but those declared `default: false`
-   * (Playwright 1.64+). The check runs from this machine's network: for a
-   * project whose browser runs on another machine (`connectOptions`) and whose
-   * `exposeNetwork` rule does not cover the base URL's host and port, its message says
-   * so, since that browser reaches the app from its own network. **Defaults to
-   * `false`**. Can also be set with `PIWI_CHECK_BASE_URL=true`.
+   * the projects the run selects are checked, with their dependencies and
+   * teardown projects: the ones `--project` names, or every project but those
+   * declared `default: false` (Playwright 1.64+). The check runs from this
+   * machine's network: for a project whose browser runs on another machine
+   * (`connectOptions`) and whose `exposeNetwork` rule does not cover the base
+   * URL's host and port, its message says so, since that browser reaches the
+   * app from its own network. **Defaults to `false`**. Can also be set with `PIWI_CHECK_BASE_URL=true`.
    */
   checkBaseUrl?: boolean;
 
@@ -389,6 +389,18 @@ export interface PiwiDashboardOptions {
    * set with `PIWI_FAIL_ON_FLAKY_TESTS`.
    */
   failOnFlakyTests?: boolean;
+
+  // ── Sharding ───────────────────────────────────────────────────────────────
+  /**
+   * Split a sharded run (`--shard=i/n`) between its shards by the durations the dashboard recorded, rather than by
+   * test count, keeping every test that shares a lock, and every group Playwright runs in one worker (a serial
+   * describe, a file that is not fully parallel), in one shard. Each shard asks the dashboard for the split before
+   * Playwright shards the run, and every shard of the run reads the same stored answer. Needs Playwright 1.62 or later
+   * and a dashboard; stands aside for `--last-failed`, `--only-changed`, `--test-list` and `--test-list-invert`, whose
+   * selection differs per machine. When the dashboard does not answer within 10 seconds, or answers wrongly, Playwright
+   * splits the run as usual. Defaults to `false`. Can also be set with `PIWI_BALANCE_SHARDS`.
+   */
+  balanceShards?: boolean;
 
   // ── Authentication ─────────────────────────────────────────────────────────
   /** Username or email address for dashboard login (use `apiKey` instead when possible) */

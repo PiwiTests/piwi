@@ -57,7 +57,7 @@ again before it runs anything: a variable refused there runs nothing, rather tha
   terminal is yours: Piwi sets nothing there.
 
 A re-run in CI passes arguments only: a CI action picks its tenant with its fixed inputs, per
-[deployment environment](./ci-rerun).
+[deployment environment](./ci-actions#what-an-action-has).
 
 ## Per environment
 

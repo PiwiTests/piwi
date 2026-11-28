@@ -136,7 +136,7 @@
     }
   },
   "common_bugReportsUnsupported": {
-    "message": "esta instancia de Piwi todavía no acepta informes de bug. Actualícela."
+    "message": "esta instancia de Piwi todavía no acepta informes de bug. Actualízala."
   },
   "common_workerNoAnswer": {
     "message": "El proceso en segundo plano de Piwi Picker no respondió: vuelve a cargar Piwi Picker."
@@ -172,10 +172,10 @@
     "message": "La aplicación de escritorio rechazó el token."
   },
   "common_desktopUnsupported": {
-    "message": "Esta dirección no es una aplicación de escritorio de Piwi que pueda ejecutar informes de errores."
+    "message": "Esta dirección no es una aplicación de escritorio de Piwi que pueda ejecutar informes de bug."
   },
   "common_desktopNotProven": {
-    "message": "El programa en esta dirección no demostró ser la aplicación de escritorio vinculada, así que no se envió el token. Comprueba que la aplicación esté abierta y actualizada, y vuelve a vincularla."
+    "message": "El programa en esta dirección no demostró ser la aplicación de escritorio emparejada, así que no se envió el token. Comprueba que la aplicación esté abierta y actualizada, y vuelve a emparejarla."
   },
   "common_desktopStatus": {
     "message": "La aplicación de escritorio respondió $status$.",
@@ -262,7 +262,7 @@
     "message": "Añadir este sitio"
   },
   "popup_addSiteTitle": {
-    "message": "Abrir los ajustes con el patrón de este sitio ya escrito"
+    "message": "Abrir la configuración con el patrón de este sitio ya escrito"
   },
   "popup_testedElements": {
     "message": "Elementos probados"
@@ -576,13 +576,13 @@
     "message": "Sin conectar"
   },
   "options_desktopOffer": {
-    "message": "La aplicación de escritorio vinculada ejecuta Piwi en este equipo: úsala como tu instancia, con su dirección y su token."
+    "message": "La aplicación de escritorio emparejada ejecuta Piwi en esta máquina: úsala como tu instancia, con su dirección y su token."
   },
   "options_useDesktop": {
     "message": "Usar la aplicación de escritorio como instancia"
   },
   "options_desktopPairHint": {
-    "message": "Para ejecutar los informes de error con Playwright en este equipo, $link$.",
+    "message": "Para ejecutar los informes de bug con Playwright en esta máquina, $link$.",
     "placeholders": {
       "link": {
         "content": "$1",
@@ -591,7 +591,7 @@
     }
   },
   "options_desktopPairHintLink": {
-    "message": "vincula la aplicación de escritorio"
+    "message": "empareja la aplicación de escritorio"
   },
   "options_healthOk": {
     "message": "Respondió $time$",
@@ -630,10 +630,10 @@
     }
   },
   "options_statePaired": {
-    "message": "Vinculado"
+    "message": "Emparejado"
   },
   "options_stateNotPaired": {
-    "message": "Sin vincular"
+    "message": "Sin emparejar"
   },
   "options_lead": {
     "message": "Opcional. Conectado a tu instancia de Piwi, el grabador usa los page objects y las funciones auxiliares de tus proyectos, y los clasifica en directo mientras grabas. Elegir locators y grabar una prueba sencilla siempre funcionan sin conexión."
@@ -743,7 +743,7 @@
     "message": "Desconectar"
   },
   "options_privacy": {
-    "message": "Solo se usa desde esta página: la clave de API nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies, los descargues o los envíes a tu editor emparejado o a tu aplicación de escritorio vinculada. La conexión descarga los patrones de dirección de tus proyectos, el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas; añadir un sitio solo envía su patrón."
+    "message": "Solo se usa desde esta página: la clave de API nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies, los descargues o los envíes a tu editor o a tu aplicación de escritorio emparejados. La conexión descarga los patrones de dirección de tus proyectos, el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas; añadir un sitio solo envía su patrón."
   },
   "options_testing": {
     "message": "Probando…"
@@ -752,19 +752,19 @@
     "message": "Aplicación de escritorio"
   },
   "options_desktopHint": {
-    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Desktop, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
+    "message": "Opcional. Emparejado con la aplicación de escritorio Piwi Desktop, Reproducir puede pedirle que ejecute un informe de bug con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
   },
   "options_desktopUrl": {
     "message": "Dirección de la aplicación de escritorio"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece en la aplicación, en Settings → Desktop app, en «Pair with Piwi Picker». Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
+    "message": "Aparece en la aplicación, en Settings → Desktop app, en «Pair with Piwi Picker». Emparejar pide a la ventana de la aplicación que autorice a Piwi Picker."
   },
   "options_desktopPair": {
-    "message": "Vincular"
+    "message": "Emparejar"
   },
   "options_desktopManual": {
-    "message": "Vincular a mano"
+    "message": "Emparejar a mano"
   },
   "options_desktopToken": {
     "message": "Token"
@@ -776,10 +776,10 @@
     "message": "Guardar y probar"
   },
   "options_desktopForget": {
-    "message": "Desvincular"
+    "message": "Desemparejar"
   },
   "options_desktopPairedAt": {
-    "message": "Vinculado a la aplicación de escritorio en $url$.",
+    "message": "Emparejado con la aplicación de escritorio en $url$.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -803,13 +803,13 @@
     "message": "Abre la ventana de la aplicación de escritorio: la solicitud te espera allí."
   },
   "options_desktopPairDenied": {
-    "message": "La vinculación se rechazó en la aplicación de escritorio."
+    "message": "El emparejamiento se rechazó en la aplicación de escritorio."
   },
   "options_desktopPairExpired": {
-    "message": "La solicitud caducó antes de ser autorizada. Haz clic en Vincular para pedirla de nuevo."
+    "message": "La solicitud caducó antes de ser autorizada. Haz clic en Emparejar para pedirla de nuevo."
   },
   "options_desktopPairCancelled": {
-    "message": "Se canceló la vinculación."
+    "message": "Se canceló el emparejamiento."
   },
   "options_desktopPairUnreachable": {
     "message": "Nada responde en $url$. ¿Está abierta la aplicación de escritorio? Su dirección aparece en Settings → Desktop app.",
@@ -821,7 +821,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "Lo que responde en $url$ no puede vincularse en un paso: comprueba la dirección en la aplicación de escritorio, en Settings → Desktop app, actualiza la aplicación o vincúlala a mano.",
+    "message": "Lo que responde en $url$ no puede emparejarse en un paso: comprueba la dirección en la aplicación de escritorio, en Settings → Desktop app, actualiza la aplicación o emparéjala a mano.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -830,10 +830,10 @@
     }
   },
   "options_desktopPairTooMany": {
-    "message": "Ya esperan tres vinculaciones en la ventana de la aplicación de escritorio: respóndelas primero."
+    "message": "Ya esperan tres solicitudes de emparejamiento en la ventana de la aplicación de escritorio: respóndelas primero."
   },
   "options_desktopForgotten": {
-    "message": "La aplicación de escritorio ya no está vinculada."
+    "message": "La aplicación de escritorio ya no está emparejada."
   },
   "options_desktopNotLoopback": {
     "message": "Introduce la dirección de la aplicación de escritorio, como http://127.0.0.1:3000."
@@ -842,7 +842,7 @@
     "message": "Pega primero el token de la aplicación, en Settings → Desktop app."
   },
   "options_desktopNeedsAccess": {
-    "message": "Permite el acceso a la dirección de la aplicación de escritorio para vincularla."
+    "message": "Permite el acceso a la dirección de la aplicación de escritorio para emparejarla."
   },
   "options_accessDenied": {
     "message": "Se rechazó el acceso a esa instancia: permítelo para que Piwi Picker pueda leer tu catálogo."
@@ -1053,7 +1053,7 @@
     "message": "De tu instancia de Piwi"
   },
   "options_serverHint": {
-    "message": "Se definen en los ajustes de cada proyecto, en URL patterns, y se leen cada vez que se abre esta página."
+    "message": "Se definen en la configuración de cada proyecto, en URL patterns, y se leen cada vez que se abre esta página."
   },
   "options_serverRefresh": {
     "message": "Actualizar"
@@ -1299,7 +1299,7 @@
     "message": "Lo usa tu instancia de Piwi: Desconectar quita este acceso."
   },
   "options_siteUseDesktop": {
-    "message": "Lo usa la aplicación de escritorio: Desvincular quita este acceso."
+    "message": "Lo usa la aplicación de escritorio: Desemparejar quita este acceso."
   },
   "options_siteUseEditor": {
     "message": "Lo usa tu editor: Desemparejar quita este acceso."
@@ -1681,7 +1681,7 @@
     }
   },
   "lint_thenLocator": {
-    "message": "Un test lo encuentra entonces con"
+    "message": "Una prueba lo encuentra entonces con"
   },
   "assert_dialog": {
     "message": "Aserciones"
@@ -2226,7 +2226,7 @@
     }
   },
   "functions_cacheFailed": {
-    "message": "No se pudieron leer las funciones de test guardadas en este navegador. Actualiza para descargarlas de nuevo."
+    "message": "No se pudieron leer las funciones de prueba guardadas en este navegador. Actualiza para descargarlas de nuevo."
   },
   "functions_ready": {
     "message": "Lista para usar aquí"
@@ -2500,7 +2500,7 @@
     "message": "Añadir una captura de la página tal como está ahora"
   },
   "bug_debuggingOn": {
-    "message": "Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es esta grabación leyendo la consola, las solicitudes fallidas y las capturas. Nada sale de tu equipo, y la barra desaparece al terminar."
+    "message": "Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es esta grabación leyendo la consola, las solicitudes fallidas y las capturas. Nada sale de tu máquina, y la barra desaparece al terminar."
   },
   "bug_debuggingCanceled": {
     "message": "Se canceló la barra de depuración: la grabación lee la consola y las solicitudes desde la página a partir de ahora, y una captura requiere «$action$» en Piwi Picker.",
@@ -2831,7 +2831,7 @@
     }
   },
   "bug_sendFirstTime": {
-    "message": "Es el primer informe enviado desde este navegador. Piwi Picker envía un informe solo cuando hace clic en Enviar, solo a la instancia que conectó y solo lo que marque aquí. Los pasos conservan los valores escritos, salvo las contraseñas."
+    "message": "Es el primer informe enviado desde este navegador. Piwi Picker envía un informe solo cuando haces clic en Enviar, solo a la instancia que conectaste y solo lo que marques aquí. Los pasos conservan los valores escritos, salvo las contraseñas."
   },
   "bug_sendSteps_one": {
     "message": "El título y $count$ paso, con la página en la que ocurrió",
@@ -2951,7 +2951,7 @@
     "message": "Ningún proyecto de tu instancia de Piwi corresponde a esta página. Añade este sitio en la configuración o elige el proyecto en el menú de Piwi Picker."
   },
   "bug_staysLocalUntilSent": {
-    "message": "Todo se queda en este navegador hasta que lo envíe."
+    "message": "Todo se queda en este navegador hasta que lo envíes."
   },
   "replay_hudLabel": {
     "message": "Piwi Picker: reproducción de una grabación"
@@ -3215,7 +3215,7 @@
     "message": "Todos los resultados esperados se cumplen en esta página."
   },
   "replay_verdictNotReproducedRun": {
-    "message": "El paso $step$, donde el test falló al ejecutarse, se reprodujo aquí.",
+    "message": "El paso $step$, donde la prueba falló al ejecutarse, se reprodujo aquí.",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -3266,7 +3266,7 @@
     }
   },
   "replay_verdictFailedAsInRun": {
-    "message": "Falló en el paso $step$, como en la ejecución del test",
+    "message": "Falló en el paso $step$, como en la ejecución de la prueba",
     "placeholders": {
       "step": {
         "content": "$1",
@@ -3275,7 +3275,7 @@
     }
   },
   "replay_verdictFailedAsInRunDetail": {
-    "message": "$reason$ El test falló en este mismo paso cuando se ejecutó.",
+    "message": "$reason$ La prueba falló en este mismo paso cuando se ejecutó.",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -3370,7 +3370,7 @@
     }
   },
   "replay_reasonSecret": {
-    "message": "El informe no contiene lo que se escribió aquí: una grabación nunca guarda una contraseña ni otro secreto, y quien envió el informe puede haber omitido los valores escritos. Escríbalo en la página y luego continúe."
+    "message": "El informe no contiene lo que se escribió aquí: una grabación nunca guarda una contraseña ni otro secreto, y quien envió el informe puede haber omitido los valores escritos. Escríbelo en la página y luego continúa."
   },
   "replay_hoverNoLocator": {
     "message": "Omitido: la grabación no tiene ningún locator para el elemento sobrevolado; el paso siguiente apunta a su propio elemento."
@@ -3458,10 +3458,10 @@
     "message": "La página no reaccionó a la acción como cuando se grabó."
   },
   "replay_reasonManual": {
-    "message": "El test lo hace de una forma que Replay no puede reproducir."
+    "message": "La prueba lo hace de una forma que Replay no puede reproducir."
   },
   "replay_reasonManualAt": {
-    "message": "El test lo hace en $location$ de una forma que Replay no puede reproducir.",
+    "message": "La prueba lo hace en $location$ de una forma que Replay no puede reproducir.",
     "placeholders": {
       "location": {
         "content": "$1",
@@ -3483,7 +3483,7 @@
     }
   },
   "replay_reasonInputBlocked": {
-    "message": "La página no recibió esta entrada: algo delante de la pestaña la tomó, como un cuadro de diálogo del navegador sobre una contraseña. Ciérrelo y luego haga este paso en la página."
+    "message": "La página no recibió esta entrada: algo delante de la pestaña la tomó, como un cuadro de diálogo del navegador sobre una contraseña. Ciérralo y luego haz este paso en la página."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ queda fuera de la parte visible de la página.",
@@ -3529,7 +3529,7 @@
     "message": "eventos de la página"
   },
   "replay_fileAsk_one": {
-    "message": "El paso $step$ elige $count$ archivo, $files$, que el informe nombra pero no contiene. Elíjalo en este equipo para continuar, u omita el paso.",
+    "message": "El paso $step$ elige $count$ archivo, $files$, que el informe nombra pero no contiene. Elígelo en esta máquina para continuar, u omite el paso.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3546,7 +3546,7 @@
     }
   },
   "replay_fileAsk_other": {
-    "message": "El paso $step$ elige $count$ archivos, $files$, que el informe nombra pero no contiene. Elíjalos en este equipo para continuar, u omita el paso.",
+    "message": "El paso $step$ elige $count$ archivos, $files$, que el informe nombra pero no contiene. Elígelos en esta máquina para continuar, u omite el paso.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3853,7 +3853,7 @@
     "message": "Ejecutar con Playwright en la aplicación de escritorio"
   },
   "replay_desktopNotPaired": {
-    "message": "Primero vincula la aplicación de escritorio, en la configuración de Piwi Picker, en Aplicación de escritorio."
+    "message": "Primero empareja la aplicación de escritorio, en la configuración de Piwi Picker, en Aplicación de escritorio."
   },
   "replay_desktopOpenOptions": {
     "message": "Abrir la configuración"
@@ -5498,7 +5498,7 @@
     }
   },
   "view_crowded_one": {
-    "message": "$count$ etiqueta omitida, demasiado cerca de otras: elija un rol para verla",
+    "message": "$count$ etiqueta omitida, demasiado cerca de otras: elige un rol para verla",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -5507,7 +5507,7 @@
     }
   },
   "view_crowded_other": {
-    "message": "$count$ etiquetas omitidas, demasiado cerca de otras: elija un rol para verlas",
+    "message": "$count$ etiquetas omitidas, demasiado cerca de otras: elige un rol para verlas",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -5682,7 +5682,7 @@
     }
   },
   "devtools_mockFileHint": {
-    "message": "El cuerpo supera los 100 kB, así que el código lo lee de un archivo: guárdelo como $path$ en la carpeta desde la que ejecuta Playwright.",
+    "message": "El cuerpo supera los 100 kB, así que el código lo lee de un archivo: guárdalo como $path$ en la carpeta desde la que ejecutas Playwright.",
     "placeholders": {
       "path": {
         "content": "$1",
@@ -5797,7 +5797,7 @@
     }
   },
   "login_noSite": {
-    "message": "Ábralo desde el panel Piwi de DevTools en una página web: guarda la sesión del sitio de esa página."
+    "message": "Ábrelo desde el panel Piwi de DevTools en una página web: guarda la sesión del sitio de esa página."
   },
   "login_holds": {
     "message": "El archivo contiene las cookies de este navegador para el sitio, incluidas las httpOnly, y el localStorage del sitio, en el formato storageState de Playwright. IndexedDB queda fuera."
@@ -5913,7 +5913,7 @@
     "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactives o cierres la pestaña. Los documentos, los scripts, las imágenes y las solicitudes de un service worker no pasan por ellas."
   },
   "devtools_conditionsDebugging": {
-    "message": "Aplicadas a cada solicitud de esta pestaña mediante el protocolo de depuración de Chrome: Chrome muestra su barra de depuración hasta que las desactive todas."
+    "message": "Aplicadas a cada solicitud de esta pestaña mediante el protocolo de depuración de Chrome: Chrome muestra su barra de depuración hasta que las desactives todas."
   },
   "devtools_conditionsSetFor": {
     "message": "Definidas para $site$: se aplican mientras la pestaña muestre ese sitio.",
@@ -6202,7 +6202,7 @@
     "message": "no se hizo ninguna"
   },
   "runs_command": {
-    "message": "Pausar las ejecuciones del editor o reanudar un test detenido"
+    "message": "Pausar las ejecuciones del editor o reanudar una prueba detenida"
   },
   "popup_runs": {
     "message": "Ejecuciones"
@@ -6332,7 +6332,7 @@
     "message": "Ninguna tecla pausa ni reanuda las ejecuciones todavía. Asigna una, Global en Chrome o Edge, para usarla desde cualquier ventana."
   },
   "runs_shortcutKey": {
-    "message": "$key$ pausa las ejecuciones o reanuda un test detenido.",
+    "message": "$key$ pausa las ejecuciones o reanuda una prueba detenida.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -6472,7 +6472,7 @@
     "message": "Tu editor responde, pero ninguna de sus ventanas comparte sus ejecuciones: actualiza allí la extensión de Piwi."
   },
   "runs_statusNoRuns": {
-    "message": "Ninguna ejecución por ahora. Inicia un test desde el editor: aparece aquí."
+    "message": "Ninguna ejecución por ahora. Inicia una prueba desde el editor: aparece aquí."
   },
   "runs_desktopApp": {
     "message": "Aplicación de escritorio"
@@ -6481,7 +6481,7 @@
     "message": "Terminal"
   },
   "runs_runner": {
-    "message": "Ejecutor de tests"
+    "message": "Ejecutor de pruebas"
   },
   "runs_desktopName": {
     "message": "la aplicación de escritorio"
@@ -6508,7 +6508,7 @@
     "message": "El programa en la dirección de la aplicación de escritorio no es la aplicación emparejada: Piwi Picker no le envió nada y vuelve a preguntar en un momento."
   },
   "runs_statusDesktopNoRuns": {
-    "message": "Ninguna ejecución por ahora. Ejecuta un test desde la aplicación de escritorio: aparece aquí."
+    "message": "Ninguna ejecución por ahora. Ejecuta una prueba desde la aplicación de escritorio: aparece aquí."
   },
   "runs_ended": {
     "message": "La ejecución terminó."
@@ -6579,7 +6579,7 @@
     "message": "Por qué espera"
   },
   "runs_callNone": {
-    "message": "Aún no hay ninguna llamada: la llamada que ejecuta el test aparece aquí, con lo que Playwright espera."
+    "message": "Aún no hay ninguna llamada: la llamada que ejecuta la prueba aparece aquí, con lo que Playwright espera."
   },
   "runs_callRunning": {
     "message": "En curso desde hace $time$",
@@ -6778,7 +6778,7 @@
     "message": "Mostrar el texto de la página"
   },
   "runs_textShowTitle": {
-    "message": "Mostrar la página como roles y nombres, con sus campos secretos ocultos: tomada ahora y seguida a medida que la traza del test la escribe"
+    "message": "Mostrar la página como roles y nombres, con sus campos secretos ocultos: tomada ahora y seguida a medida que la traza de la prueba la escribe"
   },
   "runs_textAgain": {
     "message": "Tomarlo de nuevo"
@@ -6790,7 +6790,7 @@
     "message": "Leyendo la página…"
   },
   "runs_textTrace": {
-    "message": "De la traza del test"
+    "message": "De la traza de la prueba"
   },
   "runs_textSnapshot": {
     "message": "Tomado a petición tuya"
@@ -6859,22 +6859,22 @@
     "message": "La ejecución se interrumpió."
   },
   "runs_stoppedBreakpoint": {
-    "message": "Detenido en un punto de interrupción"
+    "message": "Detenida en un punto de interrupción"
   },
   "runs_stoppedStep": {
-    "message": "Detenido tras un paso"
+    "message": "Detenida tras un paso"
   },
   "runs_stoppedPause": {
     "message": "En pausa"
   },
   "runs_stoppedRunTo": {
-    "message": "Detenido en la línea pedida"
+    "message": "Detenida en la línea pedida"
   },
   "runs_stoppedPagePause": {
-    "message": "Detenido en page.pause()"
+    "message": "Detenida en page.pause()"
   },
   "runs_stoppedOther": {
-    "message": "Detenido"
+    "message": "Detenida"
   },
   "runs_statePausing": {
     "message": "Pausando…"
@@ -6901,13 +6901,93 @@
     "message": "Terminar la prueba ahora: la llamada en la que espera se abandona si se puede y se omite el resto de la prueba"
   },
   "runs_stateFailed": {
-    "message": "Falló, retenido en su línea"
+    "message": "Falló, retenida en su línea"
+  },
+  "runs_heldFor": {
+    "message": "Retenida para $names$ · hasta las $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Retenida · hasta las $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Soltarla"
+  },
+  "runs_letGoTitle": {
+    "message": "Terminar la retención: la prueba se desmonta como lo habría hecho, sin cambiar su resultado"
+  },
+  "runs_heldJobTimeout": {
+    "message": "El tiempo límite del propio job de CI sigue corriendo."
+  },
+  "runs_pausedBy": {
+    "message": "En pausa por $name$ · hasta las $time$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_pausedUntil": {
+    "message": "En pausa · hasta las $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_ciResumeTitle": {
+    "message": "Dejar que la prueba siga desde donde está en pausa"
+  },
+  "runs_pauseAsked": {
+    "message": "Pausa pedida"
+  },
+  "runs_pauseAskedBy": {
+    "message": "Pausa pedida por $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "La pausa se descartó: $why$",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Retirar la pausa: la prueba sigue sin detenerse"
   },
   "runs_stateRunning": {
     "message": "En curso"
   },
   "runs_stateBetween": {
-    "message": "Entre dos tests"
+    "message": "Entre dos pruebas"
   },
   "runs_workerTabs": {
     "message": "Workers"
@@ -6931,7 +7011,7 @@
     }
   },
   "runs_cannotPause": {
-    "message": "Este test no puede pausarse: $reason$",
+    "message": "Esta prueba no puede pausarse: $reason$",
     "placeholders": {
       "reason": {
         "content": "$1",
@@ -6961,31 +7041,31 @@
     "message": "Terminar"
   },
   "runs_finishTitle": {
-    "message": "Continuar el test sin volver a detenerse en un punto de interrupción en este intento"
+    "message": "Continuar la prueba sin volver a detenerse en un punto de interrupción en este intento"
   },
   "runs_end": {
-    "message": "Terminar el test"
+    "message": "Terminar la prueba"
   },
   "runs_endTitle": {
-    "message": "Terminar el test aquí: el resto se omite"
+    "message": "Terminar la prueba aquí: el resto se omite"
   },
   "runs_pick": {
     "message": "Elegir"
   },
   "runs_pickTitle": {
-    "message": "Elegir un locator en la ventana del test: reemplaza el de esta línea"
+    "message": "Elegir un locator en la ventana de la prueba: reemplaza el de esta línea"
   },
   "runs_front": {
     "message": "Mostrar el navegador"
   },
   "runs_frontTitle": {
-    "message": "Traer al frente la ventana del navegador del test"
+    "message": "Traer al frente la ventana del navegador de la prueba"
   },
   "runs_openTrace": {
     "message": "Abrir la traza hasta ahora"
   },
   "runs_openTraceTitle": {
-    "message": "Abrir la traza de este test hasta ahora en el visor de trazas de Playwright, en la máquina donde se realiza la ejecución"
+    "message": "Abrir la traza de esta prueba hasta ahora en el visor de trazas de Playwright, en la máquina donde se realiza la ejecución"
   },
   "runs_runControls": {
     "message": "Controles de la ejecución"
@@ -7006,7 +7086,7 @@
     "message": "Reanudar todo"
   },
   "runs_resumeAllTitle": {
-    "message": "Dejar que cada test detenido de esta ejecución continúe"
+    "message": "Dejar que cada prueba detenida de esta ejecución continúe"
   },
   "runs_withKey": {
     "message": "$title$ ($key$)",
@@ -7022,25 +7102,25 @@
     }
   },
   "runs_keyChoose": {
-    "message": "Hay varios tests detenidos: mueva el foco al que quiere dirigir con una tecla."
+    "message": "Hay varias pruebas detenidas: mueve el foco a la que quieras dirigir con una tecla."
   },
   "runs_keyOtherTab": {
-    "message": "El test detenido está en la pestaña de otro worker: abra esa pestaña para dirigirlo con una tecla."
+    "message": "La prueba detenida está en la pestaña de otro worker: abre esa pestaña para dirigirla con una tecla."
   },
   "runs_record": {
     "message": "Grabar"
   },
   "runs_recordTitle": {
-    "message": "Grabar pasos en la ventana del test: van al editor, que los escribe encima de esta línea"
+    "message": "Grabar pasos en la ventana de la prueba: van al editor, que los escribe encima de esta línea"
   },
   "runs_pause": {
     "message": "Pausar"
   },
   "runs_pauseTitle": {
-    "message": "Detener el test antes de su próxima llamada"
+    "message": "Detener la prueba antes de su próxima llamada"
   },
   "runs_imageAlt": {
-    "message": "La página del test, detenida antes de: $call$",
+    "message": "La página de la prueba, detenida antes de: $call$",
     "placeholders": {
       "call": {
         "content": "$1",
@@ -7055,19 +7135,19 @@
     "message": "Tomando una imagen de la página…"
   },
   "runs_pageCaption": {
-    "message": "Página del test"
+    "message": "Página de la prueba"
   },
   "runs_assert": {
     "message": "Comprobar"
   },
   "runs_assertTitle": {
-    "message": "Comprobar un elemento en la ventana del test: la comprobación va al editor, que la escribe encima de esta línea"
+    "message": "Comprobar un elemento en la ventana de la prueba: la comprobación va al editor, que la escribe encima de esta línea"
   },
   "runs_assertRegion": {
     "message": "Comprobar una región"
   },
   "runs_assertRegionTitle": {
-    "message": "Elegir una región en la ventana del test: su snapshot ARIA va al editor, que lo escribe encima de esta línea"
+    "message": "Elegir una región en la ventana de la prueba: su snapshot ARIA va al editor, que lo escribe encima de esta línea"
   },
   "runs_mock": {
     "message": "Simular una petición"
@@ -7157,13 +7237,13 @@
     "message": "Devolver esta parada: un agente puede volver a actuar en ella"
   },
   "runs_stoppedByAgent": {
-    "message": "Pausado por el agente"
+    "message": "Pausada por el agente"
   },
   "runs_stoppedByAgentStep": {
-    "message": "Detenido tras el paso del agente"
+    "message": "Detenida tras el paso del agente"
   },
   "runs_stoppedByAgentRunTo": {
-    "message": "Detenido en la línea pedida por el agente"
+    "message": "Detenida en la línea pedida por el agente"
   },
   "runs_announceDriveTaken": {
     "message": "Ahora controlas la parada de $test$: el agente espera hasta que la devuelvas.",
@@ -7181,7 +7261,7 @@
     "message": "Qué revisar en este código"
   },
   "runs_resumeFailureTitle": {
-    "message": "Dejar que el test termine con el fallo"
+    "message": "Dejar que la prueba termine con el fallo"
   },
   "runs_failedAt": {
     "message": "Falló en $place$",
@@ -7206,7 +7286,7 @@
     }
   },
   "runs_imageAltFailure": {
-    "message": "La página del test donde falló: $error$",
+    "message": "La página de la prueba donde falló: $error$",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -7224,7 +7304,7 @@
     "message": "Filtrar por dirección, método o estado"
   },
   "runs_requestsNone": {
-    "message": "El test aún no guardó ninguna respuesta: Piwi guarda las respuestas de texto de sus peticiones fetch y XHR."
+    "message": "La prueba aún no guardó ninguna respuesta: Piwi guarda las respuestas de texto de sus peticiones fetch y XHR."
   },
   "runs_requestsNoMatch": {
     "message": "Ninguna petición coincide con el filtro."
@@ -7263,16 +7343,16 @@
     "message": "Interactuar"
   },
   "runs_interactTitle": {
-    "message": "Enviar tus clics, el desplazamiento y tus teclas a la página del test, controlando esta parada: Esc la devuelve"
+    "message": "Enviar tus clics, el desplazamiento y tus teclas a la página de la prueba, controlando esta parada: Esc la devuelve"
   },
   "runs_liveBadge": {
     "message": "En directo"
   },
   "runs_liveAlt": {
-    "message": "Vista en directo de la página del test"
+    "message": "Vista en directo de la página de la prueba"
   },
   "runs_liveAltInput": {
-    "message": "Vista en directo de la página del test: las teclas y los clics van a la página"
+    "message": "Vista en directo de la página de la prueba: las teclas y los clics van a la página"
   },
   "runs_liveStarting": {
     "message": "Iniciando la vista en directo…"
@@ -7286,22 +7366,22 @@
     }
   },
   "runs_liveHint": {
-    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc desactiva Interactuar y devuelve la parada, pero va a la página mientras en ella se elige un elemento o se comprueba; Mayús+clic elige un locator."
+    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página de la prueba. Esc desactiva Interactuar y devuelve la parada, pero va a la página mientras en ella se elige un elemento o se comprueba; Mayús+clic elige un locator."
   },
   "runs_watch": {
     "message": "Ver"
   },
   "runs_watchTitle": {
-    "message": "Mostrar la página del test mientras se ejecuta, a través de sus paradas y sus siguientes tests: en una parada, Interactuar envía tus clics y teclas a ella"
+    "message": "Mostrar la página de la prueba mientras se ejecuta, a través de sus paradas y sus siguientes pruebas: en una parada, Interactuar envía tus clics y teclas a ella"
   },
   "runs_pauseWatch": {
     "message": "Pausar y ver"
   },
   "runs_pauseWatchTitle": {
-    "message": "Detener el test antes de su próxima llamada y mostrar su página"
+    "message": "Detener la prueba antes de su próxima llamada y mostrar su página"
   },
   "runs_watchOutdated": {
-    "message": "Actualiza el reporter para ver un test en curso"
+    "message": "Actualiza el reporter para ver una prueba en curso"
   },
   "runs_watchToUse": {
     "message": "Ver para usar"
@@ -7310,7 +7390,7 @@
     "message": "En curso…"
   },
   "runs_laneAltLast": {
-    "message": "La página del test, tal como se vio por última vez"
+    "message": "La página de la prueba, tal como se vio por última vez"
   },
   "runs_pickAt": {
     "message": "Elegir en la imagen"
@@ -7328,10 +7408,10 @@
     "message": "Compartir en directo"
   },
   "runs_shareLiveTitle": {
-    "message": "Dejar que quien pueda abrir esta ejecución en la instancia de Piwi de tu equipo vea las páginas de sus tests desde la página de la ejecución"
+    "message": "Dejar que quien pueda abrir esta ejecución en la instancia de Piwi de tu equipo vea las páginas de sus pruebas desde la página de la ejecución"
   },
   "runs_shareWarning": {
-    "message": "Mientras esta ejecución está compartida en $instance$, quien tenga su página abierta allí ve cada parada de sus tests: la llamada, su archivo y su línea, y el título del test, aunque nadie mire. Mientras alguien mira un worker, también se envían allí imágenes de la página de su test, cada una con su llamada y el título del test. Quien pueda abrir la ejecución allí puede mirarla y, en una instancia sin autenticación, cualquiera que pueda acceder a ella. No se guarda nada, y Dejar de compartir lo termina en segundos.",
+    "message": "Mientras esta ejecución está compartida en $instance$, quien tenga su página abierta allí ve cada parada de sus pruebas: la llamada, su archivo y su línea, y el título de la prueba, aunque nadie mire. Mientras alguien mira un worker, también se envían allí imágenes de la página de su prueba, cada una con su llamada y el título de la prueba. Quien pueda abrir la ejecución allí puede mirarla y, en una instancia sin autenticación, cualquiera que pueda acceder a ella. No se guarda nada, y Dejar de compartir lo termina en segundos.",
     "placeholders": {
       "instance": {
         "content": "$1",
@@ -7493,7 +7573,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Solo lectura: se ejecutan en la CI, así que nada de aquí las pausa ni las dirige. Ver muestra aquí la página de una prueba en curso."
+    "message": "Solo para ver: se ejecutan en la CI, así que nada de aquí las dirige, salvo Pausar, Reanudar, Terminar la prueba y Soltarla, para quien puede controlarlas. Ver muestra aquí la página de una prueba en curso."
   },
   "runs_ciTests": {
     "message": "Pruebas en curso"
@@ -7552,6 +7632,21 @@
   "runs_ciRefusedNoTest": {
     "message": "Todavía no se ejecutó ninguna prueba en el carril de este worker."
   },
+  "runs_ciLetGoUnwatched": {
+    "message": "Soltarla va por la vista de esta ventana sobre el worker: vuelve a verlo primero."
+  },
+  "runs_ciNotController": {
+    "message": "Puedes ver esta ejecución, no controlarla."
+  },
+  "runs_ciNotHeld": {
+    "message": "Este worker no retiene ahora ninguna prueba fallida."
+  },
+  "runs_ciControlUnwatched": {
+    "message": "Los controles van por la vista de esta ventana sobre el worker: vuelve a verlo primero."
+  },
+  "runs_ciNoWorker": {
+    "message": "Ningún worker se ejecuta ahora en este carril."
+  },
   "runs_ciRefusedOffline": {
     "message": "La instancia no respondió."
   },
@@ -7600,10 +7695,10 @@
     "message": "Otra ventana Ejecuciones ve ahora otro worker: Piwi Picker muestra un worker de CI a la vez."
   },
   "runs_pageAtStop": {
-    "message": "La página de un test aparece aquí cuando se detiene: en un punto de interrupción, en page.pause() o cuando lo pausas. Ver la muestra entonces tal como se dibuja."
+    "message": "La página de una prueba aparece aquí cuando se detiene: en un punto de interrupción, en page.pause() o cuando la pausas. Ver la muestra entonces tal como se dibuja."
   },
   "runs_pageAtStopDesktop": {
-    "message": "La página de un test aparece aquí cuando se detiene: en page.pause() o cuando lo pausas. Ver la muestra entonces tal como se dibuja."
+    "message": "La página de una prueba aparece aquí cuando se detiene: en page.pause() o cuando la pausas. Ver la muestra entonces tal como se dibuja."
   },
   "runs_shareRefusedLocal": {
     "message": "Esta ejecución no puede compartirse en directo: informa a la aplicación de escritorio de Piwi de esta máquina, a la que ningún compañero llega. Indica la instancia de tu equipo en PIWI_DASHBOARD_URL para compartir allí una ejecución."

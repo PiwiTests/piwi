@@ -1,46 +1,105 @@
-//! The test filters of a run the shell starts in a folder it knows, anchored at that folder.
+//! The test filters of a run the shell starts in a folder it knows, anchored at that folder, and how Playwright reads
+//! each argument of such a run ([`read_args`]).
 
-/// The options of `ALLOWED_FLAGS` that take a value, which an argument may give apart (`--project x`).
-const VALUE_FLAGS: [&str; 8] = [
+/// The options of `ALLOWED_FLAGS` that take a value, which an argument may give apart (`--project x`, `-G x`).
+pub(crate) const VALUE_FLAGS: [&str; 9] = [
     "--trace",
     "--repeat-each",
     "--project",
     "--grep",
+    "-G",
     "--workers",
     "--retries",
     "--max-failures",
     "--timeout",
 ];
 
+/// The options of `VALUE_FLAGS` that take several values: given apart, each argument after their first value up to the
+/// next option is one more (`--project api web`); given after `=`, none is (`--project=api`).
+const VARIADIC_FLAGS: [&str; 1] = ["--project"];
+
+/// The options of `ALLOWED_FLAGS` whose value is optional: Playwright takes the next argument as their value when it
+/// is no option (`--shuffle 42`, `--debug cli`).
+const OPTIONAL_VALUE_FLAGS: [&str; 2] = ["--shuffle", "--debug"];
+
 /// The ASCII characters Node's `pathToFileURL` may percent-encode in a Windows path, which a filter of the `file:` URL
 /// matches written either way.
 const URL_ENCODED: &str = " \"#%<>?[]^`{|}~";
 
+/// What Playwright reads an argument of `playwright test` as ([`read_args`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Arg {
+    /// An option, with its value when it is written after `=` (`--project=api`).
+    Flag,
+    /// The value of the option before it, given apart (`-G slow`, `--shuffle 42`, `--debug cli`), or one more value of
+    /// a variadic one (`web` in `--project api web`).
+    Value,
+    /// A test filter.
+    Filter,
+}
+
+/// How Playwright's command line parser reads each of `args`. An option is an argument of two characters or more that
+/// starts with `-`. The argument after one of [`VALUE_FLAGS`] given apart is its value, whatever it is; after one of
+/// [`OPTIONAL_VALUE_FLAGS`], unless it is an option; after the first value of one of [`VARIADIC_FLAGS`], each argument
+/// up to the next option is one more value. Any other argument is a test filter.
+pub(crate) fn read_args(args: &[String]) -> Vec<Arg> {
+    /// What the arguments before take of the next one.
+    #[derive(Clone, Copy)]
+    enum Takes {
+        Nothing,
+        Value,
+        Values,
+        MaybeValue,
+        MoreValues,
+    }
+    let takes_after = |flag: &str| {
+        if flag.contains('=') {
+            Takes::Nothing
+        } else if VARIADIC_FLAGS.contains(&flag) {
+            Takes::Values
+        } else if VALUE_FLAGS.contains(&flag) {
+            Takes::Value
+        } else if OPTIONAL_VALUE_FLAGS.contains(&flag) {
+            Takes::MaybeValue
+        } else {
+            Takes::Nothing
+        }
+    };
+    let mut takes = Takes::Nothing;
+    args.iter()
+        .map(|arg| {
+            let flag = arg.len() > 1 && arg.starts_with('-');
+            let (read, next) = match takes {
+                Takes::Value => (Arg::Value, Takes::Nothing),
+                Takes::Values => (Arg::Value, Takes::MoreValues),
+                Takes::MaybeValue if !flag => (Arg::Value, Takes::Nothing),
+                Takes::MoreValues if !flag => (Arg::Value, Takes::MoreValues),
+                _ if flag => (Arg::Flag, takes_after(arg)),
+                _ => (Arg::Filter, Takes::Nothing),
+            };
+            takes = next;
+            read
+        })
+        .collect()
+}
+
 /// `args` with each test filter anchored at `folder`, the folder Playwright runs in as its `process.cwd()` spells it.
 ///
-/// A test filter is an argument that is neither an option nor an option's value. The app writes it relative to the
-/// config's folder, as `specPattern` does (`tests/cart.spec.ts:12`). It becomes the spec's whole path, anchored at both
-/// ends, its `:line` kept (`^/repo/tests/cart.spec.ts$:12`), so it never takes a spec whose path ends as its own
-/// (`e2e/tests/cart.spec.ts`, `tests/cart.spec.tsx`). With `windows`, the path's `file:` URL is an alternative: Playwright
-/// up to 1.62 tests a filter there against the native path and the `file:` URL, never the `/`-separated path. A filter
-/// already anchored (`^…`, or a `/…/` regular expression) is left as it is.
+/// A test filter is an argument Playwright reads as one ([`read_args`]): neither an option nor an option's value
+/// (`cli` in `--debug cli`, `web` in `--project api web`). The app writes it relative to the config's folder, as
+/// `specPattern` does (`tests/cart.spec.ts:12`). It becomes the spec's whole path, anchored at both ends, its `:line`
+/// kept (`^/repo/tests/cart.spec.ts$:12`), so it never takes a spec whose path ends as its own
+/// (`e2e/tests/cart.spec.ts`, `tests/cart.spec.tsx`). With `windows`, the path's `file:` URL is an alternative:
+/// Playwright up to 1.62 tests a filter there against the native path and the `file:` URL, never the `/`-separated
+/// path. A filter already anchored (`^…`, or a `/…/` regular expression) is left as it is.
 pub(crate) fn anchored_filters(folder: &str, args: &[String], windows: bool) -> Vec<String> {
-    let mut out = Vec::with_capacity(args.len());
-    let mut value_next = false;
-    for arg in args {
-        if value_next {
-            value_next = false;
-            out.push(arg.clone());
-        } else if arg.starts_with('-') {
-            value_next = !arg.contains('=') && VALUE_FLAGS.contains(&arg.as_str());
-            out.push(arg.clone());
-        } else if arg.starts_with('^') || arg.starts_with('/') {
-            out.push(arg.clone());
-        } else {
-            out.push(anchored(folder, arg, windows));
-        }
-    }
-    out
+    args.iter()
+        .zip(read_args(args))
+        .map(|(arg, read)| match read {
+            Arg::Filter if !arg.starts_with('^') && !arg.starts_with('/') => anchored(folder, arg, windows),
+            _ => arg.clone(),
+        })
+        .collect()
 }
 
 /// One filter anchored at `folder` (see [`anchored_filters`]).
@@ -118,8 +177,13 @@ fn url_pattern(url: &str) -> String {
         .collect()
 }
 
+/// A `.` of the app's filter in its `file:` URL. `specPattern` writes a `.` for a `.` and for each character it cannot
+/// keep: `$` and `!`, which the URL keeps, `%`, `^`, a backtick and `"`, which Node writes as one percent-encoded byte,
+/// and the curly quotes `“ ” „`, as three.
+const URL_ANY_CHAR: &str = "(?:.|%[0-9A-F]{2}|%E2%80%9[CDE])";
+
 /// The app's relative filter (`specPattern`'s regular expression) as a regular expression of its `file:` URL: each
-/// literal character as [`url_char`] writes it, each `[c]` class as its character.
+/// literal character as [`url_char`] writes it, each `[c]` class as its character, each `.` as [`URL_ANY_CHAR`].
 fn url_file(filter: &str) -> String {
     let chars: Vec<char> = filter.chars().collect();
     let mut out = String::new();
@@ -129,14 +193,12 @@ fn url_file(filter: &str) -> String {
             let c = chars[i + 1];
             out.push_str(&url_char(c, &format!("[{c}]")));
             i += 3;
+        } else if chars[i] == '.' {
+            out.push_str(URL_ANY_CHAR);
+            i += 1;
         } else {
             let c = chars[i];
-            let literal = c.to_string();
-            out.push_str(&if c == ' ' || !c.is_ascii() {
-                url_char(c, &literal)
-            } else {
-                literal
-            });
+            out.push_str(&url_char(c, &c.to_string()));
             i += 1;
         }
     }
@@ -183,6 +245,118 @@ mod tests {
     }
 
     #[test]
+    fn leaves_the_value_of_a_short_option_and_a_shuffle_seed_given_apart() {
+        let out = anchored_filters(
+            "/repo",
+            &args(&[
+                "-G",
+                "slow",
+                "--shuffle",
+                "42",
+                "tests/a.spec.ts",
+                "--shuffle",
+                "-x",
+                "tests/b.spec.ts",
+                "--shuffle=7",
+                "tests/c.spec.ts",
+            ]),
+            false,
+        );
+        assert_eq!(
+            out,
+            args(&[
+                "-G",
+                "slow",
+                "--shuffle",
+                "42",
+                "^/repo/tests/a.spec.ts$",
+                "--shuffle",
+                "-x",
+                "^/repo/tests/b.spec.ts$",
+                "--shuffle=7",
+                "^/repo/tests/c.spec.ts$",
+            ])
+        );
+    }
+
+    #[test]
+    fn leaves_a_debug_mode_given_apart() {
+        let out = anchored_filters(
+            "/repo",
+            &args(&[
+                "--debug",
+                "cli",
+                "tests/a.spec.ts",
+                "--debug",
+                "--headed",
+                "tests/b.spec.ts",
+                "--debug=inspector",
+                "tests/c.spec.ts",
+            ]),
+            false,
+        );
+        assert_eq!(
+            out,
+            args(&[
+                "--debug",
+                "cli",
+                "^/repo/tests/a.spec.ts$",
+                "--debug",
+                "--headed",
+                "^/repo/tests/b.spec.ts$",
+                "--debug=inspector",
+                "^/repo/tests/c.spec.ts$",
+            ])
+        );
+    }
+
+    #[test]
+    fn leaves_each_project_name_given_apart() {
+        let out = anchored_filters(
+            "/repo",
+            &args(&[
+                "--project",
+                "chromium",
+                "mobile safari",
+                "-x",
+                "tests/a.spec.ts",
+                "--project=api",
+                "tests/b.spec.ts",
+            ]),
+            false,
+        );
+        assert_eq!(
+            out,
+            args(&[
+                "--project",
+                "chromium",
+                "mobile safari",
+                "-x",
+                "^/repo/tests/a.spec.ts$",
+                "--project=api",
+                "^/repo/tests/b.spec.ts$",
+            ])
+        );
+    }
+
+    #[test]
+    fn reads_each_argument_as_playwright_does() {
+        use Arg::{Filter, Flag, Value};
+        let cases: [(&[&str], &[Arg]); 7] = [
+            (&["a.spec.ts", "-G", "-x", "b.spec.ts"], &[Filter, Flag, Value, Filter]),
+            (&["--project", "-x", "web", "-x", "c"], &[Flag, Value, Value, Flag, Filter]),
+            (&["--grep", "--project", "web"], &[Flag, Value, Filter]),
+            (&["--shuffle", "--debug", "-x"], &[Flag, Flag, Flag]),
+            (&["--shuffle", "7", "--debug", "cli", "a"], &[Flag, Value, Flag, Value, Filter]),
+            (&["--project=api", "web", "--debug=cli", "a"], &[Flag, Filter, Flag, Filter]),
+            (&["-", "--project", "api", "-"], &[Filter, Flag, Value, Value]),
+        ];
+        for (given, read) in cases {
+            assert_eq!(read_args(&args(given)), read, "{given:?}");
+        }
+    }
+
+    #[test]
     fn escapes_the_folder_and_keeps_the_apps_own_pattern() {
         assert_eq!(
             one(
@@ -200,12 +374,20 @@ mod tests {
         assert_eq!(anchored_filters("/repo", &given, false), given);
     }
 
+    /// A spec's file name in a `file:` URL filter: each `.` as [`URL_ANY_CHAR`].
+    fn url_name(name: &str) -> String {
+        name.replace('.', URL_ANY_CHAR)
+    }
+
     #[test]
     fn on_windows_the_file_url_is_an_alternative() {
         assert_eq!(
             one(r"C:\Users\Jo Ann\shop", "my tests/a.spec.ts:3", true),
-            "^(?:C:/Users/Jo Ann/shop/my tests/a.spec.ts\
-             |file:///C:/Users/Jo(?: |%20)Ann/shop/my(?: |%20)tests/a.spec.ts)$:3"
+            format!(
+                "^(?:C:/Users/Jo Ann/shop/my tests/a.spec.ts\
+                 |file:///C:/Users/Jo(?: |%20)Ann/shop/my(?: |%20)tests/{})$:3",
+                url_name("a.spec.ts")
+            )
         );
     }
 
@@ -213,8 +395,11 @@ mod tests {
     fn on_windows_a_non_ascii_character_is_its_bytes_and_a_class_either_way() {
         assert_eq!(
             one(r"C:\w\é", "tests/[{]x[}] ü.spec.ts", true),
-            "^(?:C:/w/é/tests/[{]x[}] ü.spec.ts\
-             |file:///C:/w/%C3%A9/tests/(?:[{]|%7B)x(?:[}]|%7D)(?: |%20)%C3%BC.spec.ts)$"
+            format!(
+                "^(?:C:/w/é/tests/[{{]x[}}] ü.spec.ts\
+                 |file:///C:/w/%C3%A9/tests/(?:[{{]|%7B)x(?:[}}]|%7D)(?: |%20)%C3%BC{})$",
+                url_name(".spec.ts")
+            )
         );
     }
 
@@ -222,8 +407,45 @@ mod tests {
     fn on_windows_a_share_is_a_url_of_its_host() {
         assert_eq!(
             one(r"\\host\share\shop", "a.spec.ts", true),
-            "^(?://host/share/shop/a.spec.ts|file://host/share/shop/a.spec.ts)$"
+            format!(
+                "^(?://host/share/shop/a.spec.ts|file://host/share/shop/{})$",
+                url_name("a.spec.ts")
+            )
         );
+    }
+
+    /// Whether the filter the shell makes of `filter` in `C:\r` takes the spec at `url`, as Playwright tests a filter's
+    /// regular expression, its `:line` set apart. JavaScript reads the class `[[]` as the character `[`, which Rust's
+    /// `regex` writes `[\[]`.
+    fn takes_url(filter: &str, url: &str) -> bool {
+        let anchored = one(r"C:\r", filter, true);
+        let (pattern, _) = split_location(&anchored);
+        regex::Regex::new(&pattern.replace("[[]", r"[\[]")).unwrap().is_match(url)
+    }
+
+    #[test]
+    fn on_windows_the_file_url_matches_each_character_node_encodes() {
+        // `specPattern`'s filter of each spec, and the URL `pathToFileURL(p, { windows: true })` writes for it in `C:\r`.
+        let cases = [
+            ("tests/[[]id].spec.ts:4", "file:///C:/r/tests/%5Bid%5D.spec.ts"),
+            ("tests/#1.spec.ts", "file:///C:/r/tests/%231.spec.ts"),
+            ("tests/100..spec.ts", "file:///C:/r/tests/100%25.spec.ts"),
+            ("tests/a.b.c~d.spec.ts", "file:///C:/r/tests/a%5Eb%60c%7Ed.spec.ts"),
+            ("tests/.q..spec.ts", "file:///C:/r/tests/%E2%80%9Cq%E2%80%9D.spec.ts"),
+            ("my tests/[{]a[}] é.spec.ts", "file:///C:/r/my%20tests/%7Ba%7D%20%C3%A9.spec.ts"),
+            ("tests/.x..spec.ts", "file:///C:/r/tests/$x!.spec.ts"),
+        ];
+        for (filter, url) in cases {
+            assert!(takes_url(filter, url), "{filter} misses {url}");
+        }
+    }
+
+    #[test]
+    fn on_windows_the_file_url_takes_no_other_spec() {
+        assert!(!takes_url("tests/#1.spec.ts", "file:///C:/r/e2e/tests/%231.spec.ts"));
+        assert!(!takes_url("tests/#1.spec.ts", "file:///C:/r/tests/%231.spec.tsx"));
+        assert!(!takes_url("tests/[[]id].spec.ts", "file:///C:/r/tests/%5Bid%5D%5D.spec.ts"));
+        assert!(!takes_url("tests/100..spec.ts", "file:///C:/r/tests/100%25%25.spec.ts"));
     }
 
     #[test]

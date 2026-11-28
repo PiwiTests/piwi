@@ -53,6 +53,7 @@ export interface LandingCard {
 export const RECIPES_BY_GROUP: Record<string, SidebarItem[]> = {
   'Explain the failures': [
     { text: 'Regression or flake?', link: '/recipes/regression-or-flaky' },
+    { text: 'Fails on CI, passes locally', link: '/recipes/fails-on-ci' },
     { text: 'Triage a run gone red', link: '/recipes/mass-failure' },
     { text: 'Cut costly flakiness', link: '/recipes/flaky-cleanup' },
   ],
@@ -204,7 +205,7 @@ export const guideSidebar: SidebarGroup[] = [
   {
     text: 'Set up',
     items: [
-      { text: 'Reporter', link: '/guide/reporter' },
+      { text: 'Reporter', link: '/guide/reporter', items: [{ text: 'Bun', link: '/guide/bun' }] },
       { text: 'Capture fixtures', link: '/guide/capture-fixtures' },
       { text: 'CI & sharding', link: '/guide/ci' },
       {
@@ -252,6 +253,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
       { text: 'Access, roles and groups', link: '/operate/project-access' },
       { text: 'API keys', link: '/operate/api-keys' },
       { text: 'Credentials', link: '/operate/credentials' },
+      { text: 'Per-user credentials', link: '/operate/per-user-credentials' },
       { text: 'Localization', link: '/operate/localization' },
       { text: 'Choose what you use', link: '/operate/capabilities' },
     ],

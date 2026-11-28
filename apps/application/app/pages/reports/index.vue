@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ReportScheduleView, ReportSnapshotSummary } from '#shared/handlers/reports';
 
-useHead({ title: 'Quality reports - Piwi Dashboard' });
+useHead({ title: 'Quality reports - Piwi' });
 
 // Report schedules need `report:write`; the list holds every project's, so any project is enough.
 const { canAnywhere } = useAuth();

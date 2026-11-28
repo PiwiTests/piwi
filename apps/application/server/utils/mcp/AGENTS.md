@@ -23,6 +23,15 @@ A tool's result is JSON read by an AI coding agent: the same names and shapes ev
   checks a permission. `tools/list` leaves out a tool whose permission the caller holds on no project, and the
   assistant offers only the tools that declare none.
 
+## The endpoint
+
+- **Every message of a POST goes through `checkMcpRequest`, and every answer through `servedResponse`**
+  (`@piwitests/editor/mcp-protocol`, re-exported by `protocol.ts`), in `/mcp` and the assistant's turn endpoint alike:
+  one endpoint serves a legacy client (`initialize`, the `MCP-Protocol-Version` header) and a `2026-07-28` one
+  (`_meta` on each request, `server/discover`), with no session. A body of notifications alone answers 202 with no
+  body (`postAnswer`), and a modern `subscriptions/listen` gets the stream of `openListenStream`, every message of it
+  carrying its subscription id. Checked by `packages/editor/tests/mcp-protocol.test.ts` and `tests/mcp.spec.ts`.
+
 ## Conventions
 
 - **Reuse:** prefer a shared handler (`#shared/handlers/*`) to a new query. When a REST endpoint has inline logic a
@@ -37,6 +46,10 @@ A tool's result is JSON read by an AI coding agent: the same names and shapes ev
 - **Validation:** `numericParam(raw, name)` for every numeric argument, `numericCursor(raw)` for a cursor (never an
   inline `Number(cursor)`), `clampPageSize(raw)` (1 to 50, default 10), and `paginatedItems(items, pageSize, getCursor)`
   around a query that fetched `pageSize + 1` rows.
+- **An image goes out as an MCP `image` block, never as base64 in the JSON**: the handler fits it with
+  `fitImageForAgent` (`images.ts`: raster formats told by their bytes, re-encoded, never cut) and attaches it with
+  `withToolImages` for `toContent` to send, and attaches none when `ctx.textOnly` is set
+  (`tests/unit/mcp-screenshots.test.ts`).
 - **`getCursor` reads the field name after the mapping** (`r.executionId`, not the query's `r.caseId`): a renamed field
   gives an `"undefined"` cursor that crashes the next page. A list filtered in memory applies the cursor in memory, on
   the same field as the cursor it emits, or paging loops on page one.

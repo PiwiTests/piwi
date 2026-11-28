@@ -3096,7 +3096,7 @@ dependencies = [
 
 [[package]]
 name = "piwi-desktop"
-version = "0.74.0"
+version = "0.78.0"
 dependencies = [
  "auto-launch",
  "dunce",
@@ -3104,6 +3104,7 @@ dependencies = [
  "keepawake",
  "keyring",
  "rand 0.9.5",
+ "regex",
  "reqwest",
  "rustls",
  "semver",

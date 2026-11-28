@@ -7,7 +7,7 @@
  * has a failed test the bar turns red and so does the status dot.
  *
  * Runs here are the app's *live* runs — every run reported into the app (from
- * CI, a terminal, or the desktop's own "Run locally"), not just ones launched
+ * CI, a terminal, or the run button's This computer), not just ones launched
  * from the app. The desktop plugin (`desktop-run-progress.client.ts`) streams
  * them from `/api/desktop/events` and feeds the result to the shell's
  * `desktop_set_run_progress` command. A step of a job (a reproduction, a bisect,

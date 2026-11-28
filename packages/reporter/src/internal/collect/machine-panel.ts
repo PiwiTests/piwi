@@ -15,25 +15,46 @@ export type { ArtifactKind, WorkerHealth };
 /** Bytes of the files tests attached, by kind. */
 export type ArtifactBytes = Record<ArtifactKind, number>;
 
-/** The workers' health over the tests whose census carried their metrics; null without any. */
+/**
+ * The workers' health over the tests whose census carried their metrics; null
+ * without any. The event loop is averaged over the tests that measured it, and
+ * the garbage collections count as reported unless every test's runtime
+ * reported none.
+ */
 export function workerHealthOf(censuses: ResourceCensus[]): WorkerHealth | null {
   const measured = censuses.filter((census) => census.test && census.metrics);
   if (measured.length === 0) return null;
   let utilization = 0;
+  let loopTests = 0;
   let switches = 0;
   let worstP99 = 0;
+  let gcReported = false;
   for (const census of measured) {
     const worker = census.metrics!.worker;
-    utilization += worker.loopUtilization;
+    if (worker.loopUtilization !== null) {
+      utilization += worker.loopUtilization;
+      loopTests++;
+    }
+    if (worker.gcReported !== false) gcReported = true;
     switches += worker.involuntarySwitches;
     worstP99 = Math.max(worstP99, worker.loopDelayP99Ms);
   }
   return {
     tests: measured.length,
-    loopUtilization: utilization / measured.length,
+    loopUtilization: loopTests > 0 ? utilization / loopTests : null,
     loopDelayP99Ms: worstP99,
     involuntarySwitchesPerTest: switches / measured.length,
+    gcReported,
   };
+}
+
+/** What the workers' runtime did not measure, in the words of the panel's `Not measured` line. */
+export function workersNotMeasured(workers: WorkerHealth | null): string[] {
+  if (!workers || workers.tests === 0) return [];
+  const out: string[] = [];
+  if (workers.loopUtilization === null) out.push('workers’ event loop busy time');
+  if (workers.gcReported === false) out.push('workers’ heap after garbage collection');
+  return out;
 }
 
 /** The kind of an attachment's file, by Playwright's attachment names. */
@@ -195,9 +216,13 @@ function diskLine(profile: RunProfile, artifacts: ArtifactBytes | null): string 
 
 function workersLine(workers: WorkerHealth | null): string | null {
   if (!workers || workers.tests === 0) return null;
-  return `  Workers  event loop busy ${Math.round(workers.loopUtilization * 100)}% · p99 delay ${Math.round(
-    workers.loopDelayP99Ms,
-  )} ms at worst · ${Math.round(workers.involuntarySwitchesPerTest).toLocaleString('en-US')} involuntary context switches per test`;
+  const parts: string[] = [];
+  if (workers.loopUtilization !== null) parts.push(`event loop busy ${Math.round(workers.loopUtilization * 100)}%`);
+  parts.push(
+    `p99 delay ${Math.round(workers.loopDelayP99Ms)} ms at worst`,
+    `${Math.round(workers.involuntarySwitchesPerTest).toLocaleString('en-US')} involuntary context switches per test`,
+  );
+  return `  Workers  ${parts.join(' · ')}`;
 }
 
 /** The panel's lines, without the logger prefix. */
@@ -219,6 +244,7 @@ export function formatMachinePanel(
     diskLine(profile, extras.artifacts),
     workersLine(extras.workers),
   ].filter((line): line is string => line !== null);
-  if (profile.notMeasured.length) lines.push(`  Not measured here: ${profile.notMeasured.join(', ')}`);
+  const notMeasured = [...profile.notMeasured, ...workersNotMeasured(extras.workers)];
+  if (notMeasured.length) lines.push(`  Not measured here: ${notMeasured.join(', ')}`);
   return lines;
 }

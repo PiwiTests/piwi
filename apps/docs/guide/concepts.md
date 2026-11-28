@@ -70,6 +70,13 @@ pull-request feedback and the AI diagnosis all read it, and so do the environmen
 failing execution. Which run it is, and what happens when none passed: [The baseline](/features/run-changes#the-baseline).
 The default and base branches it falls back to: [Branches](/features/branches).
 
+### Closest CI pass
+
+**The passing CI execution of the same test a run of the desktop app is compared with**, read on the team instance:
+in the run's environment and on its commit first, then in its environment, then on its commit, then any, each on the
+same branch first. [Compare with team instance](/features/compare-with-team) lists what differs between their
+environments.
+
 ### New regression, newly flaky
 
 **What a test did differently from the [baseline](#baseline-last-green-run)**: a **new regression** fails here and

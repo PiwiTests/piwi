@@ -69,6 +69,32 @@ describe('timeoutEdit', () => {
     expect(timeoutEdit(details, 0, oversized)).toEqual({ line: 3, replace: false, text: '  test.setTimeout(12000);' });
   });
 
+  test('reads the whole body past a test.skip, test.fixme or test.fail given a description alone', () => {
+    const spec = [
+      "test('pays', async ({ page, browserName }) => {",
+      "  test.skip('needs a card reader');",
+      '  test.fixme(`fails on ${browserName}`);',
+      '  test.fail("declines the card");',
+      "  test.slow('the bank takes its time');",
+      '  test.setTimeout(120_000);',
+      '});',
+    ];
+    expect(timeoutEdit(spec, 0, staleSlow)).toEqual({ line: 4, replace: true, text: '' });
+    expect(timeoutEdit(spec, 0, oversized)).toEqual({ line: 5, replace: true, text: '  test.setTimeout(12000);' });
+    expect(timeoutEdit(spec.slice(0, 4).concat('});'), 0, oversized)).toEqual({
+      line: 1,
+      replace: false,
+      text: '  test.setTimeout(12000);',
+    });
+  });
+
+  test('removes a test.slow with a description alone, never one with a condition', () => {
+    const slow = (line: string) => timeoutEdit(["test('pays', async () => {", line, '});'], 0, staleSlow);
+    expect(slow('  test.slow("the bank takes its time");')).toEqual({ line: 1, replace: true, text: '' });
+    expect(slow("  test.slow(`it's ${device} here`)")).toEqual({ line: 1, replace: true, text: '' });
+    expect(slow("  test.slow(isMobile, 'slower on a phone');")).toBeNull();
+  });
+
   test('leaves a one-line test alone', () => {
     expect(timeoutEdit(["test('x', async () => {});"], 0, oversized)).toBeNull();
   });

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { SETTINGS_GROUPS, SETTINGS_PAGES } from '~/utils/settings-metadata';
 
-useHead({ title: 'Settings — Piwi Dashboard' });
+useHead({ title: 'Settings — Piwi' });
 
 const { envManaged } = useSettingsEnvState();
 

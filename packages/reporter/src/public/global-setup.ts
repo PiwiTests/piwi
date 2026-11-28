@@ -11,7 +11,7 @@ import { isLiveViewKey } from '@piwitests/core/live-view';
 import { writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
 import { answeredRunUrl } from '../internal/support/run-url.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
-import { isUiMode, isListMode } from '../internal/support/run-mode.js';
+import { isUiMode, isListMode, runnerArgv } from '../internal/support/run-mode.js';
 import { checkBaseUrls, remoteBrowserNote } from '../internal/support/base-url-check.js';
 import { readCommittedManifest, fetchInstrumentationManifest } from '../internal/manifest/collect.js';
 import { configDirFromConfig } from '../internal/support/test-paths.js';
@@ -27,7 +27,7 @@ let relaying = false;
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
- * Piwi Dashboard server at the start of the run.  An optional `userSetup` is
+ * Piwi server at the start of the run.  An optional `userSetup` is
  * called afterward so existing setup logic is preserved.
  *
  * The server-run ID and a one-time token are written to a temp file so the
@@ -37,7 +37,7 @@ let relaying = false;
  * and the setup throws, stopping the run before any worker starts, when one
  * does not answer.
  *
- * @param options   Piwi Dashboard options (uses `serverUrl`, `projectName`, …).
+ * @param options   Piwi options (uses `serverUrl`, `projectName`, …).
  * @param userSetup An existing global setup to chain after the Piwi registration.
  */
 export function createGlobalSetup(
@@ -64,7 +64,7 @@ export function createGlobalSetup(
     // run, so registering here would leave orphaned "initializing" runs (one at
     // UI launch, one per manual run). Skip registration but still chain
     // userSetup so the user's own setup keeps working under the UI.
-    if (isUiMode()) {
+    if (isUiMode(runnerArgv(config))) {
       logger.debug('UI mode detected — skipping run registration.');
       if (userSetup) return userSetup(config);
       return;
@@ -72,7 +72,7 @@ export function createGlobalSetup(
 
     // A list run (`playwright test --list`) registers no run, here as in the
     // reporter; the user's own setup is still chained.
-    if (isListMode()) {
+    if (isListMode(runnerArgv(config))) {
       logger.debug('List mode detected — skipping run registration.');
       if (userSetup) return userSetup(config);
       return;

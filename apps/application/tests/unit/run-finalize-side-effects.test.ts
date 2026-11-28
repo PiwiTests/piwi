@@ -38,8 +38,8 @@ vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackg
 vi.mock('../../server/utils/outcome-inference', () => ({ inferRunOutcomes }));
 vi.mock('#shared/handlers/markers', () => ({ syncAutoMarkersForRun }));
 vi.mock('#shared/handlers/flaky-classify', () => ({ classifyRunFlakyTests }));
-const matchCiRerunRun = vi.fn(() => Promise.resolve(null));
-vi.mock('../../server/utils/ci-rerun', () => ({ matchCiRerunRun }));
+const matchRunToCiDispatch = vi.fn(() => Promise.resolve(null));
+vi.mock('../../server/utils/ci-dispatches', () => ({ matchRunToCiDispatch }));
 const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 const runTrackerAutomation = vi.fn((_db: unknown, _id: number) => Promise.resolve(0));
@@ -373,6 +373,19 @@ describe('runFinalizeSideEffects', () => {
       metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } },
     });
     for (const fn of allEffects) expect(fn).not.toHaveBeenCalled();
+  });
+
+  test('every run, a flake-lab run too, first ends the CI dispatch it answers', async () => {
+    await runFinalizeSideEffects(db, 42, {
+      projectId: 1,
+      metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } },
+    });
+    expect(matchRunToCiDispatch).toHaveBeenCalledWith(db, 42, 'finish');
+    matchRunToCiDispatch.mockClear();
+    await runFinalizeSideEffects(db, 42, { projectId: 1 });
+    expect(matchRunToCiDispatch.mock.invocationCallOrder[0]!).toBeLessThan(
+      recordRunHealth.mock.invocationCallOrder[0]!,
+    );
   });
 
   test('a run with no metadata still finalizes', async () => {

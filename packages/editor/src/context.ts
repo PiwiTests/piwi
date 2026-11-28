@@ -71,6 +71,10 @@ const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
 /** The answer of a baseline that found no run. */
 const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [], flaky: [] });
 
+/** The runs an answer reads, the baseline first, in one string. */
+const runsRead = (failures: BranchFailures | null): string =>
+  JSON.stringify([failures?.run?.id ?? null, ...(failures?.overlays ?? []).map((o) => o.id)]);
+
 /**
  * A file's coverage as last read: the answer (null for none: the instance has no coverage route, or refused the
  * request), the `ETag` it came with, and the read on its way. `stale` reads it again on the next ask; `again` reads it
@@ -524,6 +528,8 @@ export class PiwiContext {
   /** The whole catalog, read once per refresh, and its read on the way. */
   private allCatalog: { at: number; items: CatalogCase[] } | null = null;
   private allCatalogRead: Promise<CatalogCase[]> | null = null;
+  /** How many times the catalog was dropped (`dropCatalog`): a read that started before keeps nothing. */
+  private catalogDrops = 0;
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
   private readonly commitTexts = new Map<string, CommitText>();
@@ -638,8 +644,7 @@ export class PiwiContext {
       onRun?.();
       const client = this.client;
       const projectId = this.project.id;
-      this.catalog.clear();
-      this.allCatalog = null;
+      this.dropCatalog();
       this.alternatives.clear();
       this.functions = null;
       this.words = null;
@@ -902,6 +907,8 @@ export class PiwiContext {
         }
       }
       const label = baselineLabel(choice, next, branch);
+      // A case's status in the catalog is its latest result: a run read for the first time may change it.
+      if (runsRead(next) !== runsRead(this.failures)) this.dropCatalog();
       const changed =
         branch !== this.runBranch ||
         checkedOut !== this.checkedOutBranch ||
@@ -1139,14 +1146,27 @@ export class PiwiContext {
     return null;
   }
 
+  /**
+   * Forget the catalog read so far, keep nothing of a read on its way, and share no read of it asked before with the
+   * contexts' reads after (`forgetCatalog`).
+   */
+  private dropCatalog(): void {
+    this.catalogDrops++;
+    this.catalog.clear();
+    this.allCatalog = null;
+    this.allCatalogRead = null;
+    if (this.project) this.client?.forgetCatalog(this.project.id);
+  }
+
   /** The catalog's cases defined in a spec file (its path relative to the config). */
   async casesOf(relativeFile: string): Promise<CatalogCase[]> {
     if (!this.client || !this.project) return [];
     const cached = this.catalog.get(relativeFile);
     if (cached && Date.now() - cached.at < FILE_CACHE_MS) return cached.items;
+    const drops = this.catalogDrops;
     try {
       const items = await this.client.testCases(this.project.id, relativeFile);
-      this.catalog.set(relativeFile, { at: Date.now(), items });
+      if (this.catalogDrops === drops) this.catalog.set(relativeFile, { at: Date.now(), items });
       return items;
     } catch {
       return cached?.items ?? [];
@@ -1163,18 +1183,23 @@ export class PiwiContext {
     if (!client || !project) return [];
     const kept = this.allCatalog;
     if (kept && Date.now() - kept.at < FILE_CACHE_MS) return kept.items;
-    this.allCatalogRead ??= client
+    if (this.allCatalogRead) return this.allCatalogRead;
+    const drops = this.catalogDrops;
+    const read = client
       .allTestCases(project.id)
       .then(
         (items) => {
-          // A read the next refresh or another instance overtook keeps nothing.
-          if (this.client === client) this.allCatalog = { at: Date.now(), items };
+          // A read the next refresh, a newer run or another instance overtook keeps nothing.
+          if (this.client === client && this.catalogDrops === drops) this.allCatalog = { at: Date.now(), items };
           return items;
         },
         () => kept?.items ?? [],
       )
-      .finally(() => (this.allCatalogRead = null));
-    return this.allCatalogRead;
+      .finally(() => {
+        if (this.allCatalogRead === read) this.allCatalogRead = null;
+      });
+    this.allCatalogRead = read;
+    return read;
   }
 
   /** The stored alternatives of a file's call sites. */

@@ -11,8 +11,13 @@ summary line, five MCP tools (`list_selections`, `resolve_selection`, `preview_s
 `analyze_selections`) with the `run-the-right-tests` skill, suggested tags and budgeted smoke mining, impact-from-diff
 over captured source frames, and selection health and drift analytics. Impact also reaches the handler file of each
 route a test called, through [code reach](../apps/docs/features/code-reach.md) with an instrumented backend (Nitro or
-ASP.NET Core). Not shipped: applying tag suggestions back to the spec files as a pull request, suggestion digests
-through notifications, the per-project route mapping for a backend without that instrumentation, and **Save as
+ASP.NET Core). The reporter's opt-in `balanceShards` (Playwright 1.62 and later) splits a run sharded with
+Playwright's own `--shard` the same way, from its `preprocess`: each shard lists the suite and the dashboard stores the
+split of that listing in `shard_splits` for 24 hours, keyed by project, commit, shard count and the listing's hash, so
+every shard reads the same one; a lock, a serial describe and a file that is not fully parallel stay in one shard. It
+stands aside for `--last-failed`, `--only-changed`, `--test-list` and `--test-list-invert`, and Playwright splits the
+run when the dashboard does not answer within 10 seconds or answers a split that does not cover the listed tests. Not
+shipped: applying tag suggestions back to the spec files as a pull request, suggestion digests through notifications, the per-project route mapping for a backend without that instrumentation, and **Save as
 selection** from the test catalog, the flaky leaderboard and the cluster page (it exists on Analytics and on the
 Selections tab). The user guide is [Test selections](../apps/docs/features/test-selection.md) on the docs site; the design
 below is the original text.

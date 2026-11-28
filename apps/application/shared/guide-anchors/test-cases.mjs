@@ -12,18 +12,16 @@ export const TEST_CASES_ANCHORS = [
     sample: { route: '/test-cases/9', expect: { testCase: { id: 9, title: 'should apply discount code' } } },
   },
   {
-    id: 'test-reproduce-locally',
+    id: 'test-run-button',
     kind: 'action',
     pages: ['/test-cases/[id]'],
     describes:
-      'The desktop app’s Run this test button: runs the test 20 times with a trace in the project’s linked folder, to catch a failure that comes and goes.',
-    requires: { desktop: true },
-    doc: 'features/desktop#running-tests-from-the-app',
-    sample: {
-      route: '/test-cases/9',
-      expect: { testCase: { id: 9, title: 'should apply discount code' } },
-      surface: 'desktop',
-    },
+      'The run button: runs the test in CI or on your machine, a flaky test’s Flake Lab in CI, and in the desktop app 20 times with a trace until it fails.',
+    shownWhen:
+      'To someone who may run the test somewhere: a CI action that takes it, their own app, or the desktop app.',
+    requires: { permission: 'run:request' },
+    doc: 'features/ci-rerun#the-run-dialog',
+    sample: { route: '/test-cases/9', expect: { testCase: { id: 9, title: 'should apply discount code' } } },
   },
   {
     id: 'test-merge',

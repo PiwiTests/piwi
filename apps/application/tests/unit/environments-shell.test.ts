@@ -7,6 +7,7 @@ import {
   envFileProblem,
   requiredTagProblem,
   requiredTagsGrepInvert,
+  requiredTagsGrepInvertProblem,
 } from '@piwitests/core/environments';
 import { RUN_VARIABLE_LIMITS } from '@piwitests/core/run-variables';
 
@@ -77,8 +78,35 @@ describe('the shell applies an environment as core describes it', () => {
   test('the same --grep-invert for a protected environment', () => {
     const start = rustText(environments, 'GREP_INVERT_START');
     const end = rustText(environments, 'GREP_INVERT_END');
+    const ownStart = rustText(environments, 'OWN_PATTERN_START');
+    const ownEnd = rustText(environments, 'OWN_PATTERN_END');
     for (const tags of [['@smoke'], ['@smoke', '@read-only'], ['@a_b', '@C-9']]) {
-      expect(`${start}${tags.join('|')}${end}`).toBe(requiredTagsGrepInvert(tags));
+      const required = `${start}${tags.join('|')}${end}`;
+      expect(required).toBe(requiredTagsGrepInvert(tags));
+      expect(`${ownStart}slow|wip${ownEnd}${required}`).toBe(requiredTagsGrepInvert(tags, 'slow|wip'));
+      expect(required).toBe(requiredTagsGrepInvert(tags, ''));
     }
+  });
+
+  test('the run’s own -G kept as core keeps it', () => {
+    const ownStart = rustText(environments, 'OWN_PATTERN_START');
+    const ownEnd = rustText(environments, 'OWN_PATTERN_END');
+    const required = requiredTagsGrepInvert(['@smoke']);
+    const kept = rustStrings(environments, 'for (own, kept) in [');
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length % 2).toBe(0);
+    for (let i = 0; i < kept.length; i += 2) {
+      const [own, source] = [kept[i]!, kept[i + 1]!];
+      expect(requiredTagsGrepInvert(['@smoke'], own), own).toBe(`${ownStart}${source}${ownEnd}${required}`);
+    }
+    // A pattern the shell refuses, core refuses too, saying why, and never writes a filter for.
+    const refused = rustStrings(environments, 'for case_sensitive in [');
+    expect(refused.length).toBeGreaterThan(0);
+    for (const own of refused) {
+      expect(requiredTagsGrepInvertProblem(own), own).toContain(own);
+      expect(() => requiredTagsGrepInvert(['@smoke'], own), own).toThrow(own);
+    }
+    // A pattern the shell keeps, core keeps with no problem.
+    for (let i = 0; i < kept.length; i += 2) expect(requiredTagsGrepInvertProblem(kept[i]), kept[i]).toBeNull();
   });
 });

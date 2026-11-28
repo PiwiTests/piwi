@@ -10,7 +10,28 @@ defineRouteMeta({
       'Returns the uses of every credential, deleted ones and the one the environment sets included, newest first, 50 at a time, as `GET /api/credentials/:id/uses` answers for one: `{ items, nextCursor }`, each row naming its credential (`credentialName`). `projectId`, `feature` and `result` filter the rows, and `nextCursor` is passed back as `before`. Requires `credentials:manage` (administrators only).',
     parameters: [
       { name: 'projectId', in: 'query', required: false, schema: { type: 'integer' } },
-      { name: 'feature', in: 'query', required: false, schema: { type: 'string', enum: ['ci-dispatch', 'ci-check'] } },
+      {
+        name: 'feature',
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'string',
+          enum: [
+            'ci-dispatch',
+            'ci-check',
+            'ci-list',
+            'scm-read',
+            'scm-comment',
+            'scm-status',
+            'scm-pull-request',
+            'ai-call',
+            'integration-read',
+            'integration-write',
+            'notification',
+            'credential-test',
+          ],
+        },
+      },
       {
         name: 'result',
         in: 'query',

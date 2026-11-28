@@ -250,6 +250,19 @@ interface ChannelOwnerLike {
   _page?: object | null;
 }
 
+/**
+ * The URL a page's main frame had as Playwright created the page (`_initializer`, internal), whatever it navigated to
+ * before the page was reported; null when it cannot be read.
+ */
+function createdOn(page: Page): string | null {
+  try {
+    const url = (page.mainFrame() as unknown as { _initializer?: { url?: unknown } })._initializer?.url;
+    return typeof url === 'string' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Who hears the page each call a test makes lands on (`onTestCallPage`). */
 const callPageListeners = new Set<(page: object) => void>();
 
@@ -628,6 +641,9 @@ export class ResourceLedger {
       onApiCallEnd: (zone: ApiZone) => {
         this.pendingCalls.delete(zone);
       },
+      // The contexts the worker opens, and no other, each with the line that opened it, from inside the call that
+      // opened it: never `browser.on('context')` (Playwright 1.60), which also reports each context another client
+      // opens on a browser the worker shares (`browser.bind`, a shared browser server), from outside any call.
       runAfterCreateBrowserContext: async (context: BrowserContext) => {
         this.guard(() => this.onContext(context, userSite(new Error().stack)));
       },
@@ -637,6 +653,7 @@ export class ResourceLedger {
       runBeforeCloseRequestContext: async (request: APIRequestContext) => {
         this.guard(() => this.onClosed(request));
       },
+      // A context's `close` event comes once it has closed: this marks when its close began.
       runBeforeCloseBrowserContext: async (context: BrowserContext) => {
         this.guard(() => this.noteClosing(context));
       },
@@ -769,7 +786,10 @@ export class ResourceLedger {
     if (entry && !entry.closed && entry.closingAt === null) entry.closingAt = this.now();
   }
 
-  /** Stop listening, and put Node's `listen` and `spawn` back; the objects already tracked stay in the ledger. */
+  /**
+   * Stop listening, and put the browser types' methods and Node's `listen` and `spawn` back; the objects already
+   * tracked stay in the ledger.
+   */
   uninstall(): void {
     const remove = this.playwright?._instrumentation?.removeListener;
     if (this.listener && typeof remove === 'function') remove.call(this.playwright._instrumentation, this.listener);
@@ -985,17 +1005,29 @@ export class ResourceLedger {
     }
   }
 
+  /**
+   * Track each browser a browser type launches or connects to, with the line that asked for it, as the call returns:
+   * a browser type has no event for the browsers it opens. `uninstall` puts each method back while the ledger's wrapper
+   * is still the one in place; a wrapper left under another one only forwards the call once the ledger is uninstalled.
+   */
   private wrapBrowserType(type: BrowserTypeLike): void {
     for (const method of ['launch', 'connect', 'connectOverCDP']) {
       const original = type[method];
       if (typeof original !== 'function') continue;
+      const own = Object.prototype.hasOwnProperty.call(type, method);
       const bound = (original as (...args: unknown[]) => Promise<Browser>).bind(type);
-      type[method] = async (...args: unknown[]): Promise<Browser> => {
+      const wrapped = async (...args: unknown[]): Promise<Browser> => {
         const site = userSite(new Error().stack);
         const browser = await bound(...args);
-        this.guard(() => this.onBrowser(browser, site));
+        if (this.listener) this.guard(() => this.onBrowser(browser, site));
         return browser;
       };
+      type[method] = wrapped;
+      this.restores.push(() => {
+        if (type[method] !== wrapped) return;
+        if (own) type[method] = original;
+        else delete type[method];
+      });
     }
   }
 
@@ -1047,7 +1079,8 @@ export class ResourceLedger {
       const seenBefore = this.byObject.has(browser);
       const browserEntry = this.onBrowser(browser, site);
       // `launchPersistentContext` opens a browser for its context alone, first seen with it: closing the context
-      // closes it. Its call has ended by the time Playwright reports the context.
+      // closes it. Its call is still open as Playwright reports the context (1.65 opens a call as its method is
+      // entered), or has just ended: either one names it.
       const persistent = [zone, this.lastCall].some((call) => PERSISTENT_CALL.test(call?.apiName ?? ''));
       if (persistent && !seenBefore && browserEntry.birth.parent === null && !browserEntry.closed) {
         browserEntry.birth.implicit = true;
@@ -1061,19 +1094,28 @@ export class ResourceLedger {
     for (const page of context.pages()) this.onPage(page, context, { site });
   }
 
-  /** `initial` is set for a page that came with its context (a persistent context's), which is no popup. */
+  /**
+   * Track a page of a context the worker opened, when the worker opened the page. `initial` is set for a page that came
+   * with its context (a persistent context's), which is no popup.
+   */
   private onPage(page: Page, context: BrowserContext, initial?: { site: string | null }): void {
     if (this.byObject.has(page)) return;
-    // A page `newPage` opened arrives while that call is still running; anything
-    // else is a popup, opened by its page through the call that last ran.
+    // Playwright creates a page a `newPage` call opens with its main frame on `about:blank`, loaded, and a page the
+    // browser opens for a link or a script with its main frame on no URL yet (`createdOn`). So a page is the worker's
+    // when it is a popup of a page the ledger counts (its `opener()`), when it has no opener and was not created on
+    // `about:blank` (the tab a modifier click opens), or when a `newPage` call of the worker runs as it arrives. Any
+    // other page is another client's (on a browser the worker shares, `browser.bind`): a popup of its page, or a page
+    // its `newPage` opened. A page whose first URL cannot be read counts. A page of the worker's that no `newPage` call
+    // opened is a popup, opened through the call that last ran.
     const zone = this.latestPendingCall();
     const viaNewPage = NEW_PAGE_CALL.test(zone?.apiName ?? '');
+    const opener = (page as unknown as { _opener?: object | null })._opener;
+    const openerEntry = opener ? this.byObject.get(opener) : undefined;
+    if (!initial && (opener ? !openerEntry : createdOn(page) === 'about:blank' && !viaNewPage)) return;
     const popup = !viaNewPage && !initial;
     const site = viaNewPage ? zoneSite(zone) : initial ? initial.site : zoneSite(this.lastCall);
     const entry = this.track(page, 'page', context, site);
     if (popup) {
-      const opener = (page as unknown as { _opener?: object | null })._opener;
-      const openerEntry = opener ? this.byObject.get(opener) : undefined;
       if (openerEntry) entry.birth.opener = openerEntry.birth.id;
       if (this.lastCall?.apiName) entry.birth.trigger = this.lastCall.apiName;
     }

@@ -33,7 +33,7 @@ interface FakeEvent {
   params?: Record<string, string>;
 }
 
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: true, public: { appVersion: '0.59.0' } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: true, appVersion: '0.59.0', public: {} }));
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);

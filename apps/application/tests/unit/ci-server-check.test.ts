@@ -13,7 +13,9 @@ import {
 import { insertCredential } from '#shared/handlers/credentials';
 import {
   checkCiServerTarget,
+  listCiServerJobs,
   prepareCiServerCheck,
+  readCiServerJobFields,
   prepareCiServerRequest,
   type CiServerCredential,
 } from '../../server/utils/ci-server-dispatch';
@@ -32,7 +34,9 @@ const ENV = [
   'PIWI_CI_SERVER_TOKEN',
   'PIWI_CI_SERVER_HOSTS',
 ];
-const TREE = 'tree=property%5BparameterDefinitions%5Bname%5D%5D';
+const TREE = new URLSearchParams([
+  ['tree', 'property[parameterDefinitions[name,type,description,choices,defaultParameterValue[value]]]'],
+]).toString();
 
 afterEach(() => {
   for (const name of ENV) delete process.env[name];
@@ -233,6 +237,70 @@ describe('checking a job on a CI server', () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(jobJson('PIWI_RERUN_ARGS', 'PIWI_ORIGIN_REF', 'SUITE')));
     },
+    '/api/json': (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          jobs: [
+            { _class: 'hudson.model.FreeStyleProject', name: 'good', buildable: true },
+            { _class: 'hudson.model.FreeStyleProject', name: 'retired', buildable: false },
+            {
+              _class: 'com.cloudbees.hudson.plugins.folder.Folder',
+              name: 'polaris',
+              jobs: [{ _class: 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject', name: 'e2e' }],
+            },
+          ],
+        }),
+      );
+    },
+    '/job/large/api/json': (res) => {
+      // A choice of 1,500 spec paths: past the 64 KB a dispatch's answer is read to.
+      const choices = Array.from({ length: 1500 }, (_, i) => `tests/area-${i}/checkout-flow-${i}.spec.ts`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          property: [
+            {
+              parameterDefinitions: [
+                { name: 'PIWI_RERUN_ARGS', type: 'StringParameterDefinition' },
+                { name: 'PIWI_ORIGIN_REF', type: 'StringParameterDefinition' },
+                { name: 'SPEC', type: 'ChoiceParameterDefinition', choices },
+              ],
+            },
+          ],
+        }),
+      );
+    },
+    '/job/huge/api/json': (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ property: [{ parameterDefinitions: [{ name: 'x'.repeat(3 * 1024 * 1024) }] }] }));
+    },
+    '/job/rich/api/json': (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          property: [
+            {
+              parameterDefinitions: [
+                { name: 'PIWI_RERUN_ARGS', type: 'StringParameterDefinition', defaultParameterValue: { value: '' } },
+                {
+                  name: 'TARGET_ENV',
+                  type: 'ChoiceParameterDefinition',
+                  description: 'Where the suite runs',
+                  choices: ['staging', 'production'],
+                  defaultParameterValue: { value: 'staging' },
+                },
+                {
+                  name: 'DEPLOY_TOKEN',
+                  type: 'PasswordParameterDefinition',
+                  defaultParameterValue: { value: 'hunter2' },
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    },
     '/job/bare/api/json': (res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ property: [] }));
@@ -290,7 +358,9 @@ describe('checking a job on a CI server', () => {
   const uses = () => db.select().from(schema.credentialUses);
 
   /** A credential shared with every project, its secret sealed for its destination. */
-  async function credential(over: { destination?: string; allowedInputs?: string[] | null } = {}) {
+  async function credential(
+    over: { destination?: string; allowedInputs?: string[] | null; projectIds?: number[] } = {},
+  ) {
     process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
     try {
       const destination = over.destination ?? base;
@@ -302,7 +372,7 @@ describe('checking a job on a CI server', () => {
           service: 'ci-server',
           user: 'team-bot',
           destination,
-          scope: { allProjects: true },
+          scope: over.projectIds ? { allProjects: false, projectIds: over.projectIds } : { allProjects: true },
           allowedInputs: over.allowedInputs ?? null,
           customRequests: false,
           disabled: false,
@@ -446,12 +516,136 @@ describe('checking a job on a CI server', () => {
     ]);
   });
 
-  test('reaches no private address the operator did not list', async () => {
-    const privateBase = base.replace('http:', 'https:');
-    const results = await check(target({ preset: 'jenkins', baseUrl: privateBase, rerun: { job: 'good' } }));
-    expect(results).toEqual([
-      expect.objectContaining({ ok: false, message: expect.stringContaining('URL host is not allowed') }),
+  test('lists the jobs under the base URL for the editor, logged as a listing', async () => {
+    useInstance();
+    const listing = await listCiServerJobs(db as never, 1, target({ preset: 'jenkins', rerun: { job: 'x' } }), USE);
+    expect(listing).toEqual({
+      jobs: [
+        { id: 'good', label: 'good' },
+        { id: 'polaris/e2e/{branch}', label: 'polaris/e2e/{branch}' },
+      ],
+      truncated: false,
+      message: null,
+    });
+    expect(seen[0]).toMatchObject({
+      method: 'GET',
+      url: `/api/json?${new URLSearchParams([
+        ['tree', 'jobs[name,_class,buildable,jobs[name,_class,buildable,jobs[name,_class,buildable]]]'],
+      ])}`,
+    });
+    expect(await uses()).toEqual([expect.objectContaining({ feature: 'ci-list', result: 'ok' })]);
+  });
+
+  test('reads the parameters of a job with a credential its project alone holds, never a password’s default', async () => {
+    const id = await credential({ projectIds: [1] });
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
+    try {
+      const fields = await readCiServerJobFields(
+        db as never,
+        1,
+        target({ preset: 'jenkins', credentialId: id, rerun: { job: 'rich' } }),
+        USE,
+      );
+      expect(fields).toEqual({
+        fields: [
+          { name: 'PIWI_RERUN_ARGS', type: 'string', required: false, default: '' },
+          {
+            name: 'TARGET_ENV',
+            type: 'choice',
+            required: false,
+            default: 'staging',
+            description: 'Where the suite runs',
+            options: ['staging', 'production'],
+          },
+          { name: 'DEPLOY_TOKEN', type: 'secret', required: false },
+        ],
+        message: null,
+      });
+      expect(JSON.stringify(fields)).not.toContain('hunter2');
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+  });
+
+  test('leaves out free-text defaults and descriptions read with a credential other projects share', async () => {
+    const id = await credential();
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
+    try {
+      const fields = await readCiServerJobFields(
+        db as never,
+        1,
+        target({ preset: 'jenkins', credentialId: id, rerun: { job: 'rich' } }),
+        USE,
+      );
+      expect(fields.fields?.find((f) => f.name === 'TARGET_ENV')).not.toHaveProperty('description');
+      expect(fields.message).toContain('which other projects share');
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+  });
+
+  test('leaves out free-text defaults and descriptions read with the instance’s credential, which every project shares', async () => {
+    useInstance();
+    const fields = await readCiServerJobFields(
+      db as never,
+      1,
+      target({ preset: 'jenkins', rerun: { job: 'rich' } }),
+      USE,
+    );
+    expect(fields).toEqual({
+      fields: [
+        { name: 'PIWI_RERUN_ARGS', type: 'string', required: false },
+        { name: 'TARGET_ENV', type: 'choice', required: false, default: 'staging', options: ['staging', 'production'] },
+        { name: 'DEPLOY_TOKEN', type: 'secret', required: false },
+      ],
+      message: expect.stringContaining('instance’s CI server credential'),
+    });
+  });
+
+  test('checks and reads a job whose parameters answer more than a dispatch reads, and says when one answers too much', async () => {
+    useInstance();
+    const large = target({ preset: 'jenkins', rerun: { job: 'large' } });
+    expect(await check(large)).toEqual([expect.objectContaining({ ok: true })]);
+    const fields = await readCiServerJobFields(db as never, 1, large, USE);
+    expect(fields.fields?.find((f) => f.name === 'SPEC')?.options).toHaveLength(50);
+    const huge = target({ preset: 'jenkins', rerun: { job: 'huge' } });
+    expect(await check(huge)).toEqual([
+      expect.objectContaining({ ok: false, message: expect.stringContaining('2 MB') }),
     ]);
+    expect(await readCiServerJobFields(db as never, 1, huge, USE)).toEqual({
+      fields: null,
+      message: expect.stringContaining('2 MB'),
+    });
+  });
+
+  test('says why a job or a listing cannot be read', async () => {
+    useInstance();
+    const locked = await readCiServerJobFields(
+      db as never,
+      1,
+      target({ preset: 'jenkins', rerun: { job: 'locked' } }),
+      USE,
+    );
+    expect(locked).toEqual({ fields: null, message: expect.stringContaining('(401)') });
+    const missing = await readCiServerJobFields(
+      db as never,
+      1,
+      target({ preset: 'jenkins', rerun: { job: 'gone' } }),
+      USE,
+    );
+    expect(missing).toEqual({ fields: null, message: expect.stringContaining('No job at this path') });
+    const elsewhere = target({ preset: 'jenkins', baseUrl: `${base}job/good/`, rerun: { job: 'x' } });
+    expect(await listCiServerJobs(db as never, 1, elsewhere, USE)).toMatchObject({ jobs: null });
+  });
+
+  test('reaches no private address the operator did not list, and says which host and variable', async () => {
+    const privateBase = base.replace('http:', 'https:');
+    const refused = `${new URL(base).host} is a private address, which a CI server request may not reach. The operator allows it by listing the host in PIWI_CI_SERVER_HOSTS.`;
+    const privateTarget = target({ preset: 'jenkins', baseUrl: privateBase, rerun: { job: 'good' } });
+    expect(await check(privateTarget)).toEqual([expect.objectContaining({ ok: false, message: refused })]);
+    expect(await listCiServerJobs(db as never, 1, privateTarget, USE)).toMatchObject({ jobs: null, message: refused });
     expect(seen).toEqual([]);
   });
 });

@@ -98,9 +98,15 @@ class PiwiPluginTest : BasePlatformTestCase() {
         fun ids(group: String) = (actions.getAction(group) as com.intellij.openapi.actionSystem.DefaultActionGroup)
             .childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) }
         assertTrue(actions.getAction("Piwi.Actions") is com.intellij.openapi.actionSystem.CompactActionGroup)
-        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControl", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
+        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControlMenu", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
         assertEquals(sections.flatMap { listOf(it, null) }.dropLast(1), ids("Piwi.Actions"))
         for (section in sections) assertTrue(section, actions.getAction(section) is com.intellij.openapi.actionSystem.CompactActionGroup)
+        // The run's controls are a submenu, shown while one of them applies: sharing the project's runs from now on too.
+        val runControlMenu = actions.getAction("Piwi.RunControlMenu")
+        assertTrue(runControlMenu.templatePresentation.isPopupGroup)
+        assertEquals("Run control", runControlMenu.templatePresentation.text)
+        assertEquals(listOf("Piwi.RunControl"), ids("Piwi.RunControlMenu"))
+        assertTrue(actions.getAction("Piwi.RunControl") is com.intellij.openapi.actionSystem.CompactActionGroup)
         val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.DefaultActionGroup
         assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
         assertEquals(
@@ -296,6 +302,75 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val rest = proper.fold(sentence.substringAfter(' ', "")) { s, noun -> s.replace(Regex("(?<!\\w)${Regex.escape(noun)}(?!\\w)"), "") }
             val capitals = rest.split(' ').filter { word -> word.trimStart('(', '\'', '"').firstOrNull()?.isUpperCase() == true }
             assertTrue("$id: $text", capitals.isEmpty())
+        }
+    }
+
+    /**
+     * The Failures tab in each state of the failures view the golden fixture holds
+     * (`packages/editor/tests/golden/failures-view.json`): pushed as the service pushes it, with the baseline that found
+     * no run, its tree's empty text says the state's sentence and its links, each a registered action, as VS Code's view
+     * does; the service's read, with no server, leaves no status and no failures again.
+     */
+    fun testTheFailuresTabSaysEachStateOfTheViewAsTheGoldenFixtureHoldsIt() {
+        val service = project.service<PiwiProjectService>()
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        val golden = com.google.gson.JsonParser.parseString(
+            File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        fun readDone() {
+            val until = System.currentTimeMillis() + 10_000
+            while (service.readingStatus && System.currentTimeMillis() < until) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(10)
+            }
+            assertFalse("the service's read", service.readingStatus)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+        try {
+            PiwiFailuresToolWindowFactory().createToolWindowContent(project, window)
+            readDone()
+            val tab = window.contentManager.findContent(PiwiFailuresToolWindowFactory.TAB_NAME)!!
+            fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
+            val tree = all(tab.component).filterIsInstance<com.intellij.ui.treeStructure.Tree>().first()
+            val actions = ActionManager.getInstance()
+            for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+                val name = case.get("name").asString
+                val view = com.google.gson.Gson().fromJson(case.get("view"), FailuresView::class.java)
+                if (view.state == "failures") continue
+                val noRun = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
+                    ?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.endsWith("(no run)") }
+                val shown = case.getAsJsonObject("shown")
+                val expected = shown.get("text").asString
+                // The service's state moves under the test as the earlier tests' services stop and reads end: push the
+                // state again until the tab, drawn on the event thread, shows it, then hold it to the fixture.
+                (1..20).any {
+                    readDone()
+                    service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
+                    service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
+                    val until = System.currentTimeMillis() + 2_000
+                    do {
+                        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                        if (tree.emptyText.text == expected) break
+                        Thread.sleep(20)
+                    } while (System.currentTimeMillis() < until)
+                    service.status != null && service.failuresResult?.view == view && tree.emptyText.text == expected
+                }
+                assertEquals(name, expected, tree.emptyText.text)
+                val fragments = buildList {
+                    val each = tree.emptyText.secondaryComponent.iterator()
+                    while (each.hasNext()) {
+                        each.next()
+                        if (each.fragment.isNotBlank()) add(each.fragment)
+                    }
+                }
+                assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, fragments)
+                for (link in view.links) assertNotNull("$name: ${link.jetbrains}", actions.getAction(link.jetbrains))
+            }
+        } finally {
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            service.refreshStatus()
+            readDone()
         }
     }
 
@@ -793,9 +868,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
      * tooltip, its backgrounds, and each line's entries, the words VS Code's `tests/golden.test.ts` holds its test
      * decorations and lenses to. A line with no result draws no icon.
      */
-    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() {
+    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() = drawsAsGolden("test-lines.json")
+
+    /**
+     * The spec of VS Code's integration fixture, drawn from the answer the editor service gave VS Code there, as VS Code
+     * computes its marks and lens rows from it: its integration suite records both in the golden fixture
+     * `vscode-spec.json`, and fails when they change.
+     */
+    fun testTheGutterDrawsTheSpecAsVsCodeComputesItFromTheServicesAnswer() = drawsAsGolden("vscode-spec.json")
+
+    private fun drawsAsGolden(name: String) {
         val golden = com.google.gson.JsonParser.parseString(
-            File("../../packages/editor/tests/golden/test-lines.json").readText(),
+            File("../../packages/editor/tests/golden/$name").readText(),
         ).asJsonObject
         val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
         val spec = golden.getAsJsonObject("spec")
@@ -850,11 +934,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     .flatMap { (document.getLineNumber(it.startOffset)..document.getLineNumber(it.endOffset - 1)).toList() }
                     .sorted()
             }
-            val failing = golden.getAsJsonObject("failing")
-            val test = failing.getAsJsonArray("test").map { it.asInt }
-            val failedAt = failing.get("line").asInt
-            assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
-            assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            val failing = golden.get("failing").takeIf { it.isJsonObject }?.asJsonObject
+            if (failing == null) {
+                assertEquals(emptyList<Int>(), linesOf(PiwiTestAnnotator.FAILING_LINE))
+                assertEquals(emptyList<Int>(), linesOf(PiwiTestAnnotator.FAILING_TEST))
+            } else {
+                val test = failing.getAsJsonArray("test").map { it.asInt }
+                val failedAt = failing.get("line").asInt
+                assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
+                assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            }
             // The rows above the lines, as the registered Code Vision providers draw them, each slot after the one before.
             val providers = DaemonBoundCodeVisionProvider.extensionPoint.extensionList.filterIsInstance<PiwiCodeVisionProvider>()
             assertEquals((0 until Glue.CODE_VISION_SLOTS).map(PiwiCodeVisionProvider::providerId), providers.map { it.id })

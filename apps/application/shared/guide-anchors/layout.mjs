@@ -177,7 +177,7 @@ export const LAYOUT_ANCHORS = [
     pages: ['*'],
     describes:
       'The version this instance runs, at the foot of the sidebar, which opens Settings → About and its build details.',
-    shownWhen: 'When the sidebar is expanded.',
+    shownWhen: 'When the sidebar is expanded, once the version has loaded.',
     doc: 'operate/upgrading',
     sample: { route: '/projects' },
   },

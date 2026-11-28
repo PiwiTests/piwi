@@ -126,10 +126,16 @@ test.describe.serial('Fix plan', () => {
     const plan = (await (await request.get(`/api/failure-clusters/${clusterId}/fix-plan`)).json()) as FixPlan;
     const executionId = plan.failingTests[0]!.executionId;
 
-    const info = await (await request.get(`/api/test-run-cases/${executionId}/rerun`)).json();
-    expect(info).toMatchObject({ available: false, reason: 'CI re-run is off for this project.', lastDispatch: null });
+    const offered = await (
+      await request.get(`/api/projects/${projectId}/ci-actions/offered`, {
+        params: { executionId, scope: 'test' },
+      })
+    ).json();
+    expect(offered).toMatchObject({ enabled: false, kind: 'tests', defaultActionId: null, lastDispatch: null });
 
-    const res = await request.post(`/api/test-run-cases/${executionId}/rerun`);
+    const res = await request.post(`/api/projects/${projectId}/ci-dispatches`, {
+      data: { source: { executionId, scope: 'test' } },
+    });
     expect(res.status()).toBe(400);
     expect(((await res.json()) as { message: string }).message).toBe('CI re-run is off for this project.');
   });

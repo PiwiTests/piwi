@@ -505,7 +505,11 @@ export default class VerifyCaptureReporter implements Reporter {
     for (const [title, census] of this.censusByTitle) {
       const worker = census.metrics?.worker;
       check(
-        !!worker && worker.loopUtilization >= 0 && worker.loopUtilization <= 1 && worker.cpuMs >= 0,
+        !!worker &&
+          typeof worker.loopUtilization === 'number' &&
+          worker.loopUtilization >= 0 &&
+          worker.loopUtilization <= 1 &&
+          worker.cpuMs >= 0,
         `[${title}] the census should carry the worker's metrics: ${JSON.stringify(census.metrics)}`,
       );
     }

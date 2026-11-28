@@ -17,7 +17,7 @@ import { recordRunHealth } from '#shared/handlers/run-health';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
-import { matchCiRerunRun } from './ci-rerun';
+import { matchRunToCiDispatch } from './ci-dispatches';
 import { inferRunOutcomes } from './outcome-inference';
 import { pinProjectRepository } from './scm/project-repository';
 
@@ -30,9 +30,10 @@ function withoutIncidentFlag(metadata: unknown): unknown {
 }
 
 /**
- * The finalize side effects for a finished run: the reused results of its
- * pass reuse plan, the environment-incident check, the daily rollup of its cell, regression signals, the CI re-run
- * dispatch it answers, auto markers, flaky root causes, the history of its
+ * The finalize side effects for a finished run: first the CI dispatch it
+ * answers (`matchRunToCiDispatch`), for every run, a lab run included, so the
+ * origin a match gives it is the one the verdicts read; then the reused results of its
+ * pass reuse plan, the environment-incident check, the daily rollup of its cell, regression signals, auto markers, flaky root causes, the history of its
  * resource findings, its analysis (the scenario gaps, change coverage, fix
  * verification and the hand-back outcomes it shows), the links to the issues
  * its failing tests name, and its outbound effects
@@ -47,7 +48,7 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * run or a flake-lab run replays a test with an injected fault or condition,
  * so it never counts as a real run), exactly as imports are silent. The
  * incident check runs first and is awaited: a run it flags as an environment
- * incident gets its rollup, its CI re-run match, its auto markers and its
+ * incident gets its rollup, its auto markers and its
  * resource findings, and in place of regression signals, the analysis, AI
  * diagnosis, the run and cluster notifications, pull-request feedback and
  * auto-heal it sends one `environment.incident` event. Flaky root causes skip
@@ -78,6 +79,10 @@ export async function runFinalizeSideEffects(
   id: number,
   run: { projectId: number; metadata?: unknown; isFullRun?: number | boolean | null; status?: string | null },
 ): Promise<void> {
+  // The dispatch a run answers ends with it, a lab run's too, and its origin is settled before any verdict reads it.
+  await matchRunToCiDispatch(db, id, 'finish').catch((e) =>
+    console.error('[ci-dispatches] matching a finished run failed', e),
+  );
   if (!isEligibleRun(run, 'run-health')) return;
   await pinProjectRepository(db, run.projectId, run.metadata).catch((e) =>
     console.error('[scm] pinning the project repository failed', e),
@@ -103,7 +108,6 @@ export async function runFinalizeSideEffects(
       .then(recompute)
       .catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   }
-  matchCiRerunRun(db, id).catch((e) => console.error('[ci-rerun] matchCiRerunRun failed', e));
   syncAutoMarkersForRun(db, id)
     .catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e))
     .then(() => syncEnvironmentMarkersForRun(db, id))

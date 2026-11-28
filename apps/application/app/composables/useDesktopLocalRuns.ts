@@ -6,7 +6,7 @@
  * sidecar and streams output back as `piwi:local-run` events; each spawned step
  * carries a shell-assigned id so concurrent runs stay apart. Runs live here —
  * not in any component — so they survive navigation and dialog closes; the
- * runs tray and the run-locally button both render from this store. Stopping a
+ * runs tray and the run button's This computer both render from this store. Stopping a
  * run is always an explicit action, never a side effect of closing UI.
  *
  * A run's plan can have several steps (one per Playwright project); they run
@@ -398,6 +398,11 @@ export function localRunEnvironmentNote(run: Pick<LocalRun, 'environment' | 'rep
   return environmentMismatch(run.environment, run.reported);
 }
 
+/** Whether a run offers **Run again**: one it can start as it ran, a Flake Lab with its plan, never a requested run. */
+export function localRunRerunnable(run: Pick<LocalRun, 'kind' | 'flake'>): boolean {
+  return (run.kind !== 'flake' || !!run.flake) && run.kind !== 'request';
+}
+
 /**
  * The Changes tab of the Piwi run a local run produced, against the run its tests come from, or null until it
  * reported or when it has no source run.
@@ -468,9 +473,12 @@ interface BisectEventPayload {
 
 interface LocalRunEventPayload {
   id: number;
-  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect' | 'repro' | 'lab';
+  /** `stopping`: the shell began to stop the process, whoever asked (the team instance stops a request's run). */
+  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'stopping' | 'phase' | 'bisect' | 'repro' | 'lab';
   line: string | null;
   code: number | null;
+  /** For kind === 'exit': whether the process was stopped, whoever asked. */
+  stopped?: boolean;
   /** For kind === 'phase': which phase the run entered. */
   phase?: LocalRunPhase | null;
   /** For kind === 'bisect': the bisect progress event. */
@@ -513,6 +521,8 @@ interface KeptForReload {
   runs: LocalRun[];
   holds: Record<number, boolean>;
   separate: Record<number, boolean>;
+  /** The name of each separate window a run took from the run it was started from again (`windowNames`). */
+  windowNames?: Record<number, string>;
   trayOpen: boolean;
   /** How far each step of the runs that ended came, by its name on the hub. */
   ended?: Record<string, KeptEnded>;
@@ -521,13 +531,15 @@ interface KeptForReload {
 }
 
 /**
- * The shell's runs as `desktop_local_runs` answers: those still going, the latest that ended, each with its code and
- * the events that carried its verdict (what a repro spec recorded, a lab's report, a bisect's result), and the origin
- * reference this window gave each plain run it started.
+ * The shell's runs as `desktop_local_runs` answers: those still going and which of them were asked to stop (by the team
+ * instance that requested one, say), the latest that ended, each with its code, whether it was stopped and the events
+ * that carried its verdict (what a repro spec recorded, a lab's report, a bisect's result), and the origin reference this
+ * window gave each plain run it started.
  */
 interface ShellLocalRuns {
   running: number[];
-  ended: Array<{ id: number; code: number | null; events?: LocalRunEventPayload[] }>;
+  stopping?: number[];
+  ended: Array<{ id: number; code: number | null; stopped?: boolean; events?: LocalRunEventPayload[] }>;
   origins?: Array<{ id: number; originRef: string }>;
 }
 
@@ -571,8 +583,14 @@ export function useDesktopLocalRuns() {
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
   /** Each run's Hold failures choice, by its key; unset falls back to how it started (`desktopHoldsByDefault`). */
   const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
-  /** The runs whose output shows in a separate window instead of the tray, by key (`DesktopRunOutputWindows`). */
+  /** The runs that show in a separate window instead of the tray, by key (`DesktopRunOutputWindows`). */
   const separate = useState<Record<number, boolean>>('desktop-local-runs-separate', () => ({}));
+  /**
+   * The name of the separate window of a run that took it from the run it was started from again, by key: a Run again
+   * in a run's window shows the run it starts in that same window (`moveWindow`). Any other run's is its own
+   * (`runOutputWindowName`).
+   */
+  const windowNames = useState<Record<number, string>>('desktop-local-runs-window-names', () => ({}));
   /** The runs whose separate output window the page before a reload had open: it is asked for, never opened again. */
   const keptWindows = useState<number[]>('desktop-local-runs-kept-windows', () => []);
   /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
@@ -652,8 +670,20 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /** The run was asked to stop, here or by the shell: it shows stopping, then ends stopped. */
+  function noteStop(run: LocalRun) {
+    if (run.status !== 'running') return;
+    if (!run.stopRequested) run.stopRequestedAt = Date.now();
+    run.stopRequested = true;
+  }
+
   function dispatch(run: LocalRun, payload: LocalRunEventPayload) {
+    if (payload.kind === 'stopping') {
+      noteStop(run);
+      return;
+    }
     if (payload.kind === 'exit') {
+      if (payload.stopped) noteStop(run);
       exitResolvers.get(payload.id)?.(payload.code);
       return;
     }
@@ -696,7 +726,8 @@ export function useDesktopLocalRuns() {
    * exit code. Buffered events that arrived before the id was known are
    * replayed in the same tick the id is registered, so none can slip through.
    * Used for a test step (`desktop_run_local_tests`) and for the single
-   * reproduce/bisect drivers alike.
+   * reproduce/bisect drivers alike. A team request the requester stopped
+   * before its run started starts nothing (a null id): the run is stopped.
    */
   async function spawnCommand(run: LocalRun, cmd: string, invokeArgs: Record<string, unknown>): Promise<number | null> {
     const core = tauriCore();
@@ -704,24 +735,34 @@ export function useDesktopLocalRuns() {
     startingSteps += 1;
     run.stepStarting = true;
     if (pageGone) keepForReload();
-    let shellId: number;
+    let shellId: number | null;
     try {
-      shellId = await core.invoke<number>(cmd, invokeArgs);
+      shellId = await core.invoke<number | null>(cmd, invokeArgs);
     } catch (error) {
       startingSteps -= 1;
       run.stepStarting = false;
       throw error;
     }
+    run.stepStarting = false;
+    if (shellId === null) {
+      releaseBuffer();
+      noteStop(run);
+      if (pageGone) keepForReload();
+      return null;
+    }
     // Same tick as the invoke resolution: register the id, replay buffered
     // events for it, then release the buffer — no event can slip through.
-    run.stepStarting = false;
     nameStep(run, shellId);
+    // A Stop asked here while the step started reaches its process now, its wind-down counted from here, unless the
+    // shell already began one (a team instance's stop, among the buffered events). It is sent graceful: a stop the
+    // shell begins as the id comes back still goes on to wind down, where a second stop would kill.
+    const stopBegan = pendingEvents.some((p) => p.id === shellId && p.kind === 'stopping');
+    const stopAsked = run.stopRequested && !stopBegan;
     const exit = adopt(run, shellId);
     releaseBuffer();
-    // A Stop asked while the step started reaches its process now, its wind-down counted from here.
-    if (run.stopRequested) {
+    if (stopAsked) {
       run.stopRequestedAt = Date.now();
-      void askToStop(shellId);
+      void askToStop(shellId, { graceful: true });
     }
     if (pageGone) keepForReload();
     return exit;
@@ -1821,15 +1862,20 @@ export function useDesktopLocalRuns() {
    */
   async function stopRun(run: LocalRun) {
     if (run.status !== 'running') return;
-    if (!run.stopRequested) run.stopRequestedAt = Date.now();
-    run.stopRequested = true;
+    noteStop(run);
     if (run.shellId != null) await askToStop(run.shellId);
   }
 
-  /** Asks the shell to stop process `shellId`, which kills it if asked before; its step ends even with no exit event. */
-  async function askToStop(shellId: number) {
+  /**
+   * Asks the shell to stop process `shellId`, which kills it if asked before, unless `graceful`; its step ends even with
+   * no exit event.
+   */
+  async function askToStop(shellId: number, { graceful = false } = {}) {
     try {
-      await tauriCore()?.invoke('desktop_stop_local_tests', { runId: shellId });
+      await tauriCore()?.invoke(
+        'desktop_stop_local_tests',
+        graceful ? { runId: shellId, graceful } : { runId: shellId },
+      );
     } catch {
       // The process already exited between the check and the stop.
     }
@@ -1852,6 +1898,7 @@ export function useDesktopLocalRuns() {
       runs: runs.value.map((run) => ({ ...run, lines: lines > 0 ? run.lines.slice(-lines) : [] })),
       holds: holds.value,
       separate: separate.value,
+      windowNames: windowNames.value,
       trayOpen: trayOpen.value,
       ended,
       unseen: unseen.value,
@@ -1986,6 +2033,7 @@ export function useDesktopLocalRuns() {
     runs.value = [...runs.value, ...back];
     holds.value = { ...kept.holds, ...holds.value };
     separate.value = { ...kept.separate, ...separate.value };
+    windowNames.value = { ...kept.windowNames, ...windowNames.value };
     keptWindows.value = Object.entries(kept.separate)
       .filter(([, on]) => on)
       .map(([key]) => Number(key));
@@ -2019,10 +2067,12 @@ export function useDesktopLocalRuns() {
       if (id != null && ended) {
         nameStep(run, id);
         replayEnded(run, id, ended.events ?? []);
+        if (ended.stopped) noteStop(run);
         run.shellId = null;
         resumed = Promise.resolve(ended.code);
       } else if (id != null && shell?.running.includes(id)) {
         nameStep(run, id);
+        if (shell.stopping?.includes(id)) noteStop(run);
         resumed = adopt(run, id);
       } else {
         run.shellId = null;
@@ -2059,7 +2109,7 @@ export function useDesktopLocalRuns() {
 
   /** Closes every run output window the shell has open that no run of this page shows its output in. */
   async function closeUnownedOutputWindows() {
-    const keep = runs.value.filter((run) => separate.value[run.key]).map((run) => runOutputWindowName(run.key));
+    const keep = runs.value.filter((run) => separate.value[run.key]).map((run) => windowNameOf(run.key));
     try {
       await tauriCore()?.invoke('desktop_close_other_output_windows', { keep });
     } catch {
@@ -2085,14 +2135,59 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  /** Opens the tray on a run of it, shown on its right. */
+  /**
+   * The name of a run's separate window: the one it was given (`separateRun`) or took from the run it was started from
+   * again (`moveWindow`), else its own.
+   */
+  function windowNameOf(key: number): string {
+    return windowNames.value[key] ?? runOutputWindowName(key);
+  }
+
+  /**
+   * Shows a run in a separate window (`on`), under a name no other separate run's window has, or in the tray again,
+   * where it gives its window's name back.
+   */
+  function separateRun(key: number, on: boolean) {
+    const { [key]: _name, ...others } = windowNames.value;
+    if (!on) {
+      separate.value = { ...separate.value, [key]: false };
+      windowNames.value = others;
+      return;
+    }
+    const taken = new Set(
+      runs.value.filter((run) => run.key !== key && separate.value[run.key]).map((run) => windowNameOf(run.key)),
+    );
+    let name = runOutputWindowName(key);
+    for (let n = 2; taken.has(name); n++) name = `${runOutputWindowName(key)}-${n}`;
+    windowNames.value = name === runOutputWindowName(key) ? others : { ...others, [key]: name };
+    separate.value = { ...separate.value, [key]: true };
+  }
+
+  /**
+   * Shows `to` in the separate window `from` shows in, and `from` in the tray again: a Run again in a run's window
+   * follows the run it starts there.
+   */
+  function moveWindow(from: LocalRun, to: LocalRun) {
+    const name = windowNameOf(from.key);
+    separate.value = { ...separate.value, [from.key]: false, [to.key]: true };
+    const { [from.key]: _moved, ...others } = windowNames.value;
+    windowNames.value = { ...others, [to.key]: name };
+  }
+
+  /** Opens the tray on a run of it, shown on its right: a run shown in a separate window comes back to the tray. */
   function showRun(key: number) {
+    if (separate.value[key]) separateRun(key, false);
     trayOpen.value = true;
     chosen.value = key;
   }
 
-  /** Opens the tray on a worker of a hub's run: its run shows, and the focus moves to the worker. */
+  /**
+   * Opens the tray on a worker of a hub's run: its run shows, back from a separate window, and the focus moves to the
+   * worker.
+   */
   function showWorker(ref: string, worker: number) {
+    const run = runs.value.find((each) => each.hubRefs.includes(desktopRunOf(ref)));
+    if (run && separate.value[run.key]) separateRun(run.key, false);
     trayOpen.value = true;
     shownWorker.value = { ref, worker };
   }
@@ -2114,6 +2209,7 @@ export function useDesktopLocalRuns() {
     runs.value = runs.value.filter((r) => !gone.has(r.key));
     holds.value = without(holds.value);
     separate.value = without(separate.value);
+    windowNames.value = without(windowNames.value);
     keptWindows.value = keptWindows.value.filter((key) => !gone.has(key));
     unseen.value = unseen.value.filter((key) => !gone.has(key));
     keepFinished();
@@ -2145,6 +2241,10 @@ export function useDesktopLocalRuns() {
     shownWorker,
     holds,
     separate,
+    windowNames,
+    windowNameOf,
+    separateRun,
+    moveWindow,
     keptWindows,
     trayMounts,
     unseen,

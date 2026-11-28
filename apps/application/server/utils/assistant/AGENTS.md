@@ -20,7 +20,7 @@ tool calls in-process, or an AI CLI calls the tools itself through the turn's MC
   `find_tools`.
 - **Tools run with the asking user's context.** The route builds the `McpContext` with `requestMcpContext`, as `/mcp`
   does, and both filter the catalog with `toolsForCaller` (`server/utils/mcp/catalog.ts`). Never call a handler with a
-  wider context than the caller's.
+  wider context than the caller's. The toolbox marks it `textOnly`, since the model reads tool results as text.
 - **Tool routing** is `CORE_ASSISTANT_TOOLS` and `PAGE_TOOLS` (an `app/pages` pattern to its tool names) in `tools.ts`;
   `tests/unit/assistant-tools.test.ts` checks every name is a read tool and every pattern a page.
 - **A change is a proposal the user applies; the model never writes.** `propose_change` makes a `proposal` block from

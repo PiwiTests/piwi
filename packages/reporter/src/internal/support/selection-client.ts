@@ -192,7 +192,14 @@ export interface StoredPlan extends PlanSummary {
   args: string[];
   /** The Playwright test list lines of the reused tests, for `--test-list-invert`. */
   skip: string[];
-  reused: Array<{ testCaseId: number; sourceRunId: number; sourceCommit: string; projects: string[] }>;
+  /** Each reused test, with its own lines of `skip`; an older dashboard names no lines. */
+  reused: Array<{
+    testCaseId: number;
+    sourceRunId: number;
+    sourceCommit: string;
+    projects: string[];
+    skip?: string[];
+  }>;
 }
 
 /** One source commit's change to the working tree, as `piwi run impact` computes it. */

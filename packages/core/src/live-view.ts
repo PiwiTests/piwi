@@ -9,8 +9,12 @@
  * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches it in full, it
  * posts too the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
  * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
- * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
- * `readWorkerToInstance`).
+ * view never steers the run, with one exception: a CI worker of a project that holds a failing CI test for its
+ * controllers (`hold`) waits at a failure while a controller watches it, and ends that wait on **Let it go** (`let-go`);
+ * one of a project that lets its controllers pause a CI test too (`hold`'s `pause`) pauses its test at its next call,
+ * resumes it and ends it as they ask (`pause`, `resume`, `end-test`), saying whether it took a Pause or dropped it,
+ * and why (`pause-asked`).
+ * Each message is JSON, checked field by field (`parseInstanceToWorker`, `readWorkerToInstance`).
  *
  * An instance that says on the stream what its viewers ask of the images (`view`: the largest size they show one at,
  * in device pixels, the pace, and whether one of them shows the worker in full) takes each frame as its JPEG's bytes
@@ -262,11 +266,47 @@ export function readLiveTestTitle(value: unknown): string | null {
   return typeof value === 'string' && value ? value.slice(0, MAX_TEST_TITLE) : null;
 }
 
-/** A stop of a worker's test: why, the call it holds, and the test's title, which tells its row from the one before. */
+/**
+ * A stop of a worker's test: why, the call it holds, and the test's title, which tells its row from the one before. A
+ * failed CI test held for its controllers (`held`), and a CI test they paused (`pause`), say when the wait ends
+ * (`until`, epoch ms).
+ */
 export interface LiveStop {
-  reason: StopReason | 'other';
+  reason: StopReason | 'held' | 'other';
   call: LiveCall;
   test: string | null;
+  until?: number;
+}
+
+/**
+ * The query parameter of a worker's stream that lists what its reporter can do on it, comma-separated: `hold`
+ * (`LIVE_HOLD_FEATURE`), a CI worker that holds a failing test for its controllers and takes **Let it go**; `pause`
+ * (`LIVE_PAUSE_FEATURE`), one that pauses its test at its next call for them, and resumes and ends it.
+ */
+export const LIVE_VIEW_FEATURES_PARAM = 'features';
+export const LIVE_HOLD_FEATURE = 'hold';
+export const LIVE_PAUSE_FEATURE = 'pause';
+
+/**
+ * What a controller asks of a CI test on the instance (`POST …/live-view/control`): **Pause** at its next call,
+ * **Resume** and **End the test** while it is paused. The worker hears them as `pause`, `resume` and `end-test`.
+ */
+export const LIVE_CONTROL_COMMANDS = ['pause', 'resume', 'end'] as const;
+export type LiveControlCommand = (typeof LIVE_CONTROL_COMMANDS)[number];
+
+/** Whether `value` is one of the commands a controller asks of a CI test. */
+export function isLiveControlCommand(value: unknown): value is LiveControlCommand {
+  return typeof value === 'string' && (LIVE_CONTROL_COMMANDS as readonly string[]).includes(value);
+}
+
+/** How long a failed CI test is held for its controllers, in minutes: a project's setting, within these bounds. */
+export const MIN_LIVE_HOLD_MINUTES = 1;
+export const MAX_LIVE_HOLD_MINUTES = 15;
+export const DEFAULT_LIVE_HOLD_MINUTES = 5;
+
+/** Whether `value` is a hold's length a project may set, in whole minutes. */
+export function isLiveHoldMinutes(value: unknown): value is number {
+  return isInt(value, MIN_LIVE_HOLD_MINUTES, MAX_LIVE_HOLD_MINUTES);
 }
 
 /** A box on the test's page, in its viewport's pixels. */
@@ -361,7 +401,15 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * full views ask beside the images (`@piwitests/core/live-layers`: `events`, `text` and `filmstrip`; the call log goes
  * with `full`), none from an instance that does not say them; `text` asks for the page's text now (a viewer asked).
  * `view`'s `inspect` says a full view has Inspect open (`@piwitests/core/live-inspect`), false from an instance that
- * does not say it.
+ * does not say it, and its `controller` that one of the full views is a person who may control the project's runs
+ * (`run:control`), absent otherwise. To a worker that said it can hold (`LIVE_HOLD_FEATURE`), the instance says as the
+ * stream opens, and as a project admin changes it, how long the project holds a failing CI test for its controllers
+ * (`hold`, in ms, `MAX_LIVE_HOLD_MINUTES` at most, null while the setting is off), and asks it to end such a hold
+ * (`let-go`, **Let it go**). To a worker that said it can pause too (`LIVE_PAUSE_FEATURE`), `hold` says whether the
+ * project lets its controllers pause a CI test (`pause`, absent while either setting is off), and the instance asks it
+ * to pause its test at its next call (`pause`), and, paused, to go on (`resume`) or end the test (`end-test`, with the
+ * name of who asked, `by`, plain text, absent when the instance knows none); a Resume before the test paused drops the
+ * Pause.
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
@@ -374,9 +422,15 @@ export type InstanceToWorker =
       full: boolean;
       layers: LaneLayer[];
       inspect: boolean;
+      controller?: true;
     }
   | { type: 'resend' }
-  | { type: 'text' };
+  | { type: 'text' }
+  | { type: 'hold'; ms: number | null; pause?: true }
+  | { type: 'let-go' }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'end-test'; by?: string };
 
 /**
  * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
@@ -413,7 +467,16 @@ export type WorkerToInstance =
   | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
   /** The page's text, while a viewer asked for `text`, or why none goes. */
   | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
-  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null });
+  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
+  /**
+   * A CI worker took a controller's **Pause**, which waits for its test's next call (`waiting`), or dropped the one it
+   * took or was asked, saying why (`why`).
+   */
+  | (LiveWorkerId & { type: 'pause-asked'; waiting: true })
+  | (LiveWorkerId & { type: 'pause-asked'; waiting: false; why: string });
+
+/** The longest reason a worker gives for a Pause it dropped. */
+export const MAX_PAUSE_DROPPED_WHY = 300;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -451,7 +514,16 @@ export function liveLaneKey(lane: { shard: number | null; slot: number }): strin
   return `${lane.shard ?? ''}#${lane.slot}`;
 }
 
-const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other'];
+const STOP_REASONS: readonly string[] = [
+  'breakpoint',
+  'step',
+  'pause',
+  'run-to',
+  'page-pause',
+  'failure',
+  'held',
+  'other',
+];
 
 /**
  * A call, checked field by field, its title cut short and the text a fill, a typing or an insert types hidden
@@ -609,7 +681,11 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       const reason = STOP_REASONS.includes(value.stop.reason as string)
         ? (value.stop.reason as LiveStop['reason'])
         : 'other';
-      return { type: 'stop', ...id, stop: { reason, call, test: readLiveTestTitle(value.stop.test) } };
+      const stop: LiveStop = { reason, call, test: readLiveTestTitle(value.stop.test) };
+      if ((reason === 'held' || reason === 'pause') && isEpochMs(value.stop.until)) {
+        stop.until = Math.round(value.stop.until);
+      }
+      return { type: 'stop', ...id, stop };
     }
     case 'call-log': {
       const log = readLiveCallLog(value.log);
@@ -623,6 +699,15 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
     }
     case 'unshared':
       return { type: 'unshared', ...id };
+    case 'pause-asked':
+      if (value.waiting === true) return { type: 'pause-asked', ...id, waiting: true };
+      if (value.waiting !== false) return 'A Pause the worker was asked is waiting, or was dropped.';
+      return {
+        type: 'pause-asked',
+        ...id,
+        waiting: false,
+        why: typeof value.why === 'string' ? plainLiveText(value.why, MAX_PAUSE_DROPPED_WHY) : '',
+      };
     case 'page-event': {
       const event = readPageEvent(value.event);
       return event && isLayerTime(value.at)
@@ -658,10 +743,22 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
     const full = typeof value.full === 'boolean' ? value.full : true;
     const layers = (readLaneLayers(value.layers) ?? []).filter((layer) => layer !== 'calls');
     const inspect = value.inspect === true;
-    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers, inspect };
+    const view = { type: 'view' as const, ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers, inspect };
+    return value.controller === true && full ? { ...view, controller: true } : view;
   }
   if (value.type === 'resend') return { type: 'resend' };
   if (value.type === 'text') return { type: 'text' };
+  if (value.type === 'let-go') return { type: 'let-go' };
+  if (value.type === 'pause') return { type: 'pause' };
+  if (value.type === 'resume') return { type: 'resume' };
+  if (value.type === 'end-test') {
+    const by = typeof value.by === 'string' ? plainLiveText(value.by, MAX_ASK_BY) : '';
+    return by ? { type: 'end-test', by } : { type: 'end-test' };
+  }
+  if (value.type === 'hold') {
+    const ms = isInt(value.ms, 1, MAX_LIVE_HOLD_MINUTES * 60_000) ? value.ms : null;
+    return ms !== null && value.pause === true ? { type: 'hold', ms, pause: true } : { type: 'hold', ms };
+  }
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }
@@ -998,8 +1095,12 @@ export const LIVE_WATCH_ENDS: readonly LiveViewEnd[] = ['run-ended', 'off', 'rep
  * of `MAX_LIVE_HEADER`, which no message's other fields reach.
  */
 export type LiveViewerMessage =
-  /** The watch opened: the id its viewer names it by to change what it shows. */
-  | { type: 'hello'; watch: string }
+  /**
+   * The watch opened: the id its viewer names it by to change what it shows, and whether it counts as a controller's
+   * (`controller`: its person may control the project's runs, so a failing CI test it shows in full may be held, and
+   * **Let it go** taken from it), absent otherwise.
+   */
+  | { type: 'hello'; watch: string; controller?: true }
   /**
    * A frame of a worker's test page, its JPEG's bytes, the call it was taken at, the title of its test and, from a
    * reporter that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most
@@ -1083,7 +1184,10 @@ function readSnapshotNotice(value: Record<string, unknown>): LiveSnapshotNotice 
 export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage | null {
   const value = message.header;
   if (value.type === 'hello') {
-    return typeof value.watch === 'string' && WATCH_ID.test(value.watch) ? { type: 'hello', watch: value.watch } : null;
+    if (typeof value.watch !== 'string' || !WATCH_ID.test(value.watch)) return null;
+    return value.controller === true
+      ? { type: 'hello', watch: value.watch, controller: true }
+      : { type: 'hello', watch: value.watch };
   }
   if (value.type === 'end') {
     if (!VIEW_ENDS.includes(value.reason as string)) return null;
@@ -1204,13 +1308,22 @@ export function parseLiveAsk(value: unknown): LiveAsk | null {
   if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id) || typeof value.by !== 'string') {
     return null;
   }
-  const plain = value.by
+  const by = plainLiveText(value.by, MAX_ASK_BY);
+  return by ? { id: value.id, by } : null;
+}
+
+/**
+ * A name or a sentence of the live view as plain text on one line: control and direction characters go, and so do the
+ * characters a notification would read as a link or as markup (`[]()<>` and backticks), cut to `max` characters, never
+ * inside one; empty for none.
+ */
+export function plainLiveText(value: string, max: number): string {
+  const plain = value
     .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ')
     .replace(/[[\]()<>`]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const by = Array.from(plain).slice(0, MAX_ASK_BY).join('').trim();
-  return by ? { id: value.id, by } : null;
+  return Array.from(plain).slice(0, max).join('').trim();
 }
 
 /** An answer to an ask; null when it is not one. */

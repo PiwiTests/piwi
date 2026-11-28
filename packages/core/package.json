@@ -1,8 +1,8 @@
 {
   "name": "@piwitests/core",
-  "version": "0.74.0",
+  "version": "0.78.0",
   "license": "MIT",
-  "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
+  "description": "Pure cross-cutting logic and wire shapes shared by the dashboard and the Playwright reporter",
   "private": true,
   "type": "module",
   "exports": {

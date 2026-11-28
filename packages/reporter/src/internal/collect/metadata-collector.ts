@@ -17,8 +17,27 @@ import { PIWI_ORIGIN_ENV } from '../config/env.js';
 import { readPlanStamp } from '../support/selection-env.js';
 import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { detectCi } from '../support/ci.js';
+import { runnerArgv } from '../support/run-mode.js';
+import { detectCliNarrowingFlags } from '../support/cli-filters.js';
+import { selectedProjects } from '../support/base-url-check.js';
 
 type Env = Record<string, string | undefined>;
+
+/** The mode a suite runs its tests in, as Playwright's `TestRun.mode` names it. */
+type SuiteMode = SuiteConfigEntry['mode'];
+
+/**
+ * What the suite modes are read from: the `TestRun` Playwright hands the reporter's `preprocess` (Playwright 1.62 and
+ * later), whose `mode` exists from Playwright 1.65. Read structurally, so the reporter's types hold for every
+ * Playwright it supports.
+ */
+export interface SuiteModeSource {
+  mode?: (suite: Suite) => string;
+}
+
+function isSuiteMode(value: unknown): value is SuiteMode {
+  return value === 'parallel' || value === 'serial' || value === 'default';
+}
 
 /**
  * A git remote without the credentials a URL can carry (`https://gitlab-ci-token:<token>@host/repo`): its user name
@@ -166,6 +185,35 @@ function ownRunRef(): string {
   return `local-${process.pid}-${Date.now()}`;
 }
 
+/**
+ * Whether Playwright fails a run whose only failures are flaky tests: the config's resolved `failOnFlakyTests`
+ * (Playwright 1.61 and later), which counts the command line's `--fail-on-flaky-tests` and a config `wrapConfig` did
+ * not wrap, else Piwi's own `failOnFlakyTests` option, which `wrapConfig` passes on to Playwright.
+ */
+export function failsOnFlakyTests(
+  config: { failOnFlakyTests?: unknown },
+  options: { failOnFlakyTests?: unknown },
+): boolean {
+  return typeof config.failOnFlakyTests === 'boolean' ? config.failOnFlakyTests : options?.failOnFlakyTests === true;
+}
+
+/**
+ * The names of the Playwright projects the run ran, in the config's order, with the projects they depend on and their
+ * teardown projects unless `--no-deps` (`selectedProjects`): Playwright's `filteredProjects` (Playwright 1.64 and
+ * later), else those `--project` names on the runner's command line, else every project. A run with no selection of its own (merge-reports) has an
+ * empty `filteredProjects`, which reads as none.
+ */
+export function ranProjectNames(config: { projects?: unknown; filteredProjects?: unknown }, argv: string[]): string[] {
+  const projects = Array.isArray(config.projects) ? (config.projects as Array<{ name?: string }>) : [];
+  const filtered = Array.isArray(config.filteredProjects) && config.filteredProjects.length > 0;
+  const chosen = selectedProjects(
+    projects,
+    argv,
+    filtered ? (config.filteredProjects as Array<{ name?: string }>) : undefined,
+  );
+  return chosen.map((project) => project.name ?? '');
+}
+
 /** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */
 function normalizeRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, '');
@@ -180,10 +228,77 @@ function normalizeRef(ref: string): string {
  * breaks when Playwright renames those internals is guarded behind one class.
  */
 export class MetadataCollector {
+  /** Each suite's mode, read from Playwright's `TestRun` while the run's `preprocess` lasts (`readSuiteModes`). */
+  private readonly suiteModes = new WeakMap<Suite, SuiteMode>();
+
   constructor(private readonly logger: Logger = new Logger()) {}
+
+  /**
+   * Read the mode of every suite under `root`, the setup and teardown projects' included, from `testRun.mode`
+   * (Playwright 1.65 and later), which answers only during `preprocess`: `suiteMode` reads them for the rest of the
+   * run. A `TestRun` without it reads nothing; this never throws, since Playwright fails the run on an error thrown
+   * from `preprocess`.
+   */
+  readSuiteModes(root: Suite, testRun: SuiteModeSource | null | undefined): void {
+    const mode = testRun?.mode;
+    if (typeof mode !== 'function') return;
+    try {
+      const pending: Suite[] = [root];
+      for (let suite = pending.pop(); suite; suite = pending.pop()) {
+        const read = mode.call(testRun, suite);
+        if (isSuiteMode(read)) this.suiteModes.set(suite, read);
+        pending.push(...(suite.suites ?? []));
+      }
+    } catch (error) {
+      this.logger.debug(`Suite modes not read from Playwright: ${errorMessage(error)}`);
+    }
+  }
+
+  /**
+   * The mode a suite runs its tests in: the one `readSuiteModes` read, else by Playwright's rule for
+   * `TestRun.mode` from its private `_parallelMode` field: the mode of the nearest suite, itself first, that sets
+   * one (a project's `fullyParallel` sets `parallel`), else `default`.
+   */
+  private suiteMode(suite: Suite): SuiteMode {
+    const read = this.suiteModes.get(suite);
+    if (read) return read;
+    for (let s: Suite | undefined = suite; s; s = s.parent) {
+      const own = (s as { _parallelMode?: unknown })._parallelMode;
+      if (isSuiteMode(own)) return own;
+    }
+    return 'default';
+  }
+
+  /**
+   * The group of tests Playwright runs in one worker, in order, that holds `test`, as a key its tests share: every test
+   * of its file in its Playwright project and repetition, unless a suite above it runs in parallel; then the tests of
+   * its outermost describe or file that sets an ordered mode (`serial`, or `default` under a parallel one), else the
+   * test alone. Read with the modes `suiteMode` reads, by which a suite sets its mode where it differs from its
+   * parent's. A group Playwright keeps whole is never split by this key; it can join tests Playwright would split.
+   */
+  shardGroup(test: TestCase): string {
+    const project = this.getBrowserConfig(test)?.projectName ?? '';
+    const file = [project, test.location.file, test.repeatEachIndex];
+    let parallel = false;
+    let ordered: Suite | undefined;
+    for (let suite: Suite | undefined = test.parent; suite; suite = suite.parent) {
+      const mode = this.suiteMode(suite);
+      if (mode === 'parallel') parallel = true;
+      else if (
+        (suite.type === 'describe' || suite.type === 'file') &&
+        (!suite.parent || this.suiteMode(suite.parent) !== mode)
+      ) {
+        ordered = suite;
+      }
+    }
+    if (!parallel) return JSON.stringify(file);
+    if (ordered) return JSON.stringify([...file, ordered.titlePath(), ordered.location?.line ?? 0]);
+    return JSON.stringify([...file, test.id]);
+  }
 
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
+    const argv = runnerArgv(config);
     // The directory spec paths are made relative to, the config's (see `testFile` in the
     // reporter); the dashboard strips it from the absolute locations Playwright gives steps.
     const metadata: Record<string, unknown> = {
@@ -209,10 +324,11 @@ export class MetadataCollector {
       if (ci) metadata.ci = ci;
     }
 
-    const plan = readPlanStamp();
+    const plan = readPlanStamp(process.env, detectCliNarrowingFlags(argv));
     if (plan) metadata.piwiPlan = plan;
 
-    const htmlMeta = this.extractPlaywrightConfigMetadata(config);
+    const htmlMeta = this.extractPlaywrightConfigMetadata(config, argv);
+    htmlMeta.failOnFlakyTests = failsOnFlakyTests(config, options);
     if (suite) htmlMeta.serialFiles = this.serialFiles(suite, configDirFromConfig(config));
     if (htmlMeta && Object.keys(htmlMeta).length > 0) metadata.htmlReport = htmlMeta;
     if (config.metadata) metadata.playwrightConfig = config.metadata;
@@ -285,8 +401,10 @@ export class MetadataCollector {
 
   /**
    * Walk the test's parent `describe` suites to extract the suite path (titles)
-   * and per-level config (parallel mode + annotations). Reaches into Playwright
-   * suite internals (`_parallelMode`, `_staticAnnotations`) — kept here next to
+   * and per-level config: the mode each level runs its tests in (`suiteMode`,
+   * inherited from the levels above it, the file and the project) and its
+   * annotations. Reaches into Playwright suite internals (`_staticAnnotations`,
+   * and `_parallelMode` where Playwright gives no mode) — kept here next to
    * `getBrowserConfig` so all such access is guarded behind one class.
    */
   getSuiteInfo(test: TestCase): { suitePath: string[]; suiteConfig: SuiteConfigEntry[] } {
@@ -303,9 +421,7 @@ export class MetadataCollector {
     for (const s of suites) {
       if (!s.title) continue;
       suitePath.push(s.title);
-      const rawMode = (s as any)._parallelMode as string | undefined;
-      const mode: SuiteConfigEntry['mode'] =
-        rawMode === 'parallel' ? 'parallel' : rawMode === 'serial' ? 'serial' : 'default';
+      const mode = this.suiteMode(s);
       // Playwright stores a describe's annotations with their source location;
       // the wire carries the type and description only.
       const staticAnnotations: Array<{ type: string; description?: string }> = (s as any)._staticAnnotations ?? [];
@@ -437,7 +553,7 @@ export class MetadataCollector {
     const files = new Set<string>();
     for (const test of suite.allTests()) {
       for (let s: Suite | undefined = test.parent; s; s = s.parent) {
-        if ((s as any)._parallelMode === 'serial') {
+        if (this.suiteMode(s) === 'serial') {
           files.add(relativeTestPath(test.location.file, base));
           break;
         }
@@ -446,7 +562,7 @@ export class MetadataCollector {
     return [...files].sort();
   }
 
-  private extractPlaywrightConfigMetadata(config: FullConfig): Record<string, unknown> {
+  private extractPlaywrightConfigMetadata(config: FullConfig, argv: string[]): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
     // Playwright's root, which test lists name files from, relative to the folder test paths are stored from.
     if (config.rootDir) meta.rootDir = relativeTestPath(config.rootDir, configDirFromConfig(config));
@@ -467,6 +583,7 @@ export class MetadataCollector {
           deviceScaleFactor: p.use?.deviceScaleFactor,
         },
       }));
+      meta.ranProjects = ranProjectNames(config, argv);
     }
     meta.workers = config.workers;
     meta.timeout = config.globalTimeout;

@@ -32,7 +32,7 @@ they now hold.
 
 - **From step 3**: the CI merge gate has its page, `features/merge-gate.md`, in Hand back a fix (L10), and Core
   concepts is under half its length, each entry a definition that links its rule (L12), both built with
-  [`docs-content-audit.md`](../proposals/docs-content-audit.md), which audits what the pages say as opposed to where they are.
+  [`docs-content-audit.md`](docs-content-audit.md), which audits what the pages say as opposed to where they are.
   The editor's status bar, a page `main` added meanwhile, sits under Editor extensions.
 - **The follow-ups of [#1413](https://github.com/PiwiTests/piwi/issues/1413)**, in a later pull request. Core
   concepts is a short page in Get started (`guide/core-concepts.md`: the object model and the words a first run
@@ -276,7 +276,7 @@ than with the one the site has.
   stay, if each group's intro line names its place, on the sidebar's landing and on All features.
 - **The places are written by hand, and wrong.** The catalog's `where` hints name three tabs the app does not have,
   and the UI overview misses a run tab, five sections of a project's Settings and several pages:
-  [`docs-content-audit.md`](../proposals/docs-content-audit.md#docs-against-the-dashboards-structure) lists them and proposes
+  [`docs-content-audit.md`](docs-content-audit.md#docs-against-the-dashboards-structure) lists them and proposes
   one list of places that the app, the catalog and the drift test read.
 
 ## The proposed layout
@@ -380,7 +380,7 @@ object model and the dozen terms a first run meets, with the rest as a glossary 
 5. **Core concepts as a short page plus a glossary.** Recommended; the anchors stay where the drift test finds them.
 6. **Groups named for the job, with the place in the intro**, or renamed after the app's tabs (Coverage, Performance).
    Recommended: the first. The same question stands for the app, which groups its capabilities a third way
-   ([`docs-content-audit.md`](../proposals/docs-content-audit.md#what-the-app-could-change), item 13).
+   ([`docs-content-audit.md`](docs-content-audit.md#what-the-app-could-change), item 13).
 
 ## Left for later
 

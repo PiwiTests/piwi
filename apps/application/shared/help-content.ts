@@ -94,7 +94,7 @@ export const HELP_TOPICS = {
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
-    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
+    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, needing a ticket, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, c create issue, o open.",
     doc: 'features/failure-inbox',
   },
   'home.flake-lab': {
@@ -158,7 +158,7 @@ export const HELP_TOPICS = {
   },
   'analytics.flaky-leaderboard': {
     title: 'Flakiest tests',
-    text: 'The worst flaky tests across all projects, using the same scoring as each project’s Flaky tests tab, sorted by wasted-CI impact.',
+    text: 'The worst flaky tests across all projects, using the same scoring as the Flaky view of each project’s Failures tab, sorted by wasted-CI impact.',
     doc: 'features/flaky-tests#flaky-test-detection',
   },
   'analytics.cluster-landscape': {
@@ -317,7 +317,7 @@ export const HELP_TOPICS = {
   },
   'reports.schedule': {
     title: 'Report schedule',
-    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
+    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, Microsoft Teams, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
     doc: 'features/quality-reports#report-schedules',
     envVars: ['PIWI_TIME_ZONE'],
   },
@@ -328,7 +328,7 @@ export const HELP_TOPICS = {
   },
   'reports.share-link': {
     title: 'Share link per report',
-    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email, the Slack and Microsoft Teams messages and the webhook’s body carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack and Teams also show the trend as an image through it. Needs share links enabled on the instance.',
     doc: 'features/share-links#report-share-links',
     envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
   },
@@ -387,7 +387,7 @@ export const HELP_TOPICS = {
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
     text: 'Backend calls captured during tests, aggregated across all projects by route: p50/p90 latency, error rate, and how many projects hit each one — a shared endpoint regressing shows up here first.',
-    doc: 'guide/capture-fixtures',
+    doc: 'features/slow-tests#network-and-web-vitals',
   },
 
   // ── Projects list ─────────────────────────────────────────────────────
@@ -551,6 +551,8 @@ export const HELP_TOPICS = {
       '- **Masked** — in the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), painted over in the images by `@piwitests/reporter` 0.64.0 or later (an older one masks nothing); the secret fields’ values removed from the text and Inspect’s pages, the masked elements from the text, and credentials hidden in addresses and the call’s log, typed text too. A secret the page writes as its own text is not masked. A project with masked elements gets no Inspect page.',
       '- **Kept** — Inspect’s pages and what they name stay in the instance’s memory while their test runs, and go with the run at the latest. The rest is relayed and dropped. None of it reaches the database, the logs or an export.',
       '- **Ask to watch** — with sign-in on, a reader of a running local run nobody shares asks its developer to share it, once per 5 minutes; the developer sees who asks. On by default.',
+      '- **Hold a failing CI test** — a CI test that fails while a Maintainer or Project admin watches its worker in full waits at its failure, for **Inspect**, until **Let it go**, the longest hold (1 to 15 minutes, 5 by default) or nobody who may control the run watches it. Its result is unchanged; the CI job’s own timeout still runs. Off by default; `@piwitests/reporter` 0.75.0 or later.',
+      '- **Let controllers pause a CI test** — with the hold on, the same people may pause a CI test they watch in full before its next call, then **Resume** it or **End the test**, from the run page, as long as a hold at most. Off by default; it goes off with the hold.',
       '',
       'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
@@ -597,20 +599,20 @@ export const HELP_TOPICS = {
   'project.ci-rerun': {
     title: 'CI actions',
     text: [
-      'A CI action is a named way to start CI: where it sends the request, the inputs it adds, what it accepts and the environment it runs in. A Maintainer, Project admin or administrator uses one to re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input or variable you name:',
+      'A CI action is a named way to start CI: where it sends the request, the inputs it adds, what it accepts and the environment it runs in. A Maintainer, Project admin or administrator uses one from the run button of a run, an execution, a test, a cluster or the project: to re-run tests, run the whole suite, the tests carrying some tags or a Flake Lab experiment, on the branch the run dialog picks, passing the tests’ files and lines, or a `--grep`, through the input or variable you name:',
       '',
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
       '- **Jenkins or a Custom request** — one request to the CI server, recognized by the dispatch id the job passes on as `PIWI_ORIGIN_REF`.',
       '',
-      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The buttons use the default action for what they start, unless an action names the run’s environment, one of the project’s. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
+      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The run dialog opens on what was last sent to from that browser; otherwise a re-run picks the action that started the run, else the one of the run’s environment, else the default for what it starts. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
+      'Once Piwi matches its run, a re-run’s run is recorded as a CI re-run; a whole suite and tagged tests stay a CI run, and a Flake Lab experiment a lab run. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
     ].join('\n'),
-    doc: 'features/ci-rerun',
+    doc: 'features/ci-actions',
     envVars: [
       'PIWI_CI_SERVER_URL',
       'PIWI_CI_SERVER_USER',
@@ -635,7 +637,7 @@ export const HELP_TOPICS = {
   },
   'project.local-folder': {
     title: 'Linked local folder',
-    text: 'The folder on this machine that holds this project’s Playwright config, where Playwright runs and the test paths of its runs start: in a monorepo, the config’s subfolder, not the repository root.\n\n- **Choose folder…** — offers the folders found on this machine and checks the one you pick against the project’s tests\n- **Once linked** — the app runs its tests and opens its files in your IDE; each Re-run button of the project starts from its default run options\n\nThe link and the options stay on this machine, never on the server.',
+    text: 'The folder on this machine that holds this project’s Playwright config, where Playwright runs and the test paths of its runs start: in a monorepo, the config’s subfolder, not the repository root.\n\n- **Choose folder…** — offers the folders found on this machine and checks the one you pick against the project’s tests\n- **Once linked** — the app runs its tests from each run button of the project, which starts from its default run options, and opens its files in your IDE\n\nThe link and the options stay on this machine, never on the server.',
     doc: 'features/desktop#projects-from-local-folders',
   },
 
@@ -684,7 +686,7 @@ export const HELP_TOPICS = {
       'This run is on a developer’s machine: its workers send nothing until the developer shares it, and its running tests then offer **Watch**. Sharing is theirs to start:',
       '',
       '- **VS Code** — `Piwi: Share the run live on the team instance`, or the status bar’s broadcast icon.',
-      '- **JetBrains IDEs** — **Tools → Piwi → Share the run live on the team instance**.',
+      '- **JetBrains IDEs** — **Tools → Piwi → Run control → Share the run live on the team instance**.',
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
       '- **Terminal** — `PIWI_SHARE_LIVE=1` shares a run from its start.',
@@ -737,7 +739,7 @@ export const HELP_TOPICS = {
   },
   'run.errors': {
     title: 'Errors outside the tests',
-    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden. Collapse folds them to one line so the tab below, the Video tab’s video among them, keeps its height; this browser remembers the choice.',
+    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. An error of a worker names it below: its lane, its shard and its Playwright project. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden. Collapse folds them to one line so the tab below, the Video tab’s video among them, keeps its height; this browser remembers the choice.',
     doc: 'reference/test-metadata#errors-outside-the-tests',
   },
   'run.externalIdDuplicates': {
@@ -824,7 +826,7 @@ export const HELP_TOPICS = {
       '- **Leaks** — under each worker row, a red tail runs from the end of the test that left a browser, context or page open to its close or the worker’s end, and an amber one from an object’s last use to its close, in its own test. Hover one for where it was opened and the line that last used it, where its close belongs; click it to open the test. **Show leaks** turns them off.',
       '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Over the timeline, a line follows the pointer, the test bars included, with each track’s value beside it. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
-    doc: 'features/ui-overview#test-run-detail',
+    doc: 'features/slow-tests#the-run-s-timeline',
   },
   'run.resource-findings': {
     title: 'Resource findings',
@@ -849,7 +851,7 @@ export const HELP_TOPICS = {
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
-    text: "One block, read top to bottom; every clue, the raw error and the rest of the facts are one click away.\n\n- **Headline** — what broke, built from the Playwright error itself, and under it since when, on which commit, and whether a newer execution of the test failed again or passed; for a test that passed on retry, its failed attempt's error, naming that attempt\n- **Most likely** — a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue, as on the cluster page; for a test that did not run, the test that blocked it or where the run stopped\n- **Next** — one action chosen by a policy, with the change it copies and where it comes from\n- **Cluster** — the cluster the failure belongs to, with its issue",
+    text: "One block, read top to bottom; every clue, the raw error and the rest of the facts are one click away.\n\n- **Headline** — what broke, built from the Playwright error itself, and under it since when, on which commit, and whether a newer execution of the test failed again or passed; for a test that passed on retry, its failed attempt's error, naming that attempt\n- **Most likely** — a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue, as on the cluster page; for a test that did not run, the test that blocked it or where the run stopped\n- **Next** — one action chosen by a policy, with the change it copies and where it comes from\n- **Cluster** — the cluster the failure belongs to, with its issue\n- **History** — the test's recent executions as one strip, this one ringed, with how long it has been failing and the run it last passed in; each square opens its execution",
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {
@@ -858,6 +860,7 @@ export const HELP_TOPICS = {
       'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source with what the test ran where the project records coverage, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
       '',
       '- **Timeline** colors a step’s or a request’s duration only when it stands out, and **Network** a request’s by the same rule: at least 1 s, and either a third of the test or more, or twice its usual time and 1 s more, the usual time being the median over the last five passing runs on the same browser (shown under it). A step with parameters opens them from its title, and an arrow at the edge of the axis marks a bar that runs on outside the window.',
+      '- **Passed** folds the rows that passed before the failure, but for the last three steps, any error or warning and what Most likely cites. It stays folded or open as you leave it.',
       '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
       '- **Most likely** marks what it cites: a dot on the tab that holds it, and "Cited by Most likely" on the timeline rows. A citation opens the tab and rings the request or console entry it names for a moment.',
       '- **An empty tab** says whether the evidence was never captured, captured with nothing to show, or does not apply.',
@@ -868,12 +871,12 @@ export const HELP_TOPICS = {
   'setup.presets': {
     title: 'What you want Piwi for',
     text: 'The coarse choice of which capability groups this instance uses. Unchecking a group declines its capabilities everywhere — the pages, panels, settings and MCP tools they own stop showing until you reconsider on this page. Seeing why tests fail is always on.',
-    doc: 'guide/getting-started',
+    doc: 'operate/capabilities',
   },
   'project.capabilities': {
     title: 'Capabilities',
     text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
-    doc: 'guide/getting-started',
+    doc: 'operate/capabilities#declining-a-capability',
   },
   'cluster.activity': {
     title: 'Activity',
@@ -882,7 +885,7 @@ export const HELP_TOPICS = {
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page: on an execution in this card, on a cluster as a card of its own under the situation block. Open the others as you need them.',
+    text: 'Every other way to fix, verify or reproduce this failure, one button each, opening in a side panel beside the page: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). A button names its section’s summary on hover. A next-step action that works in a section (Full patch, Pick from snapshot) opens it; on a cluster, the section the next step points at is a card of its own above this line.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {
@@ -895,7 +898,7 @@ export const HELP_TOPICS = {
     text: [
       'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
       '',
-      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
+      '- **Server** — files of a backend built for coverage with Piwi’s instrumentation (ASP.NET Core or Nitro), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
       '- **Browser** — the application files whose functions ran in Chromium, by path, or with the functions that ran when the reporter recorded them; such a file opens to its source too.',
       '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
       '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
@@ -1059,7 +1062,7 @@ export const HELP_TOPICS = {
   },
   'case.resources': {
     title: 'What the test cost',
-    text: 'The CPU this test used in its worker and in the browser processes it started, the largest of those processes, how busy the worker’s event loop was, and the pages it found open when it started and left open when it ended. Browser processes are read on Linux only.',
+    text: 'The CPU this test used in its worker and in the browser processes it started, the largest of those processes, how busy the worker’s event loop was, and the pages it found open when it started and left open when it ended. Browser processes are read on Linux only, and under Bun the event loop’s busy time is not measured.',
     doc: 'features/cpu-memory-disk#in-the-dashboard',
   },
   'case.web-vitals': {
@@ -1069,7 +1072,7 @@ export const HELP_TOPICS = {
   },
   'case.console': {
     title: 'Console output',
-    text: 'Browser console messages logged while this test ran — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to the connect wizard), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
+    text: 'Browser console warnings and errors logged while this test ran, and each exception the page threw and nothing caught, marked page error with the place it was thrown — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to the connect wizard), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
     doc: 'guide/capture-fixtures',
   },
   'case.output': {
@@ -1200,8 +1203,9 @@ export const HELP_TOPICS = {
   // ── Settings ──────────────────────────────────────────────────────────
   'settings.storage-stats': {
     title: 'Storage analysis',
-    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up.',
+    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up. With a storage quota set, the total shows the share of it used.',
     doc: 'operate/storage#storage-management',
+    envVars: ['PIWI_STORAGE_QUOTA_BYTES'],
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
@@ -1411,6 +1415,80 @@ export const HELP_TOPICS = {
     doc: 'operate/credentials',
     envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS', 'PIWI_CI_SERVER_TOKEN'],
   },
+  'settings.credentials.service': {
+    title: 'Service',
+    text: 'What the secret is sent to: a CI server, the API of a repository host (GitHub, GitLab, Bitbucket), an AI provider, Jira, Zephyr Scale or Slack. It sets the fields the form asks for and cannot change once the credential exists.',
+    doc: 'operate/credentials#what-a-credential-holds',
+  },
+  'settings.credentials.identity': {
+    title: 'Who it acts as',
+    text: [
+      'A shared credential acts as one account for everyone. A per-user credential runs each CI action in the name of whoever starts it, with their rights:',
+      '',
+      '- **CI server**: each person gives their own API token, tested before it is saved.',
+      '- **Source control** (GitLab, Bitbucket): each person authorizes your OAuth application once, in a popup.',
+      '',
+      'A per-user credential serves CI actions only, never a project’s source control.',
+    ].join('\n'),
+    doc: 'operate/per-user-credentials',
+  },
+  'settings.credentials.destination': {
+    title: 'Destination',
+    text: [
+      'The base URL the secret may be sent under. A request elsewhere is refused, and a new destination asks for the secret again.',
+      '',
+      '- **CI server**: its root URL.',
+      '- **Source control**: the host’s API. A path under its repositories narrows it: one owner on GitHub or Bitbucket (`…/repos/acme/`), one project on GitLab. A self-hosted GitLab must be in `PIWI_SCM_GITLAB_HOSTS`.',
+      '- **AI provider**: Anthropic’s API, or an OpenAI-compatible base URL.',
+      '- **Jira**: the site; its Atlassian gateway, which a scoped token reaches, counts as the site.',
+      '- **Zephyr Scale**: the API of its region. **Slack**: Slack’s Web API.',
+    ].join('\n'),
+    doc: 'operate/credentials#what-a-credential-holds',
+    envVars: ['PIWI_SCM_GITLAB_HOSTS'],
+  },
+  'settings.credentials.oauth-application': {
+    title: 'OAuth application',
+    text: [
+      'The application each person authorizes, registered with the callback URL shown under these fields:',
+      '',
+      '- **GitLab**: an application with the `api` scope.',
+      '- **Bitbucket**: an OAuth consumer with Account read, Repositories read and Pipelines write.',
+      '',
+      'The client secret is encrypted, and sent only to the host’s OAuth endpoints (token and revocation). Another application removes every person’s authorization.',
+    ].join('\n'),
+    doc: 'operate/per-user-credentials#gitlab-and-bitbucket',
+  },
+  'settings.credentials.token-help-url': {
+    title: 'Where a person creates their token',
+    text: 'Optional. A link the token form shows each person, such as the API token page of the CI server.',
+    doc: 'operate/per-user-credentials',
+  },
+  'settings.credentials.stored-secret': {
+    title: 'Secret',
+    text: [
+      'Encrypted with `PIWI_SECRET_KEY`, and never shown again. Editing a credential, leave it empty to keep the stored one.',
+      '',
+      '- **User**: for a CI server, the user of Basic auth; for Jira, the Atlassian account’s e-mail.',
+      '- **Secret source**: saved here, or, for an administrator, read on the server at each use from a variable named `PIWI_CREDENTIAL_…`, so no other variable of the server can be sent.',
+    ].join('\n'),
+    doc: 'operate/credentials#a-secret-from-a-server-variable',
+  },
+  'settings.credentials.projects': {
+    title: 'Projects',
+    text: [
+      'The projects that may name it. A Project admin shares one with the projects they manage; sharing with all projects takes an administrator.',
+      '',
+      '- **CI server**, **per-user source control**: the projects whose CI actions may name it.',
+      '- **Source control**: the projects whose source control and CI actions may name it.',
+      '- **AI provider**, **Jira**, **Zephyr Scale**, **Slack**: an AI role, a connection or a channel of the instance serves every project, so its page lists only a credential shared with all of them.',
+    ].join('\n'),
+    doc: 'operate/credentials#who-manages-them',
+  },
+  'settings.credentials.inputs': {
+    title: 'Inputs',
+    text: 'The CI action inputs a request carrying this credential may send, beside the arguments and the dispatch id. Empty: none.',
+    doc: 'operate/credentials#using-one-in-a-ci-action',
+  },
   'settings.credentials.log': {
     title: 'Credential log',
     text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch, a comment, a commit status, a pull request, a write to Jira or Zephyr Scale or a Slack message is one row, settled once the service answers (`ok` or `failed`), and a read (a Check, a repository read, a call to an AI model, a connection opened) is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
@@ -1430,14 +1508,15 @@ export const HELP_TOPICS = {
   },
   'settings.integrations.private-host': {
     title: 'Private hosts',
-    text: 'A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private network works. Links a non-administrator pins are still fetched through the SSRF guard.',
-    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
+    text: 'A connection’s address reaches only public addresses, unless the operator sets it in the environment or lists its host in `PIWI_PRIVATE_HOSTS`; the desktop app reaches any address. A name that resolves to a private address is refused when the connection opens, and so is a redirect to one.',
+    doc: 'operate/production-checklist#private-hosts',
+    envVars: ['PIWI_PRIVATE_HOSTS'],
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
+    text: 'When a run finishes, up to 3 of the failure clusters that failed in it and have no completed diagnosis yet are diagnosed automatically (`PIWI_AI_AUTO_DIAGNOSE_MAX` changes the cap) — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
-    envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
+    envVars: ['PIWI_AI_AUTO_DIAGNOSE', 'PIWI_AI_AUTO_DIAGNOSE_MAX'],
   },
   'settings.ai-notifications': {
     title: 'Diagnosis notifications',
@@ -1609,6 +1688,7 @@ export const HELP_TOPICS = {
       '- **Server** — each instrumented server under test: time zone, culture, runtime, app version.',
     ].join('\n'),
     doc: 'features/run-environment',
+    recipe: { question: 'Fails on CI, passes locally', doc: 'recipes/fails-on-ci' },
   },
 
   'run-environment': {
@@ -1621,6 +1701,7 @@ export const HELP_TOPICS = {
       'A run from an older reporter shows nothing here: it was never recorded.',
     ].join('\n'),
     doc: 'features/run-environment',
+    recipe: { question: 'Fails on CI, passes locally', doc: 'recipes/fails-on-ci' },
   },
 
   // ── Visual diff ──────────────────────────────────────────────────────────
@@ -1632,7 +1713,7 @@ export const HELP_TOPICS = {
   // ── Page diff ────────────────────────────────────────────────────────────
   'case.page-diff': {
     title: 'Page diff',
-    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
+    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment, then the same Playwright release, then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
   },
 
   // ── Page state ───────────────────────────────────────────────────────────

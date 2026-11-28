@@ -35,6 +35,8 @@ export async function streamSimulation(
       if (url.endsWith('/setup')) return { runId: 1, projectId: 1, setupToken: 'setup' };
       if (url.endsWith('/begin')) return { streamToken: 'stream' };
       if (url.endsWith('/finish')) sent.finish = init?.body ?? null;
+      // A simulated CI worker's held failure is taken, as the demo takes one of a person who may control the run.
+      if (url.endsWith('/live-view')) return { success: true, held: true };
       const events = init?.body?.testCases;
       if (Array.isArray(events)) sent.events.push(...events);
       return {};

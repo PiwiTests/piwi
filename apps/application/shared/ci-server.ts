@@ -12,6 +12,15 @@
  * live in `server/utils/ci-server-dispatch.ts`.
  */
 
+import {
+  JENKINS_JOBS_TREE,
+  JENKINS_PARAMETERS_TREE,
+  jenkinsJobs,
+  jenkinsParameterFields,
+  type CiJob,
+  type CiJobField,
+} from '#shared/ci-job-fields';
+
 /** Why a base URL cannot be dispatched to on a host no private address may be reached on. */
 export const CI_SERVER_HTTPS_PROBLEM =
   'The CI server URL must use https, or its host must be listed in PIWI_CI_SERVER_HOSTS.';
@@ -93,6 +102,8 @@ export interface CiServerPresetDefinition {
   template: (fields: Record<string, string>) => CiRequestTemplate | null;
   /** What Check reads to see whether the job takes the request; absent, the preset has no Check. */
   check?: CiServerCheckDefinition;
+  /** How the editor lists the jobs a target may name; absent, the preset lists none. */
+  list?: CiServerListDefinition;
 }
 
 /** A GET under the base URL, which reads a job without starting it. */
@@ -108,7 +119,14 @@ export interface CiServerCheckDefinition {
   /** The parameters a dispatch sends, which the job must declare. */
   required: (fields: Record<string, string>) => string[];
   /** The parameters the answer says the job declares, or null when it does not describe a job. */
-  declared: (json: unknown) => string[] | null;
+  fields: (json: unknown) => CiJobField[] | null;
+}
+
+/** How a preset lists the jobs under its base URL: the read it sends and how to read its answer. */
+export interface CiServerListDefinition {
+  request: CiServerCheckRequest;
+  /** The jobs the answer holds, or null when it lists none (not this CI server). */
+  jobs: (json: unknown) => { jobs: CiJob[]; truncated: boolean } | null;
 }
 
 /** What Check found for one request: the re-run's or Flake Lab's. */
@@ -123,19 +141,11 @@ export interface CiServerCheckResult {
 }
 
 /**
- * The parameters a Jenkins job's JSON (read with `tree=property[parameterDefinitions[name]]`)
- * declares: none for a job that takes no parameters, null when the answer is not a job.
+ * The names of the parameters a Jenkins job's JSON declares: none for a job
+ * that takes no parameters, null when the answer is not a job.
  */
 export function jenkinsDeclaredParameters(json: unknown): string[] | null {
-  if (!isRecord(json) || !('property' in json)) return null;
-  const names: string[] = [];
-  for (const property of Array.isArray(json.property) ? json.property : []) {
-    const definitions = isRecord(property) ? property.parameterDefinitions : null;
-    for (const definition of Array.isArray(definitions) ? definitions : []) {
-      if (isRecord(definition) && typeof definition.name === 'string') names.push(definition.name);
-    }
-  }
-  return names;
+  return jenkinsParameterFields(json)?.map((f) => f.name) ?? null;
 }
 
 /** The parameter names a Jenkins job declares by default: the environment variables the reporter reads. */
@@ -194,16 +204,15 @@ export const CI_SERVER_PRESET_REGISTRY: Record<Exclude<CiServerPreset, 'custom'>
     check: {
       request: (fields) => {
         const jobPath = jenkinsJobPath(fields.job ?? '');
-        return jobPath
-          ? { path: `${jobPath}/api/json`, query: [['tree', 'property[parameterDefinitions[name]]']] }
-          : null;
+        return jobPath ? { path: `${jobPath}/api/json`, query: [['tree', JENKINS_PARAMETERS_TREE]] } : null;
       },
       required: (fields) => [
         fields.argsParameter || DEFAULT_ARGS_PARAMETER,
         fields.dispatchParameter || DEFAULT_DISPATCH_PARAMETER,
       ],
-      declared: jenkinsDeclaredParameters,
+      fields: jenkinsParameterFields,
     },
+    list: { request: { path: 'api/json', query: [['tree', JENKINS_JOBS_TREE]] }, jobs: jenkinsJobs },
   },
 };
 
@@ -621,7 +630,7 @@ export interface CiServerCheckPlan {
   kind: 'rerun' | 'flakeLab';
   url: string;
   required: string[];
-  declared: (json: unknown) => string[] | null;
+  fields: (json: unknown) => CiJobField[] | null;
 }
 
 /**
@@ -653,16 +662,56 @@ export function ciServerCheckPlans(
       const vars = placeholderValues({ args: '', dispatchId: '', ref, commit: '' });
       const url = urlUnder(baseUrl, request.path, vars);
       for (const [name, value] of request.query) url.searchParams.append(name, fillText(value, vars));
-      return { kind, url: url.href, required: [...check.required(fields), ...inputNames], declared: check.declared };
+      return { kind, url: url.href, required: [...check.required(fields), ...inputNames], fields: check.fields };
     } catch (e) {
       return { kind, error: e instanceof Error ? e.message : 'The check request cannot be built.' };
     }
   });
 }
 
+/** A placeholder that names the branch in a request: `{{ref}}` or `{{branchJob}}`. */
+export const BRANCH_PLACEHOLDER = /\{\{\s*(?:ref|branchJob)\s*\}\}/;
+
+/** The texts of a request a dispatch fills: its path, query, headers and body. */
+function requestTexts(template: CiRequestTemplate): string[] {
+  const body = template.body;
+  return [
+    template.path,
+    ...(template.query ?? []).map(([, value]) => value),
+    ...(template.headers ?? []).map(([, value]) => value),
+    ...(body?.type === 'json' ? [body.template] : (body?.fields ?? []).map(([, value]) => value)),
+  ];
+}
+
+/** Whether a CI server's re-run request names the branch: `{{ref}}` or `{{branchJob}}` in its path, query, headers or body. */
+export function ciServerTakesBranch(server: CiServerTarget): boolean {
+  const request = ciServerRequestTemplate(server, 'rerun')?.template;
+  return Boolean(request && requestTexts(request).some((text) => BRANCH_PLACEHOLDER.test(text)));
+}
+
+/** The read that lists the jobs under a target's base URL, and how to read its answer. */
+export interface CiServerListPlan {
+  url: string;
+  jobs: CiServerListDefinition['jobs'];
+}
+
+/** What the editor reads to list a target's jobs, or why it cannot list them, for the user. */
+export function ciServerListPlan(target: CiServerTarget, baseUrl: string): CiServerListPlan | { error: string } {
+  if (target.preset === 'custom') return { error: 'A Custom request names no job to list.' };
+  const definition = CI_SERVER_PRESET_REGISTRY[target.preset];
+  if (!definition.list) return { error: `${definition.label} has no job listing.` };
+  try {
+    const url = urlUnder(baseUrl, definition.list.request.path, {});
+    for (const [name, value] of definition.list.request.query) url.searchParams.append(name, value);
+    return { url: url.href, jobs: definition.list.jobs };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'The listing request cannot be built.' };
+  }
+}
+
 /** The result of a job's answer: whether it declares every parameter the plan requires. */
 export function ciServerCheckFinding(plan: CiServerCheckPlan, json: unknown): CiServerCheckResult {
-  const declared = plan.declared(json);
+  const declared = plan.fields(json)?.map((f) => f.name);
   if (!declared) {
     return {
       kind: plan.kind,

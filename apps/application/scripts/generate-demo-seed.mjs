@@ -192,7 +192,61 @@ const TAGS = [
   { id: 4, text: 'performance', color: '#f59e0b', created_at: ts('2025-04-01'), updated_at: ts('2025-04-01') },
 ];
 
-// Projects
+/** The Jenkins credential the re-run jobs of every project but API Integration name (`CREDENTIALS`). */
+const QA_BOT_CREDENTIAL_ID = 6;
+/** The per-user Jenkins credential API Integration's Nightly in your name runs with: each person's own token. */
+const PER_USER_CREDENTIAL_ID = 7;
+
+/** A Jenkins job's page (`api/integration` → `https://jenkins.example.com/job/api/job/integration/`). */
+function jenkinsJobUrl(job) {
+  return `https://jenkins.example.com/${job
+    .split('/')
+    .map((name) => `job/${name}`)
+    .join('/')}/`;
+}
+
+/**
+ * The CI actions of a project whose tests run in one Jenkins job: a single action, the default for re-runs (the
+ * failure pages' Re-run in CI), for Run on CI and for tagged tests, that dispatches under the qa-bot credential's
+ * destination.
+ */
+function jenkinsRerun(actionId, job) {
+  return {
+    enabled: true,
+    actions: [
+      {
+        id: actionId,
+        name: 'Re-run failed tests',
+        target: {
+          type: 'ci-server',
+          preset: 'jenkins',
+          credentialId: QA_BOT_CREDENTIAL_ID,
+          fields: { job, ref: 'main' },
+        },
+        inputs: [],
+        accepts: ['tests', 'suite', 'tags'],
+      },
+    ],
+    defaults: { rerun: actionId, suite: actionId, tags: actionId },
+  };
+}
+
+/**
+ * The CI action a re-run of a project's run picks, as `pickCiAction` does for a run of that environment: the action
+ * of its environment that accepts tests, else the project's default for re-runs.
+ */
+function rerunActionOf(projectId, environment) {
+  const { actions, defaults } = PROJECTS.find((p) => p.id === projectId).ci_rerun;
+  const accepting = actions.filter((a) => a.accepts.includes('tests'));
+  return (
+    accepting.find((a) => a.environment && a.environment.toLowerCase() === environment?.toLowerCase()) ??
+    accepting.find((a) => a.id === defaults.rerun) ??
+    accepting[0]
+  );
+}
+
+// Projects. Every project re-runs its failed tests in CI: API Integration through several Jenkins jobs, the others
+// through one job each (`jenkinsRerun`).
 const PROJECTS = [
   {
     id: 1,
@@ -203,11 +257,18 @@ const PROJECTS = [
     updated_at: ts('2025-04-25T08:30:00'),
     // Targets the checkout suite misses, so the demo report has missed targets in its risks.
     targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
+    ci_rerun: jenkinsRerun('rerun-checkout', 'checkout'),
     // The checkout tests' IDs (`demoExternalId`) open in the demo's test management tool.
     external_id_url: 'https://tcm.example.com/case/{id}',
     // Keys in test tags: the checkout tests carry a story key (SHOP-1234) and a test case key (SHOP-T123). The issue
     // pattern reads only the story key and the test case pattern only the test case key, so no tag matches both.
     tag_keys: { issue: '^[A-Z][A-Z0-9]+-[0-9]+$', testCase: '^SHOP-T[0-9]+$' },
+    // Its CI runs' workers can be watched, a failing CI test waits at its failure for the people who may control the
+    // run (the simulator's Held CI failure), and they may pause a CI test they watch (its Paused CI test).
+    live_view: 1,
+    live_view_hold: 1,
+    live_view_hold_minutes: 5,
+    live_view_pause: 1,
   },
   {
     id: 2,
@@ -221,6 +282,8 @@ const PROJECTS = [
     run_variables: [{ name: 'TENANT', value: 'acme' }],
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
     // the CI settings list its CI actions, each naming the Jenkins credential.
+    // Nightly runs tagged tests and Smoke does not, so the project page's run
+    // dialog shows Smoke disabled for them, with the reason.
     ci_rerun: {
       enabled: true,
       actions: [
@@ -262,10 +325,28 @@ const PROJECTS = [
             fields: { job: 'api/nightly', ref: 'main' },
           },
           inputs: [{ name: 'SUITE', kind: 'choice', options: ['smoke', 'regression', 'full'], default: 'regression' }],
-          accepts: ['suite', 'flakeLab'],
+          accepts: ['suite', 'tags', 'flakeLab'],
+        },
+        {
+          // A per-user credential: the build runs in the name of whoever starts it, with their own Jenkins token.
+          id: 'nightly-in-your-name',
+          name: 'Nightly · in your name',
+          target: {
+            type: 'ci-server',
+            preset: 'jenkins',
+            credentialId: PER_USER_CREDENTIAL_ID,
+            fields: { job: 'api/nightly', ref: 'main' },
+          },
+          inputs: [],
+          accepts: ['suite'],
         },
       ],
-      defaults: { rerun: 'rerun-failed-tests', suite: 'smoke-staging', flakeLab: 'nightly-jenkins' },
+      defaults: {
+        rerun: 'rerun-failed-tests',
+        suite: 'smoke-staging',
+        tags: 'nightly-jenkins',
+        flakeLab: 'nightly-jenkins',
+      },
     },
   },
   {
@@ -277,6 +358,7 @@ const PROJECTS = [
     updated_at: ts('2025-04-24T16:45:00'),
     // Targets the component suite meets.
     targets: { testPassRate: 60, maxOpenClusterAgeDays: 400 },
+    ci_rerun: jenkinsRerun('rerun-components', 'design-system/components'),
     // The latest runs are on feature/new-ui: the status filter keeps the
     // project's status on its default branch's full runs.
     status_filter: { environments: [], branches: [], allBranches: false, fullRunsOnly: true },
@@ -293,6 +375,7 @@ const PROJECTS = [
     // with no graph rows the Test Map decline hides the Gaps tab (server probes
     // ride it, so they go too).
     capabilities: { markers: 'declined', 'test-map': 'declined' },
+    ci_rerun: jenkinsRerun('rerun-mobile-safari', 'mobile-web/safari'),
   },
   {
     id: 5,
@@ -301,6 +384,7 @@ const PROJECTS = [
     description: 'Cross-browser tests for the SaaS admin dashboard',
     created_at: ts('2025-02-20'),
     updated_at: ts('2025-04-25T09:10:00'),
+    ci_rerun: jenkinsRerun('rerun-dashboard', 'admin-dashboard/e2e'),
   },
 ];
 
@@ -1465,13 +1549,14 @@ for (const proj of DEMO_PROJECTS) {
     const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
     const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
     if (baseUrls) RUN_BASE_URLS.set(runId, baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length]);
+    // Every run comes from the Jenkins job a re-run of its failures goes to.
+    const job = rerunActionOf(proj.id, environment).target.fields.job;
     const metadata = {
       ci: {
-        provider: 'GitHub Actions',
+        provider: 'Jenkins',
         buildNumber: String(1200 - i),
-        jobName: 'test',
-        workflow: 'CI',
-        buildUrl: `https://github.com/${SCM_REPOS[proj.id].repositoryUrl.split('/').slice(-2).join('/')}/actions/runs/${5100 + proj.id * 100 - i}`,
+        jobName: job,
+        buildUrl: `${jenkinsJobUrl(job)}${1200 - i}/`,
       },
       scm: {
         commit: commit.sha,
@@ -2673,19 +2758,33 @@ const INCIDENT_MARKERS = [];
 
 // ── Errors outside the tests (post-processing, rng-free) ────────────────────
 // The newest checkout run its failure budget stopped (`maxFailures`, its last
-// tests did not run): Playwright said so outside any test, and the global
-// teardown, which still ran, threw. The reporter sends both as the run's
-// errors outside any test (`onError`), each as `sanitizeRunErrors` keeps it.
+// tests did not run): Playwright said so outside any test, then the teardown of
+// a worker fixture threw as its worker stopped, which names that worker (its
+// lane and its Playwright project), and the global teardown, which still ran,
+// threw. The reporter sends them as the run's errors outside any test
+// (`onError`), in that order, each as `sanitizeRunErrors` keeps it.
 {
   const target = TEST_RUNS.filter((r) => r.project_id === 1 && r.status === 'interrupted' && !incidentRunIds.has(r.id))
     .sort((a, b) => a.id - b.id)
     .at(0);
   if (!target) throw new Error('No checkout run stopped by its failure budget can carry errors outside its tests');
+  const worker = TEST_RUNS_CASES.find(
+    (row) => row.test_run_id === target.id && row.browser_name && row.worker_index != null,
+  );
+  if (!worker) throw new Error('The checkout run stopped by its failure budget ran no test on a worker');
   target.run_errors = JSON.stringify([
     {
       message: `\u001b[31mTesting stopped early after ${target.failed_tests} maximum allowed failures.\u001b[39m`,
       stack: null,
       location: null,
+    },
+    {
+      message: 'Error: worker fixture "paymentSandbox" could not release the sandbox account: 423 Locked',
+      stack: '    at paymentSandbox (/home/runner/work/shop/shop/tests/support/fixtures.ts:42:13)',
+      location: { file: 'tests/support/fixtures.ts', line: 42, column: 13 },
+      parallelIndex: worker.worker_index,
+      ...(worker.shard_index != null && { shardIndex: worker.shard_index }),
+      playwrightProject: worker.browser_name,
     },
     {
       message: 'Error: global teardown could not delete the test tenant ci-checkout-7f3a: 409 Conflict (open orders)',
@@ -3893,7 +3992,8 @@ const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
 );
 
 // The default demo identity connected the desktop app, which Connected apps lists as online: the demo's router
-// answers every target as online. The key's hash matches no key anyone holds.
+// answers every target as online. Its key may also compare with the team instance, as the device flow gives a desktop
+// app's key while the instance does not decline it. The key's hash matches no key anyone holds.
 const CONNECTED_APP_KEYS = [
   {
     id: 1,
@@ -3902,16 +4002,17 @@ const CONNECTED_APP_KEYS = [
     key_hash: 'demo-connected-app-'.padEnd(64, '0'),
     key_prefix: 'demo0000',
     client_kind: 'desktop',
-    permissions: ['run:receive'],
+    permissions: ['run:receive', 'project:read'],
     created_at: ts('2025-04-20T09:00:00'),
     last_used_at: ts('2025-04-25T08:00:00'),
   },
 ];
-// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project that
-// no action names yet, whose secret is read from a server variable, the GitHub token of every example repository the
-// instance's source control lists, the shop-web one the checkout project names, and the Zephyr Scale token of the
-// canned connection. The demo stores no secret. Its log: dispatches, a refusal, the Check reads of one hour,
-// repository reads, a commit status, a pull request comment, and the connection's reads and results upload.
+// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project, which
+// no action names yet and whose secret is read from a server variable, the GitHub token of every example repository
+// the instance's source control lists, the shop-web one the checkout project names, the Zephyr Scale token of the
+// canned connection, and the Jenkins user the other projects' re-run jobs name. The demo stores no secret. Its log:
+// dispatches, a refusal, the Check reads of one hour, repository reads, a commit status, a pull request comment, and
+// the connection's reads and results upload.
 const CREDENTIALS = [
   {
     id: 1,
@@ -4004,10 +4105,92 @@ const CREDENTIALS = [
     rotated_at: ts('2025-04-10T09:00:00') * 1000,
     last_used_at: ts('2025-04-25T08:15:00') * 1000,
   },
+  {
+    id: QA_BOT_CREDENTIAL_ID,
+    name: 'Jenkins · qa-bot',
+    description: 'The Jenkins user allowed to build the web, mobile and component test jobs.',
+    service: 'ci-server',
+    user_name: 'qa-bot',
+    destination: 'https://jenkins.example.com/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-24T09:30:00') * 1000,
+    rotated_at: ts('2025-04-24T09:30:00') * 1000,
+    last_used_at: null,
+  },
+  {
+    id: PER_USER_CREDENTIAL_ID,
+    name: 'Jenkins · in your name',
+    description: 'Builds the API nightly job in the name of whoever starts it, with their own Jenkins API token.',
+    service: 'ci-server',
+    user_name: null,
+    destination: 'https://jenkins.example.com/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    per_user: 1,
+    token_help_url: 'https://jenkins.example.com/me/security/',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-22T09:00:00') * 1000,
+    rotated_at: ts('2025-04-22T09:00:00') * 1000,
+    last_used_at: ts('2025-04-24T18:10:00') * 1000,
+  },
 ];
+/** A per-user GitLab credential, through an OAuth application each person authorizes; no action names it yet. */
+CREDENTIALS.push({
+  id: 8,
+  name: 'GitLab · in your name',
+  description: 'Runs GitLab pipelines in the name of whoever starts them, once they authorized the Piwi application.',
+  service: 'scm',
+  user_name: null,
+  destination: 'https://gitlab.com/',
+  secret: null,
+  all_projects: 0,
+  allowed_inputs: null,
+  custom_requests: 0,
+  disabled: 0,
+  managed_by: 'db',
+  per_user: 1,
+  token_help_url: null,
+  oauth_client_id: 'piwi-demo-application',
+  created_by: DEFAULT_DEMO_USER.id,
+  created_at: ts('2025-04-23T09:00:00') * 1000,
+  rotated_at: ts('2025-04-23T09:00:00') * 1000,
+  last_used_at: null,
+});
+/** The people who gave their own Jenkins token for the per-user credential; the demo keeps no secret. */
+const CREDENTIAL_USER_TOKENS = [
+  { userId: DEFAULT_DEMO_USER.id, remoteUser: DEFAULT_DEMO_USER.username, state: 'ready', at: '2025-04-22T09:05:00' },
+  { userId: 6, remoteUser: 'quinn', state: 'ready', at: '2025-04-23T10:20:00', usedAt: '2025-04-24T18:10:00' },
+  { userId: 7, remoteUser: 'jordan', state: 'invalid', at: '2025-04-23T14:00:00', usedAt: '2025-04-24T18:30:00' },
+].map((t, i) => ({
+  id: i + 1,
+  credential_id: PER_USER_CREDENTIAL_ID,
+  user_id: t.userId,
+  remote_user: t.remoteUser,
+  secret: '',
+  state: t.state,
+  created_at: ts(t.at) * 1000,
+  tested_at: ts(t.at) * 1000,
+  last_used_at: t.usedAt ? ts(t.usedAt) * 1000 : null,
+}));
 const CREDENTIAL_PROJECTS = [
   { credential_id: 1, project_id: 2 },
+  { credential_id: PER_USER_CREDENTIAL_ID, project_id: 2 },
+  { credential_id: 8, project_id: 1 },
   { credential_id: 4, project_id: 1 },
+  // qa-bot builds the jobs of every project whose CI actions `jenkinsRerun` writes.
+  ...PROJECTS.filter((p) => p.ci_rerun?.actions.some((a) => a.target.credentialId === QA_BOT_CREDENTIAL_ID)).map(
+    (p) => ({ credential_id: QA_BOT_CREDENTIAL_ID, project_id: p.id }),
+  ),
 ];
 /** The SCM credential each project names; the others read with the instance's. */
 const PROJECT_SCM_CREDENTIALS = { 1: 4 };
@@ -4142,6 +4325,29 @@ const CREDENTIAL_USES = [
     destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
     result: 'ok',
     reason: null,
+  }),
+  // The per-user credential: Quinn's own build, then Jordan's, which Jenkins refused (401): his token is marked refused.
+  credentialUse(12, '2025-04-24T18:10:00', {
+    credential_id: PER_USER_CREDENTIAL_ID,
+    credential_name: 'Jenkins · in your name',
+    user_id: 6,
+    remote_user: 'quinn',
+    feature: 'ci-dispatch',
+    subject_id: 'nightly-in-your-name',
+    destination: 'https://jenkins.example.com/job/api/job/nightly/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(13, '2025-04-24T18:30:00', {
+    credential_id: PER_USER_CREDENTIAL_ID,
+    credential_name: 'Jenkins · in your name',
+    user_id: 7,
+    remote_user: 'jordan',
+    feature: 'ci-dispatch',
+    subject_id: 'nightly-in-your-name',
+    destination: 'https://jenkins.example.com/job/api/job/nightly/buildWithParameters',
+    result: 'failed',
+    reason: 'The CI server answered 401',
   }),
 ];
 const RUN_TARGETS = [
@@ -6317,9 +6523,12 @@ const REBASE_SQL = [
   // last_used_at is nullable; NULL + delta stays NULL.
   `UPDATE credentials SET created_at = created_at + ${D_MS}, rotated_at = rotated_at + ${D_MS}, last_used_at = last_used_at + ${D_MS};`,
   `UPDATE credential_uses SET created_at = created_at + ${D_MS}, last_at = last_at + ${D_MS};`,
+  `UPDATE credential_user_tokens SET created_at = created_at + ${D_MS}, tested_at = tested_at + ${D_MS}, last_used_at = last_used_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
   `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
+  // matched_at is nullable; NULL + delta stays NULL.
+  `UPDATE ci_dispatches SET created_at = created_at + ${D_MS}, matched_at = matched_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
@@ -7598,6 +7807,145 @@ const REUSED_RESULTS = [];
   }
 }
 
+// ── CI dispatches ──────────────────────────────────────────────────────────
+// Two clusters' Re-run in CI, as the cluster page's "Last re-run" line shows them: each through the action the server
+// picks for the run it re-runs (`rerunActionOf`), whose job runs its configured branch, with the arguments a dispatch
+// builds from its failures there. Cluster 6's went out two hours after its fix landed, and the one-test re-run it started passed: it
+// carries the dispatch id as its origin ref, as a job that passes `PIWI_ORIGIN_REF` on reports it. Cluster 3's went out
+// half an hour after a failure more than eight hours before the newest run, and no run answered it within the window.
+const CI_DISPATCHES = [];
+{
+  const newestRunMs = Math.max(...TEST_RUNS.map((r) => r.start_time)) * 1000;
+  const fileOf = new Map(TEST_CASES.map((c) => [c.id, c.file_path]));
+  /** The arguments a dispatch builds from a cluster's failures in a run: each test at its line, then its projects. */
+  const rerunArgs = (clusterId, sourceRunId) => {
+    const failures = TEST_RUNS_CASES.filter(
+      (c) => c.test_run_id === sourceRunId && c.failure_cluster_id === clusterId,
+    ).sort((a, b) => b.id - a.id);
+    const latest = new Map();
+    for (const c of failures) {
+      const key = `${c.test_case_id}|${c.browser_name ?? ''}`;
+      if (!latest.has(key)) latest.set(key, c);
+    }
+    const cases = [...latest.values()];
+    const specs = [...new Set(cases.map((c) => `"/${fileOf.get(c.test_case_id)}:${c.line}"`))];
+    const projects = [...new Set(cases.map((c) => c.browser_name).filter(Boolean))];
+    return {
+      args: specs.join(' ') + projects.map((p) => ` --project="${p}"`).join(''),
+      files: [...new Set(cases.map((c) => fileOf.get(c.test_case_id)))].sort(),
+      tests: cases.length,
+      cases,
+    };
+  };
+  const dispatchOf = (clusterId, id, source, at) => {
+    const project = PROJECTS.find((p) => p.id === source.project_id);
+    const action = rerunActionOf(project.id, source.environment);
+    const named = rerunArgs(clusterId, source.id);
+    return {
+      row: {
+        id,
+        project_id: project.id,
+        action_id: action.id,
+        action_name: action.name,
+        origin: 'page',
+        kind: 'tests',
+        source_run_id: source.id,
+        cluster_id: clusterId,
+        test_case_id: null,
+        provider: 'ci-server',
+        preset: 'jenkins',
+        ref: null,
+        inputs: JSON.stringify(
+          Object.fromEntries(action.inputs.map((i) => [i.name, i.kind === 'fixed' ? i.value : i.default])),
+        ),
+        args: named.args,
+        files: JSON.stringify(named.files),
+        tests: named.tests,
+        url: jenkinsJobUrl(action.target.fields.job),
+        provider_run_id: null,
+        state: 'unreported',
+        detail: null,
+        run_id: null,
+        by_user_id: DEFAULT_DEMO_USER.id,
+        by_name: DEFAULT_DEMO_USER.name,
+        created_at: at,
+        matched_at: null,
+        updated_at: at + 6 * 3600 * 1000,
+      },
+      action,
+      named,
+    };
+  };
+
+  // Cluster 6: re-run from its last failing run two hours after its fix landed, answered by a one-test run.
+  {
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === 6);
+    const source = TEST_RUNS.find((r) => r.id === cluster.last_seen_run_id);
+    const landed = TEST_RUNS.find((r) => r.id === cluster.fix_landed_run_id);
+    const at = landed.start_time * 1000 + 2 * 3600 * 1000;
+    const { row, action, named } = dispatchOf(6, '5d1c0a0000000006', source, at);
+    if (at + 10 * 60 * 1000 > newestRunMs) throw new Error('Cluster 6’s re-run would start after the newest run');
+    // Past every run and execution the generator made, so no other id moves.
+    const rerunId = Math.max(...TEST_RUNS.map((r) => r.id)) + 1;
+    let executionId = Math.max(...TEST_RUNS_CASES.map((c) => c.id));
+    const startTime = Math.floor((at + 4 * 60 * 1000) / 1000);
+    const buildNumber = String(1300 + rerunId);
+    const buildUrl = `${jenkinsJobUrl(action.target.fields.job)}${buildNumber}/`;
+    const executions = named.cases.map((failed) => {
+      // A pass of the same test in the same project, as the re-run's own execution.
+      const pass = TEST_RUNS_CASES.find(
+        (c) =>
+          c.test_case_id === failed.test_case_id &&
+          c.browser_name === failed.browser_name &&
+          c.status === 'passed' &&
+          !c.retries,
+      );
+      if (!pass) throw new Error(`No passing execution of test ${failed.test_case_id} to re-run`);
+      return { ...pass, id: ++executionId, test_run_id: rerunId };
+    });
+    const duration = executions.reduce((sum, e) => sum + (e.duration ?? 0), 0) + 4000;
+    const metadata = {
+      ...source.metadata,
+      ci: { ...source.metadata.ci, buildNumber, buildUrl },
+      piwiOrigin: { kind: 'ci-rerun', ref: row.id },
+    };
+    TEST_RUNS.push({
+      ...source,
+      id: rerunId,
+      status: 'passed',
+      start_time: startTime,
+      duration,
+      total_tests: executions.length,
+      passed_tests: executions.length,
+      failed_tests: 0,
+      skipped_tests: 0,
+      did_not_run_tests: 0,
+      flaky_tests: 0,
+      label: null,
+      metadata,
+      origin: 'ci-rerun',
+      is_full_run: 0,
+    });
+    TEST_RUNS_CASES.push(...executions);
+    CI_DISPATCHES.push({
+      ...row,
+      url: buildUrl,
+      state: 'ended',
+      run_id: rerunId,
+      matched_at: startTime * 1000,
+      updated_at: startTime * 1000 + duration,
+    });
+  }
+
+  // Cluster 3: re-run from a failure more than eight hours before the newest run; nothing answered it.
+  {
+    const failed = clusterStats[3].failedRuns.find((r) => r.startMs <= newestRunMs - 8 * 60 * 60 * 1000);
+    if (!failed) throw new Error('Cluster 3 has no failure eight hours before the newest run');
+    const source = TEST_RUNS.find((r) => r.id === failed.runId);
+    CI_DISPATCHES.push(dispatchOf(3, '5d1c0a0000000003', source, failed.startMs + 30 * 60 * 1000).row);
+  }
+}
+
 // ── Test management (the checkout project's Zephyr Scale binding and catalog) ─────────────────────
 // The checkout project is bound to the demo's Zephyr Scale connection in dry run, and its catalog is the demo tool's
 // cases (`shared/demo/demo-test-management.mjs`). Both are written in ms and rebased with the rest. Settings mirror
@@ -7873,6 +8221,7 @@ const lines = [
   '-- Credentials (Settings → Credentials) and their log',
   insert('credentials', CREDENTIALS),
   insert('credential_projects', CREDENTIAL_PROJECTS),
+  insert('credential_user_tokens', CREDENTIAL_USER_TOKENS),
   insert('credential_uses', CREDENTIAL_USES),
   '',
   '-- Starred projects (of the identity the demo opens as)',
@@ -7949,6 +8298,9 @@ const lines = [
   '',
   '-- Failure clusters',
   insert('failure_clusters', FAILURE_CLUSTERS),
+  '',
+  '-- CI dispatches (reference failure_clusters)',
+  insert('ci_dispatches', CI_DISPATCHES),
   '',
   '-- Demo AI diagnoses',
   insert('failure_diagnoses', FAILURE_DIAGNOSES),

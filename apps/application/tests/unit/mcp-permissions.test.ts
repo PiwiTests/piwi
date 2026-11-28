@@ -212,7 +212,7 @@ const REST_TWINS: Record<string, string[]> = {
   dismiss_quarantine_proposal: ['projects/[id]/quarantine/[testCaseId]/dismiss.post.ts'],
   set_test_quarantine: ['projects/[id]/quarantine.post.ts', 'projects/[id]/quarantine/[testCaseId].delete.ts'],
   set_bug_report_status: ['bug-reports/[id].patch.ts'],
-  rerun_cluster_in_ci: ['failure-clusters/[id]/rerun.post.ts'],
+  rerun_cluster_in_ci: ['projects/[id]/ci-dispatches.post.ts'],
   set_cluster_bisect: ['failure-clusters/[id]/bisect.post.ts'],
   record_diagnosis: ['failure-clusters/[id]/agent-diagnosis.post.ts', 'test-run-cases/[id]/agent-diagnosis.post.ts'],
   report_fix_attempt: ['failure-clusters/[id]/fix-attempts.post.ts'],

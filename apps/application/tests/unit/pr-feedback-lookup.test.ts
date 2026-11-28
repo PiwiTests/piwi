@@ -47,8 +47,8 @@ describe('findRunPullRequestNumber', () => {
 
 describe('ciNamesRepository', () => {
   test("a number from the CI of the repository Piwi posts to is that repository's", () => {
-    expect(ciNamesRepository('PiwiTests/piwi', 'https://github.com/piwitests/piwi')).toBe(true);
-    expect(ciNamesRepository(null, 'https://github.com/piwitests/piwi')).toBe(true);
+    expect(ciNamesRepository('piwitests/piwi', 'https://github.com/PiwiTests/piwi')).toBe(true);
+    expect(ciNamesRepository(null, 'https://github.com/PiwiTests/piwi')).toBe(true);
   });
 
   test("a suite checked out from another repository names its CI's pull requests, not this one's", () => {

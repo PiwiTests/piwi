@@ -9,6 +9,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createServer, type AddressInfo } from 'node:net';
+import { createServer as createHttpServer } from 'node:http';
 import { getRequestHeader, type H3Event } from 'h3';
 import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
@@ -20,7 +21,7 @@ import { ASSISTANT_BLOCK_LIMITS } from '#shared/assistant-blocks';
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
 
-const RUNTIME_CONFIG = () => ({ ai: {}, authEnabled: false, app: { baseURL: '/' }, public: { appVersion: '0.59.0' } });
+const RUNTIME_CONFIG = () => ({ ai: {}, authEnabled: false, app: { baseURL: '/' }, appVersion: '0.59.0', public: {} });
 vi.stubGlobal('useRuntimeConfig', RUNTIME_CONFIG);
 // Nitro auto-imports it into the server code these tests load.
 vi.stubGlobal('getRequestHeader', getRequestHeader);
@@ -65,6 +66,7 @@ function request(opts: {
     node: {
       req: {
         headers: { host: '127.0.0.1:3000', ...opts.headers },
+        on: () => {},
         socket: {
           remoteAddress: opts.peer ?? '127.0.0.1',
           localPort: opts.localPort,
@@ -126,8 +128,11 @@ describe('the turn token', () => {
 
     expect(tokens.assistantTurnRouteConversation('POST', ENDPOINT)).toBe(7);
     expect(tokens.assistantTurnRouteConversation('POST', `${ENDPOINT}?x=1`)).toBe(7);
+    // A client opens a GET after its notifications, which the endpoint answers with 405.
+    expect(tokens.assistantTurnRouteConversation('GET', ENDPOINT)).toBe(7);
+    expect(tokens.assistantTurnRouteConversation('DELETE', ENDPOINT)).toBe(7);
     for (const [method, path] of [
-      ['GET', ENDPOINT],
+      ['PUT', ENDPOINT],
       ['POST', '/api/assistant/conversations/7/messages'],
       ['POST', '/api/assistant/conversations/7/mcp/x'],
       ['POST', '/mcp'],
@@ -224,7 +229,11 @@ describe('the desktop guard', () => {
     ]) {
       expect(() => guard(request({ path, headers: bearer })), path).toThrow(refused);
     }
-    expect(() => guard(request({ method: 'GET', path: ENDPOINT, headers: bearer }))).toThrow(refused);
+    // The GET and DELETE a client sends there reach the endpoint's 405 on the same token; any other method does not.
+    expect(() => guard(request({ method: 'GET', path: ENDPOINT, headers: bearer }))).not.toThrow();
+    expect(() => guard(request({ method: 'DELETE', path: ENDPOINT, headers: bearer }))).not.toThrow();
+    expect(() => guard(request({ method: 'PUT', path: ENDPOINT, headers: bearer }))).toThrow(refused);
+    expect(() => guard(request({ method: 'GET', path: ENDPOINT }))).toThrow(refused);
     expect(() => guard(request({ path: ENDPOINT, headers: { ...bearer, host: 'piwi.example.com' } }))).toThrow(refused);
     expect(() => guard(request({ path: ENDPOINT, headers: { ...bearer, origin: 'https://evil.example' } }))).toThrow(
       refused,
@@ -294,6 +303,23 @@ type RpcResult = { id: number; result?: any; error?: { code: number; message: st
 
 async function send(turn: AssistantTurnTools, body: unknown, acceptsStream = false) {
   return answerTurnMcp(turn, body, { version: '0.59.0', acceptsStream });
+}
+
+const MODERN_META = {
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientCapabilities': {},
+};
+
+/** A request as a 2026-07-28 client sends it: its version in `_meta`, mirrored in the headers. */
+function modern(id: number, method: string, params: Record<string, unknown> = {}) {
+  return {
+    body: rpc(id, method, { ...params, _meta: MODERN_META }),
+    headers: {
+      protocolVersion: '2026-07-28',
+      method,
+      ...(typeof params.name === 'string' ? { name: params.name } : {}),
+    },
+  };
 }
 
 async function json(turn: AssistantTurnTools, body: unknown): Promise<RpcResult> {
@@ -424,6 +450,89 @@ describe("a turn's MCP endpoint", () => {
     expect((await send(turn, toolCall(7, 'list_projects'), true)).kind).toBe('json');
   });
 
+  test('serves a 2026-07-28 client: server/discover, results it can cache, an unknown method as a 404', async () => {
+    const { turn } = await turnOf(member);
+    const ask = async (id: number, method: string, params: Record<string, unknown> = {}) => {
+      const { body, headers } = modern(id, method, params);
+      return answerTurnMcp(turn, body, { version: '0.59.0', acceptsStream: true, headers });
+    };
+    const discovered = await ask(1, 'server/discover');
+    expect(discovered).toMatchObject({
+      kind: 'json',
+      status: 200,
+      body: {
+        result: {
+          resultType: 'complete',
+          supportedVersions: expect.arrayContaining(['2026-07-28']),
+          capabilities: { tools: { listChanged: true } },
+          ttlMs: 0,
+          cacheScope: 'private',
+          _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-assistant', version: '0.59.0' } },
+        },
+      },
+    });
+    expect(await ask(2, 'tools/list')).toMatchObject({ status: 200, body: { result: { resultType: 'complete' } } });
+    expect(await ask(3, 'resources/templates/list')).toMatchObject({ status: 404, body: { error: { code: -32601 } } });
+
+    const unsupported = await answerTurnMcp(turn, rpc(4, 'tools/list'), {
+      version: '0.59.0',
+      acceptsStream: false,
+      headers: { protocolVersion: '1900-01-01' },
+    });
+    expect(unsupported).toMatchObject({ kind: 'json', status: 400, body: { error: { code: -32022 } } });
+  });
+
+  test('tells a 2026-07-28 client of the tools find_tools added on its subscriptions/listen stream, not the call', async () => {
+    const { turn } = await turnOf(member);
+    const changes: string[] = [];
+    const { body, headers } = modern(5, 'tools/call', {
+      name: 'find_tools',
+      arguments: { query: 'coverage of a file' },
+    });
+    const reply = await answerTurnMcp(turn, body, {
+      version: '0.59.0',
+      acceptsStream: true,
+      headers,
+      toolsChanged: () => changes.push('tools'),
+    });
+    expect(reply).toMatchObject({ kind: 'json', status: 200, body: { id: 5, result: { resultType: 'complete' } } });
+    expect(changes).toEqual(['tools']);
+
+    const listen = modern(6, 'subscriptions/listen', {
+      notifications: { toolsListChanged: true, promptsListChanged: true },
+    });
+    expect(
+      await answerTurnMcp(turn, listen.body, { version: '0.59.0', acceptsStream: true, headers: listen.headers }),
+    ).toEqual({ kind: 'listen', id: 6, honored: { toolsListChanged: true } });
+    const quiet = modern(7, 'subscriptions/listen', { notifications: { promptsListChanged: true } });
+    expect(
+      await answerTurnMcp(turn, quiet.body, { version: '0.59.0', acceptsStream: true, headers: quiet.headers }),
+    ).toEqual({ kind: 'listen', id: 7, honored: {} });
+    // A legacy client has no subscriptions/listen.
+    expect(
+      (await json(turn, rpc(8, 'subscriptions/listen', { notifications: { toolsListChanged: true } }))).error?.code,
+    ).toBe(-32601);
+  });
+
+  test('refuses an empty batch with one Invalid Request error', async () => {
+    const { turn } = await turnOf(member);
+    expect(await send(turn, [])).toEqual({
+      kind: 'json',
+      status: 400,
+      body: { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request: an empty batch.' } },
+    });
+  });
+
+  test("ends a stream added after the turn's end at once", () => {
+    const listeners = new tokens.AssistantTurnListeners();
+    const ended: string[] = [];
+    listeners.add({ toolsChanged: () => {}, end: () => ended.push('first') });
+    listeners.end();
+    listeners.add({ toolsChanged: () => {}, end: () => ended.push('late') });
+    listeners.toolsChanged();
+    expect(ended).toEqual(['first', 'late']);
+  });
+
   test('refuses arguments that are not an object, and a call without a name', async () => {
     const { turn, events } = await turnOf(member);
     const bad = await json(turn, toolCall(1, 'list_projects', [1, 2]));
@@ -449,12 +558,14 @@ describe("a turn's MCP endpoint", () => {
 describe('the route', () => {
   let route: (event: H3Event) => Promise<unknown>;
   const headers = new Map<string, string>();
+  const statuses: number[] = [];
 
   beforeAll(async () => {
     vi.stubGlobal('defineRouteMeta', () => {});
     vi.stubGlobal('eventHandler', (handler: unknown) => handler);
     vi.stubGlobal('readBody', async (event: { body?: unknown }) => event.body);
     vi.stubGlobal('setResponseHeader', (_event: unknown, name: string, value: string) => headers.set(name, value));
+    vi.stubGlobal('setResponseStatus', (_event: unknown, status: number) => statuses.push(status));
     vi.stubGlobal(
       'getRouterParam',
       (event: { context: { params: Record<string, string> } }, name: string) => event.context.params[name],
@@ -474,7 +585,8 @@ describe('the route', () => {
     const listed = (await call(ENDPOINT, '7')) as RpcResult;
     expect(listed.result.tools.map((t: { name: string }) => t.name)).toContain('list_projects');
     expect(headers.get('Content-Type')).toBe('application/json');
-    expect(await call(ENDPOINT, '7', {}, rpc(null, 'notifications/initialized'))).toBeNull();
+    expect(await call(ENDPOINT, '7', {}, rpc(null, 'notifications/initialized'))).toBe('');
+    expect(statuses.at(-1)).toBe(202);
 
     await expect(call('/api/assistant/conversations/8/mcp', '8')).rejects.toMatchObject({ statusCode: 401 });
     await expect(call(ENDPOINT, '7', { host: 'piwi.example.com' })).rejects.toMatchObject({ statusCode: 401 });
@@ -483,6 +595,131 @@ describe('the route', () => {
     ).rejects.toMatchObject({ statusCode: 401 });
     turn.revoke();
     await expect(call(ENDPOINT, '7')).rejects.toMatchObject({ statusCode: 401 });
+  });
+});
+
+describe('the route on a real server', () => {
+  /** The routes served by h3 on a local port, as Nitro serves them, Nitro's auto-imports being h3's own. */
+  async function serve() {
+    const h3 = await import('h3');
+    const real = {
+      readBody: h3.readBody,
+      setResponseStatus: h3.setResponseStatus,
+      setResponseHeader: h3.setResponseHeader,
+      setResponseHeaders: h3.setResponseHeaders,
+      getRouterParam: h3.getRouterParam,
+      apiError: (opts: { statusCode: number; message?: string }) => h3.createError(opts),
+      defineRouteMeta: () => {},
+      eventHandler: (handler: unknown) => handler,
+    };
+    for (const [name, value] of Object.entries(real)) vi.stubGlobal(name, value);
+    const post = (await import('../../server/api/assistant/conversations/[id]/mcp.post')).default;
+    const get = (await import('../../server/api/assistant/conversations/[id]/mcp.get')).default;
+    const app = h3.createApp();
+    const router = h3.createRouter();
+    router.post('/api/assistant/conversations/:id/mcp', h3.eventHandler(post as never));
+    router.get('/api/assistant/conversations/:id/mcp', h3.eventHandler(get as never));
+    app.use(router);
+    const server = createHttpServer(h3.toNodeListener(app));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return { server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}${ENDPOINT}` };
+  }
+
+  test('holds a subscriptions/listen stream open, tells it of tool changes, and ends it with the answer', async () => {
+    const { server, url } = await serve();
+    try {
+      const { turn: tools_ } = await turnOf(member);
+      const turn = tokens.mintAssistantTurnToken({ conversationId: 7, ownerId: 2, tools: tools_ }, 60_000);
+      const authorization = `Bearer ${turn.token}`;
+      const post = (id: number, method: string, params: Record<string, unknown> = {}) => {
+        const { body, headers: mirrored } = modern(id, method, params);
+        return fetch(url, {
+          method: 'POST',
+          headers: {
+            authorization,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+            'mcp-protocol-version': mirrored.protocolVersion,
+            'mcp-method': mirrored.method,
+            ...(mirrored.name ? { 'mcp-name': mirrored.name } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+      };
+
+      const listen = await post(1, 'subscriptions/listen', { notifications: { toolsListChanged: true } });
+      expect(listen.status).toBe(200);
+      expect(listen.headers.get('content-type')).toBe('text/event-stream');
+      const reader = listen.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffered = '';
+      const next = async () => {
+        for (;;) {
+          const end = buffered.indexOf('\n\n');
+          if (end >= 0) {
+            const frame = buffered.slice(0, end);
+            buffered = buffered.slice(end + 2);
+            const data = frame.split('\n').find((line) => line.startsWith('data: '));
+            if (data) return JSON.parse(data.slice('data: '.length));
+            continue;
+          }
+          const { value, done } = await reader.read();
+          if (done) return null;
+          buffered += decoder.decode(value, { stream: true });
+        }
+      };
+      const meta = { 'io.modelcontextprotocol/subscriptionId': 1 };
+      expect(await next()).toEqual({
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: { _meta: meta, notifications: { toolsListChanged: true } },
+      });
+
+      const called = await post(2, 'tools/call', { name: 'find_tools', arguments: { query: 'coverage of a file' } });
+      expect(await called.json()).toMatchObject({ id: 2, result: { resultType: 'complete', isError: false } });
+      expect(await next()).toEqual({
+        jsonrpc: '2.0',
+        method: 'notifications/tools/list_changed',
+        params: { _meta: meta },
+      });
+
+      turn.revoke();
+      expect(await next()).toEqual({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          resultType: 'complete',
+          _meta: { ...meta, 'io.modelcontextprotocol/serverInfo': { name: 'piwi-assistant', version: '0.59.0' } },
+        },
+      });
+      expect(await next()).toBeNull();
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  test('answers notifications with 202 and the GET a client opens after them with 405', async () => {
+    const { server, url } = await serve();
+    try {
+      const { turn: tools_ } = await turnOf(member);
+      const turn = tokens.mintAssistantTurnToken({ conversationId: 7, ownerId: 2, tools: tools_ }, 60_000);
+      const authorization = `Bearer ${turn.token}`;
+      const notified = await fetch(url, {
+        method: 'POST',
+        headers: { authorization, 'content-type': 'application/json', 'mcp-protocol-version': '2025-06-18' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      });
+      expect(notified.status).toBe(202);
+      expect(await notified.text()).toBe('');
+      const opened = await fetch(url, { headers: { authorization, accept: 'text/event-stream' } });
+      expect(opened.status).toBe(405);
+      expect(opened.headers.get('allow')).toBe('POST');
+      turn.revoke();
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
   });
 });
 

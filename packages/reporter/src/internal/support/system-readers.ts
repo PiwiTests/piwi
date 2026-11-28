@@ -181,7 +181,8 @@ export function parseWindowsProcesses(text: string): WindowsProcess[] {
  */
 export function roleOf(comm: string, cmdline: string): ProcessRole | null {
   const command = `${comm} ${cmdline}`;
-  // Playwright's workers run `workerProcessEntry`, and before 1.60 its `lib/common/process.js`.
+  // Playwright's workers run `workerProcessEntry`, and before 1.60 its `lib/common/process.js`, on the runtime that
+  // forked them (`node`, or `bun` under `bunx --bun`): the script names a worker, the executable does not.
   if (/workerProcessEntry|[\\/]playwright[\\/]lib[\\/]common[\\/]process\.js/.test(cmdline)) return 'worker';
   if (/loaderProcessEntry/.test(cmdline)) return 'runner';
   if (/(^|[\s/])ffmpeg/.test(command)) return 'ffmpeg';

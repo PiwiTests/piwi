@@ -72,9 +72,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
-      # pages and the changelog for its MCP tools. `js` is every workspace the five check jobs (`lint`, `app-unit`,
-      # `reporter`, `reporter-floor`, `packages`) format, lint and test, and what knip reads besides them (its config, the
-      # configs of the tools it knows, the git hooks).
+      # pages and the changelog for its MCP tools. `js` is every workspace the six check jobs (`lint`, `app-unit`,
+      # `reporter`, `reporter-floor`, `reporter-latest`, `packages`) format, lint and test, and what knip reads besides
+      # them (its config, the configs of the tools it knows, the git hooks), and the `playwright-cli` skill copy an
+      # `app-unit` test compares.
       - name: Read the areas the change touches
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -130,6 +131,7 @@ jobs:
               - 'commitlint.config.js'
               - '.husky/**'
               - '.editorconfig'
+              - '.claude/skills/playwright-cli/**'
             extension:
               - 'apps/extension/**'
               - 'packages/core/**'
@@ -209,8 +211,9 @@ jobs:
 
       # Storage and database are independent axes: a pull request runs each implementation once (local + sqlite, on
       # the dashboard's Node 22 engines floor, and s3 + postgres), main runs every pair. Windows and macOS catch what
-      # breaks only on their paths or native binaries, and a Linux leg installs the oldest Playwright the reporter
-      # supports: a pull request runs them when it changes the packages or their dependencies, main always.
+      # breaks only on their paths or native binaries, a Linux leg runs Node 26 (the Node of Playwright's own images),
+      # two Linux legs install the oldest Playwright the reporter supports and the latest release, and a Linux leg runs
+      # the suite on Bun: a pull request runs them when it changes the packages or their dependencies, main always.
       - name: Pick the E2E backends and the package smoke systems
         id: matrices
         env:
@@ -224,7 +227,7 @@ jobs:
 
           systems='[{"os":"ubuntu-latest","node":"22"}]'
           if [ "$ON_MAIN" = true ] || [ "$PACKAGES_CHANGED" = true ]; then
-            systems='[{"os":"ubuntu-latest","node":"22"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"24"},{"os":"ubuntu-latest","node":"24","playwright":"floor"}]'
+            systems='[{"os":"ubuntu-latest","node":"22"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"24"},{"os":"ubuntu-latest","node":"26"},{"os":"ubuntu-latest","node":"24","playwright":"floor"},{"os":"ubuntu-latest","node":"24","playwright":"latest"},{"os":"ubuntu-latest","node":"24","bun":"1.4.4"}]'
           fi
           echo "smoke=$systems" >> "$GITHUB_OUTPUT"
 
@@ -537,6 +540,71 @@ jobs:
         working-directory: packages/reporter
         run: xvfb-run -a npm run reporter:test
 
+  # The reporter's suite and its two integration suites on the latest Playwright release, which the peer range admits
+  # before the lockfile moves to it (scripts/playwright-floor.mjs). It stops after reading the version while the
+  # lockfile holds that release (the `reporter` job runs them) or when the release is outside the peer range (2.0 and
+  # later).
+  reporter-latest:
+    name: Reporter tests (Playwright latest)
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: ./.github/actions/setup-workspace
+        with:
+          install: 'false'
+
+      - name: Read the latest Playwright release
+        id: release
+        run: |
+          latest=$(node scripts/playwright-floor.mjs latest)
+          locked=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          echo "Latest: $latest, locked: $locked"
+          if [ "$latest" = "$locked" ] || [ "${latest%%.*}" != 1 ]; then
+            echo "newer=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up the workspace
+        if: steps.release.outputs.newer == 'true'
+        uses: ./.github/actions/setup-workspace
+
+      # The flake-run and build-output specs load the built package.
+      - name: Build reporter
+        if: steps.release.outputs.newer == 'true'
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Install the latest Playwright
+        if: steps.release.outputs.newer == 'true'
+        run: node scripts/playwright-floor.mjs --install latest
+
+      - name: Install its Chromium
+        if: steps.release.outputs.newer == 'true'
+        run: npx playwright install chromium --with-deps
+
+      - name: Test
+        if: steps.release.outputs.newer == 'true'
+        working-directory: packages/reporter
+        run: xvfb-run -a npm run reporter:test
+
+      - name: Test the AI steps (integration, drives a real browser)
+        if: steps.release.outputs.newer == 'true'
+        working-directory: packages/reporter
+        run: npm run reporter:test:integration:ai
+
+      - name: Test the capture fixtures (integration, drives a real browser)
+        if: steps.release.outputs.newer == 'true'
+        working-directory: packages/reporter
+        run: npm run reporter:test:integration
+
   packages:
     name: Package tests
     needs: changes
@@ -816,10 +884,12 @@ jobs:
   # Installs the packed @piwitests/server and @piwitests/reporter into a new project,
   # starts the server with `npx @piwitests/server` and runs a suite through the reporter
   # (scripts/package-smoke.mjs). Windows and macOS catch what breaks only on their paths
-  # or native binaries; the Linux leg runs the server package's Node 22 floor, and the
-  # `playwright: floor` leg the reporter's Playwright floor (scripts/playwright-floor.mjs).
+  # or native binaries; the Linux legs run the server package's Node 22 floor and Node 26,
+  # the Node of Playwright's own images, the `playwright` legs the reporter's Playwright
+  # floor and the latest release (scripts/playwright-floor.mjs), and the `bun` leg the suite
+  # on that Bun (`bunx --bun playwright test`), the reporter and the capture fixtures with it.
   package-smoke:
-    name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }}${{ matrix.playwright && ', Playwright floor' || '' }})
+    name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }}${{ matrix.playwright && format(', Playwright {0}', matrix.playwright) || '' }}${{ matrix.bun && format(', Bun {0}', matrix.bun) || '' }})
     runs-on: ${{ matrix.os }}
     needs: [changes, build]
     if: needs.changes.outputs.app == 'true'
@@ -841,6 +911,12 @@ jobs:
           node-version: ${{ matrix.node }}
           install: 'false'
 
+      - name: Set up Bun
+        if: matrix.bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ matrix.bun }}
+
       - name: Download npm packages
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -848,7 +924,7 @@ jobs:
           path: npm-packages
 
       - name: Install the packages and report a run through them
-        run: node scripts/package-smoke.mjs npm-packages ${{ matrix.playwright == 'floor' && '--playwright floor' || '' }}
+        run: node scripts/package-smoke.mjs npm-packages ${{ matrix.playwright && format('--playwright {0}', matrix.playwright) || '' }} ${{ matrix.bun && '--runtime bun' || '' }}
 
   demo:
     name: Test demo generation
@@ -1121,7 +1197,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, runner, perf-base, perf]
+    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, reporter-latest, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, runner, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

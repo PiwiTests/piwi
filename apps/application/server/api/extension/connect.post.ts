@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Extension'],
     summary: 'Start connecting the browser extension, an editor or a run target',
     description:
-      'Starts an RFC 8628 device authorization for Piwi Picker, the VS Code extension, the JetBrains plugin or a run target (the desktop app, Piwi Runner). Answers a device code for the client to poll `/api/extension/connect/token` with, and a user code with the page where a signed-in user allows or denies the connection. The request expires after 10 minutes. Body: `{ browser?, os? }` from Piwi Picker, `{ editor, os? }` from an editor, or `{ target: "desktop" | "runner", device, os? }` from a run target, which name the connecting client. The key of a run target holds `run:receive` alone: it receives its owner’s run requests and nothing else. Rate-limited per client address.',
+      'Starts an RFC 8628 device authorization for Piwi Picker, the VS Code extension, the JetBrains plugin or a run target (the desktop app, Piwi Runner). Answers a device code for the client to poll `/api/extension/connect/token` with, and a user code with the page where a signed-in user allows or denies the connection. The request expires after 10 minutes. Body: `{ browser?, os? }` from Piwi Picker, `{ editor, os? }` from an editor, or `{ target: "desktop" | "runner", device, os? }` from a run target, which name the connecting client. The key of a run target holds `run:receive`, which receives its owner’s run requests, and the desktop app’s also `project:read`, which compares a test with a project’s CI (Compare with team instance); it serves nothing else. Rate-limited per client address.',
     security: [],
     responses: {
       200: {

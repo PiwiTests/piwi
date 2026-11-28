@@ -2,12 +2,13 @@
  * The request host: a run target's side of **Run on my machine**. It holds the stream a team instance sends a
  * connected app its run requests and stops on (`GET /api/run-targets/stream`), connects again with a growing pause
  * when it ends, lists the requests every minute while it is open (which keeps the app online) and more often while it
- * is not, and makes the target's calls: claim, answer, state, and describe this app. It runs no test and reads no
- * folder: the host of the target (the desktop app's server, Piwi Runner) asks the person, checks the folder
- * (`./request-run`) and starts the run.
+ * is not, and makes the target's calls: claim, answer, state, describe this app, and compare a test with the
+ * project's CI (Compare with team instance). It runs no test and reads no folder: the host of the target (the desktop
+ * app's server, Piwi Runner) asks the person, checks the folder (`./request-run`) and starts the run.
  *
- * Every call carries the target's key, which holds `run:receive` alone, as a bearer token, through `instanceFetch`.
- * The device flow that gives the target its key (`postDeviceFlow`) goes through it too, with no key.
+ * Every call carries the target's key, which holds `run:receive` and, for the desktop app, `project:read`, as a bearer
+ * token, through `instanceFetch`. The device flow that gives the target its key (`postDeviceFlow`) goes through it
+ * too, with no key.
  */
 import {
   parseRunRequest,
@@ -78,6 +79,8 @@ export interface RequestHostOptions {
   holds?: (id: string) => boolean;
   /** The instance named projects this target may take requests for: each one's id and its label, else its name. */
   onProjectNames?: (projects: ProjectName[]) => void;
+  /** The instance said whether the key may compare a test with its CI; null from an instance that does not say. */
+  onCompares?: (compares: boolean | null) => void;
   /** The connection changed: `revoked` once the key or its app was disconnected, after which the host stops. */
   onStatus?: (status: RequestHostStatus, detail?: string) => void;
   /**
@@ -110,14 +113,18 @@ const DEFAULT_TIMING = {
   idleMs: 60_000,
 };
 
-/** A refusal of a target route, with the instance's status. */
 /** How long reading a request's run variables may take before the plan fails, in milliseconds. */
 const RUN_VARIABLES_WAIT_MS = 15_000;
 
+/** How long a comparison with the project's CI may take, in milliseconds. */
+const COMPARE_WAIT_MS = 15_000;
+
+/** A refusal of a target route, with the instance's status and its `data.errorCode`, null without one. */
 export class RequestHostError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code: string | null = null,
   ) {
     super(message);
   }
@@ -135,13 +142,13 @@ const KEY_REVOKED_MESSAGE = 'Invalid or expired API key';
  * What a refusal says: the `message` of its JSON body, empty for a body that is not the instance's, and whether it is
  * the instance's 401 for a key it no longer holds.
  */
-async function readRefusal(response: Response): Promise<{ message: string; keyGone: boolean }> {
+async function readRefusal(response: Response): Promise<{ message: string; keyGone: boolean; code: string | null }> {
   type Body = { message?: unknown; data?: { errorCode?: unknown } | null } | null;
   const body = (await response.json().catch(() => null)) as Body;
   const message = typeof body?.message === 'string' ? body.message : '';
-  const keyGone =
-    response.status === 401 && (body?.data?.errorCode === KEY_REVOKED_CODE || message === KEY_REVOKED_MESSAGE);
-  return { message, keyGone };
+  const code = typeof body?.data?.errorCode === 'string' ? body.data.errorCode : null;
+  const keyGone = response.status === 401 && (code === KEY_REVOKED_CODE || message === KEY_REVOKED_MESSAGE);
+  return { message, keyGone, code };
 }
 
 /**
@@ -329,15 +336,43 @@ export class RequestHost {
     }
   }
 
-  /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */
+  /**
+   * Tell the instance this app's platform, version and the projects it has a folder for; it names them back, and says
+   * whether the key may compare a test with its CI.
+   */
   async describe(): Promise<void> {
     const { platform, version, projectIds } = this.options.describe();
-    const described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', {
+    const described = await this.call<{ projects?: unknown; compares?: unknown }>('PUT', '/api/run-targets/self', {
       platform,
       version,
       projectIds: projectIds.slice(0, 200),
     });
-    if (!this.stopped) this.takeNames(described?.projects);
+    if (this.stopped) return;
+    this.takeNames(described?.projects);
+    this.options.onCompares?.(typeof described?.compares === 'boolean' ? described.compares : null);
+  }
+
+  /**
+   * How a test does in project `projectId`'s CI (`GET /api/run-targets/projects/:id/test-comparison`), as the instance
+   * answers it: the reader checks its shape. `query` names the test and what the instance compares it with. A refusal
+   * throws a `RequestHostError` with the instance's code, and refuses this comparison alone: the key lacking
+   * `project:read` (`RUN_TARGET_KEY_CANNOT_COMPARE`), the project declining it or its owner not reading it.
+   */
+  async compare(projectId: number, query: Readonly<Record<string, string>>): Promise<unknown> {
+    if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new RequestHostError(404, 'No such project');
+    const search = new URLSearchParams(query).toString();
+    return this.call('GET', `/api/run-targets/projects/${projectId}/test-comparison?${search}`, undefined, {
+      onlyRequest: true,
+      timeoutMs: COMPARE_WAIT_MS,
+    });
+  }
+
+  /**
+   * The projects the app's owner can read on the instance (`GET /api/run-targets/projects`), as the instance answers
+   * them: the reader checks their shape. A key lacking `project:read` throws `RUN_TARGET_KEY_CANNOT_COMPARE`.
+   */
+  async projects(): Promise<unknown> {
+    return this.call('GET', '/api/run-targets/projects', undefined, { onlyRequest: true, timeoutMs: COMPARE_WAIT_MS });
   }
 
   /**
@@ -392,11 +427,11 @@ export class RequestHost {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     if (!response.ok) {
-      const { message, keyGone } = await readRefusal(response);
+      const { message, keyGone, code } = await readRefusal(response);
       if (response.status === 401 || (!onlyRequest && isRevokedStatus(response.status))) {
         this.revoked(message, keyGone);
       }
-      throw new RequestHostError(response.status, message || `The instance answered ${response.status}`);
+      throw new RequestHostError(response.status, message || `The instance answered ${response.status}`, code);
     }
     return (await response.json().catch(() => ({}))) as T;
   }

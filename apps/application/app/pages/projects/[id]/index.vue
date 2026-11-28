@@ -22,6 +22,8 @@ import { refetchKeeping } from '~/utils/refetch-keeping';
 import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
+import type { CiDispatchView } from '#shared/ci-dispatches';
+import type { RunWhat } from '~/composables/useRunPlace';
 import { projectMenuPageHidden, projectTabHidden } from '~/utils/project-tabs';
 import {
   PROJECT_FAILURE_VIEWS,
@@ -65,7 +67,7 @@ const refresh = refetchKeeping(project, () =>
 provideExternalIdUrl(() => project.value?.externalIdUrl);
 provideTestManagementKeys(() => project.value?.id);
 
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi` })));
 
 const toast = useToast();
 
@@ -73,6 +75,21 @@ const { can } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
 // Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
+
+// The run button: the project's whole suite, or its tests carrying the tags picked in the dialog, on its default
+// branch, which only CI runs. A dispatch sent from it shows at once among the runs list's waiting rows.
+const machine = await useRunOnMyMachine(Number(projectId));
+const sentDispatch = shallowRef<CiDispatchView | null>(null);
+const runPlace = await useRunPlace({
+  projectId: Number(projectId),
+  machine,
+  whats: (): RunWhat[] => [
+    { key: 'suite', label: 'The whole suite', wholeSuite: true, app: null, ci: { source: {} } },
+    { key: 'tags', label: 'Tests tagged…', app: null, ci: { source: { tags: [] } } },
+  ],
+  prefersCi: () => true,
+  onDispatched: (dispatch) => (sentDispatch.value = dispatch),
+});
 
 // *Quality report*: this project as a quality report over the last 30 days, the project page's own window.
 const reportOpen = ref(false);
@@ -582,6 +599,16 @@ watch(activeTab, (tab) => {
   void replaceQuery(router, patch);
 });
 
+// === RUNS TAB: waiting rows ===
+// What no run has answered yet, above the runs whatever the filters: the list of kept runs, or of a period from
+// Analytics, has none.
+const { rows: waitingRows } = await useWaitingRuns(Number(projectId), {
+  dispatches: () => !!project.value?.ciRerun?.enabled,
+  requests: () => machine.shown.value,
+  shown: () => activeTab.value === 'runs' && !keptOnly.value && !drill.value?.period,
+  sent: () => sentDispatch.value,
+});
+
 // The page scrolls inside its own body; each tab keeps its position for when
 // the user comes back to the project.
 const scrollEl = ref<HTMLElement | null>(null);
@@ -1001,6 +1028,8 @@ const moreMenuItems = computed(() => {
         </template>
         <template #right>
           <div class="flex items-center gap-1.5 shrink-0">
+            <RunButton :place="runPlace" size="sm" />
+            <RunDialog :place="runPlace" />
             <SubscribeBell
               v-if="!projCapHidden('notifications')"
               :project-id="parseInt(projectId)"
@@ -1199,6 +1228,8 @@ const moreMenuItems = computed(() => {
               </label>
               <HelpHint topic="run.keep" />
             </div>
+
+            <ProjectWaitingRuns v-if="!keptOnly && !drill?.period" :rows="waitingRows" />
 
             <!-- md+ : the runs table; below md a card list keeps it scroll-free -->
             <div class="hidden md:block">
@@ -1591,7 +1622,7 @@ const moreMenuItems = computed(() => {
 
   <!-- Markers slide-over -->
   <ClientOnly>
-    <USlideover v-model:open="markersOpen" title="Timeline markers" :ui="{ content: 'max-w-xl' }">
+    <USlideover v-model:open="markersOpen" title="Timeline markers" :ui="{ content: 'sm:max-w-xl' }">
       <template #body>
         <ProjectTimeline
           :project-id="Number(projectId)"

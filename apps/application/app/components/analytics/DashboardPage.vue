@@ -22,7 +22,7 @@ watch(saved, (value) => {
   if (value && !builtin) view.value = value;
 });
 
-useHead(() => ({ title: `${view.value?.name ?? 'Dashboard'} - Analytics - Piwi Dashboard` }));
+useHead(() => ({ title: `${view.value?.name ?? 'Dashboard'} - Analytics - Piwi` }));
 </script>
 
 <template>

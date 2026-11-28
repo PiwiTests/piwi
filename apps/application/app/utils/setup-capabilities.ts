@@ -298,4 +298,13 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     to: '/settings/ai',
     toLabel: 'Configure AI',
   },
+  {
+    id: 'team-comparison',
+    title: 'Compare with team instance',
+    summary:
+      'A test that fails in the desktop app shows how it does in this instance’s CI: the same error seen here, the results of each environment, and what differs from the closest CI pass.',
+    how: 'Active once someone connects the desktop app to this instance. Decline to refuse every comparison; a project can turn it back on for itself.',
+    icon: 'i-lucide-git-compare-arrows',
+    doc: 'features/compare-with-team',
+  },
 ];

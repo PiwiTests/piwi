@@ -19,7 +19,10 @@ fingerprint hashes the error type, message and locator, **masking what varies**:
 numbers, UUIDs, hashes, ids glued to an underscore (`order_5f3a9c1e2b`), URLs, emails, timestamps, the folders of a
 path under a home folder, CI workspace or Windows drive, a temporary folder's random suffix, an assertion's *expected*
 and *received* values, the elements a strict-mode violation lists, and dynamic locator options such as a row's
-`{ name: '…' }`. The locator's target (test id, role) still tells failures apart.
+`{ name: '…' }`. The locator's target (test id, role) still tells failures apart: the first call of its chain, or for
+a locator inside a frame, the chain up to the first locator in the frame
+(`locator('iframe').first().contentFrame().getByLabel('Card number')`, with `frameLocator()` for any frame).
+`frameLocator('#pay')` and `locator('#pay').contentFrame()` are one frame.
 
 It **ignores the failing stack frame** when the error says what failed, so one root cause reached from several spec
 files, through a helper or page object, stays one cluster. A **generic** error says nothing of its own: it names no
@@ -83,10 +86,10 @@ Top to bottom:
      set up ([troubleshooting](/guide/source-control#troubleshooting)); **Browse commits** picks a baseline when none
      passed. One commit on both sides: the change is not in the code. A cluster first seen in a
      [deployed environment](./deployed-environments#the-first-failing-deploy) leads with its first failing deploy.
-2. The section **Next** points at (the AI diagnosis, the locator fix…) as its own card.
-3. **Affected tests**, picking whose evidence shows, then that evidence.
-4. [**More ways to fix**](./fix-plans#more-ways-to-fix), then the [occurrence chart](#occurrences-over-time) and the
-   activity, folded.
+2. The [occurrence chart](#occurrences-over-time) and the activity, folded.
+3. The section **Next** points at (the AI diagnosis, the locator fix…) as its own card, then the one line of
+   [**More ways to fix**](./fix-plans#more-ways-to-fix), each other way to fix opening in a side panel.
+4. **Affected tests**, picking whose evidence shows, then that evidence, last: nothing follows it.
 
 ### The state line
 
@@ -119,6 +122,11 @@ When a run executes every test of a cluster and all pass, Piwi records the fix (
 - **Diagnosis verified**: the commits since the last failing run touched a file the
   [suggested patch](./ai-diagnosis#validated-patches) named.
 - **Regressed**: a fix was recorded, and the cluster fails again.
+
+<figure>
+  <img src="/screenshots/ci-rerun-last-run.png" alt="A cluster's Verify section: its last re-run, dispatched to Jenkins, links the run that answered it, which passed">
+  <figcaption>The Verify section: the last re-run in CI and the run that answered it.</figcaption>
+</figure>
 
 **A fix needs every affected test to pass** in the Playwright projects it last failed in that the run ran (a `--grep`
 over them is enough), in a run started after the last failing run, at another commit (a pass at the failing commit,

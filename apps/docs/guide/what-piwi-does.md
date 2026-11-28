@@ -6,7 +6,7 @@ lang: en-US
 
 # What Piwi does
 
-Playwright's HTML report is excellent, and it lasts exactly until the next build. Piwi keeps every run instead — every trace and report — and then does something with them: it groups the failures by root cause, scores the flaky tests by what they cost, and finds the locator you should have used. Self-hosted, zero telemetry.
+Playwright's HTML report is excellent, and it lasts exactly until the next build. Piwi keeps every run instead — every trace and report — and then does something with them: it groups the failures by root cause, scores the flaky tests by what they cost, and finds the locator you should have used. Free, self-hosted, zero telemetry.
 
 Everything in the product is in service of **five jobs, in this order**. It's also the test for whether a feature belongs here at all: one that strengthens none of them is an argument against building it.
 

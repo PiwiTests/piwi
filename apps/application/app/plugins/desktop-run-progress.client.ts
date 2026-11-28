@@ -263,7 +263,7 @@ export default defineNuxtPlugin(() => {
     else pushUpdate();
   });
 
-  // Local ("Run locally") runs are driven from the app, so they are the only
+  // Local runs (This computer's) are driven from the app, so they are the only
   // ones it can stop — best-effort, and never allowed to break the progress
   // stream above.
   try {

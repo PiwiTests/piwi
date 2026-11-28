@@ -463,6 +463,17 @@ export class PiwiClient {
   }
 
   /**
+   * Share no read of a project's catalog asked before now, on its way or answered: the next read of its cases asks
+   * the instance, and a read on its way keeps its answer to its own callers.
+   */
+  forgetCatalog(projectId: number): void {
+    const answers = this.answers;
+    if (!answers) return;
+    const prefix = this.answerKey(`/api/projects/${projectId}/test-cases?`);
+    for (const key of answers.keys()) if (key.startsWith(prefix)) answers.delete(key);
+  }
+
+  /**
    * A GET whose request on its way, and its answer for `SHARED_MS`, the clients sharing `answers` reuse: the configs
    * of a repository reading one project read it once per refresh, each getting its own copy of the answer, as if it
    * had parsed it itself. An answer the instance gave an `ETag` (`branch-failures`) is kept past that time and asked
@@ -773,6 +784,38 @@ export class PiwiClient {
   /** Change what a watch of a live run shows (`POST /api/test-runs/:id/live-view/watch`): the instance's answer. */
   changeLiveWatch(runId: number, body: Record<string, unknown>): Promise<Response> {
     return instanceFetch(`${this.connection.serverUrl}/api/test-runs/${runId}/live-view/watch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  }
+
+  /**
+   * **Let it go** on a CI test held at its failure (`POST /api/test-runs/:id/live-view/let-go`), on the watch `body`
+   * names: the instance's answer.
+   */
+  letGo(runId: number, body: Record<string, unknown>): Promise<Response> {
+    return instanceFetch(`${this.connection.serverUrl}/api/test-runs/${runId}/live-view/let-go`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  }
+
+  /**
+   * **Pause**, **Resume** or **End the test** of a CI test (`POST /api/test-runs/:id/live-view/control`), on the watch
+   * `body` names: the instance's answer.
+   */
+  liveControl(runId: number, body: Record<string, unknown>): Promise<Response> {
+    return instanceFetch(`${this.connection.serverUrl}/api/test-runs/${runId}/live-view/control`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

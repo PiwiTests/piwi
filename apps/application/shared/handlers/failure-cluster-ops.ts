@@ -18,6 +18,7 @@ import {
   handbackOutcomes,
   integrationActions,
   mcpToolCalls,
+  ciDispatches,
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
 import { isDeclaredLink } from './known-issues';
@@ -668,7 +669,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .where(eq(failureDiagnosisVersions.clusterId, victimId));
 
     // The victim's history follows it: the fix attempts reported on it, what
-    // Piwi wrote to its tracker issue, and what agents did to it.
+    // Piwi wrote to its tracker issue, what agents did to it, and its CI re-runs.
     await tx
       .update(handbackOutcomes)
       .set({ subjectId: survivorId })
@@ -687,6 +688,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .update(mcpToolCalls)
       .set({ subjectId: survivorId })
       .where(and(eq(mcpToolCalls.subjectType, 'cluster'), eq(mcpToolCalls.subjectId, victimId)));
+    await tx.update(ciDispatches).set({ clusterId: survivorId }).where(eq(ciDispatches.clusterId, victimId));
 
     // Combine the two clusters' aggregates.
     const triageFields = {

@@ -154,6 +154,33 @@ describe('system readers', () => {
     expect(roleOf('node', 'node vite')).toBeNull();
   });
 
+  it('names a worker Bun forks by its script, as each platform reads its command line', () => {
+    // `bunx --bun playwright test`: Bun forks each worker with its own executable, `BUN_OPTIONS` ahead of the script.
+    expect(roleOf('bun', '/home/u/.bun/bin/bun /p/node_modules/playwright/lib/worker/workerProcessEntry.js')).toBe(
+      'worker',
+    );
+    expect(
+      roleOf('bun', '/home/u/.bun/bin/bun --smol /p/node_modules/playwright/lib/worker/workerProcessEntry.js'),
+    ).toBe('worker');
+    // An isolated `bun install`, and macOS's `ps`, whose name is the command's first word.
+    expect(
+      roleOf(
+        'bun',
+        '/Users/u/.bun/bin/bun /p/node_modules/.bun/playwright@1.65.1/node_modules/playwright/lib/worker/workerProcessEntry.js',
+      ),
+    ).toBe('worker');
+    // Windows' CIM: the image name and the quoted command line.
+    expect(
+      roleOf(
+        'bun.exe',
+        '"C:\\Users\\u\\.bun\\bin\\bun.exe" C:\\p\\node_modules\\playwright\\lib\\worker\\workerProcessEntry.js',
+      ),
+    ).toBe('worker');
+    // The runner `bunx --bun` starts goes by `node`; it and a web server Bun runs take their role from the tree.
+    expect(roleOf('node', 'node /p/node_modules/.bin/playwright test')).toBeNull();
+    expect(roleOf('bun', '/home/u/.bun/bin/bun run dev')).toBeNull();
+  });
+
   it('lists the descendants of a process, parents first', () => {
     const table = [
       { pid: 2, ppid: 1 },
@@ -366,6 +393,94 @@ describe('RunSampler', () => {
       (90_000 + 70_000 + 150_000) * 1024,
     ]);
     expect(series.memoryBytes[series.memoryBytes.length - 1]![1]).toBe(profile.memory.peakBytes);
+  });
+
+  it('measures the workers of a run Bun runs, with the browsers they start', async () => {
+    const procRoot = path.join(dir, 'proc');
+    let clock = 0;
+    machine(procRoot, { busy: 1000, idle: 9000, steal: 0, cpuPsiUs: 0, memPsiUs: 0, availKb: 8_000_000 });
+    // `bunx --bun playwright test` names the runner `node`, and Bun forks each worker with its own executable.
+    proc(procRoot, 100, {
+      ppid: 1,
+      comm: 'node',
+      cmdline: 'node /p/node_modules/.bin/playwright test',
+      ticks: 10,
+      waitMs: 0,
+      pssKb: 100_000,
+      rssKb: 100_000,
+    });
+    const worker = (pid: number, ticks: number, pssKb: number) =>
+      proc(procRoot, pid, {
+        ppid: 100,
+        comm: 'bun',
+        cmdline: '/home/u/.bun/bin/bun /p/node_modules/playwright/lib/worker/workerProcessEntry.js',
+        ticks,
+        waitMs: 0,
+        pssKb,
+        rssKb: pssKb,
+      });
+    const sampler = new RunSampler({
+      rootPid: 100,
+      platform: 'linux',
+      procRoot,
+      intervalMs: 60_000,
+      heavyEvery: 1,
+      tmpDir: dir,
+      now: () => clock,
+    });
+    const internals = sampler as unknown as { running: Promise<void> | null; sample(heavy: boolean): Promise<void> };
+    sampler.start();
+    await internals.running;
+
+    // Two seconds later the two workers run, one with its browser; two more and the first has used another second.
+    clock += 2000;
+    worker(200, 100, 60_000);
+    worker(201, 50, 55_000);
+    proc(procRoot, 300, {
+      ppid: 200,
+      comm: 'chrome',
+      cmdline: '/pw/chromium/chrome --headless',
+      ticks: 30,
+      waitMs: 0,
+      pssKb: 80_000,
+      rssKb: 80_000,
+    });
+    await internals.sample(true);
+    clock += 2000;
+    worker(200, 200, 70_000);
+    const profile = await sampler.stop();
+
+    expect(profile.cpu.byRole).toMatchObject({
+      runner: { cpuMs: 0, processes: 1 },
+      worker: { cpuMs: 2500, processes: 2 },
+      browser: { cpuMs: 300, processes: 1 },
+    });
+    expect(profile.memory).toMatchObject({ kind: 'pss', peakBytes: (100_000 + 70_000 + 55_000 + 80_000) * 1024 });
+    const workers = [...sampler.timedSeries().workers].sort((a, b) => a.pid - b.pid);
+    expect(workers).toEqual([
+      {
+        pid: 200,
+        cpuCores: [
+          [2000, 0.65],
+          [4000, 0.5],
+        ],
+        memoryBytes: [
+          [2000, (60_000 + 80_000) * 1024],
+          [4000, (70_000 + 80_000) * 1024],
+        ],
+      },
+      {
+        pid: 201,
+        cpuCores: [
+          [2000, 0.25],
+          [4000, 0],
+        ],
+        memoryBytes: [
+          [2000, 55_000 * 1024],
+          [4000, 55_000 * 1024],
+        ],
+      },
+    ]);
   });
 
   it('keeps a long run’s whole span by merging neighboring points', async () => {

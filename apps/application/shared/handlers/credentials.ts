@@ -13,6 +13,7 @@ import {
   credentialProjects,
   credentials,
   credentialUses,
+  credentialUserTokens,
   integrationConnections,
   notificationChannels,
   projects,
@@ -35,6 +36,15 @@ import {
   type CredentialSummary,
   type CredentialUseEntry,
   type CredentialUseResult,
+  type MyCredentialEntry,
+  type PerUserCredentialRef,
+  type UserTokenRefusalCode,
+  type UserTokenState,
+  type UserTokenStatus,
+  type UserTokenView,
+  userTokenActorRefusal,
+  userTokenMethod,
+  userTokenMissingMessage,
 } from '#shared/credentials';
 import { scmDestinationHost, scmRepositoryApiUrl, shortCommit } from '#shared/scm-urls';
 import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
@@ -50,6 +60,12 @@ export interface CredentialRecord extends CredentialRules {
   managedBy: 'db' | 'env';
   /** The `PIWI_CREDENTIAL_*` variable its secret is read from; null for a saved secret. */
   secretEnv: string | null;
+  /** Whether each person gives their own token for it, which a use carries instead of a secret of its own. */
+  perUser: boolean;
+  /** Where a person creates their token, for a per-user credential. */
+  tokenHelpUrl: string | null;
+  /** The OAuth application a per-user SCM credential authorizes people through. */
+  oauthClientId: string | null;
   /** Who created it, while that user exists. */
   createdBy: number | null;
   createdAt: Date;
@@ -77,6 +93,9 @@ const RECORD_COLUMNS = {
   disabled: credentials.disabled,
   managedBy: credentials.managedBy,
   secretEnv: credentials.secretEnv,
+  perUser: credentials.perUser,
+  tokenHelpUrl: credentials.tokenHelpUrl,
+  oauthClientId: credentials.oauthClientId,
   createdBy: credentials.createdBy,
   createdAt: credentials.createdAt,
   rotatedAt: credentials.rotatedAt,
@@ -96,6 +115,9 @@ interface RecordRow {
   disabled: boolean;
   managedBy: string;
   secretEnv: string | null;
+  perUser: boolean;
+  tokenHelpUrl: string | null;
+  oauthClientId: string | null;
   createdBy: number | null;
   createdAt: Date | number;
   rotatedAt: Date | number;
@@ -120,6 +142,9 @@ function toRecord(row: RecordRow, projectIds: number[]): CredentialRecord {
     disabled: Boolean(row.disabled),
     managedBy: row.managedBy === 'env' ? 'env' : 'db',
     secretEnv: row.secretEnv ?? null,
+    perUser: Boolean(row.perUser),
+    tokenHelpUrl: row.tokenHelpUrl ?? null,
+    oauthClientId: row.oauthClientId ?? null,
     createdBy: row.createdBy ?? null,
     createdAt: toDate(row.createdAt)!,
     rotatedAt: toDate(row.rotatedAt)!,
@@ -168,14 +193,18 @@ export async function loadCredentialRecords(db: DrizzleDB): Promise<CredentialRe
  * makes the credential theirs (`created_by`), so its creator never loosens
  * what an administrator set or undoes a Disable. A credential an administrator saved for a
  * project stays theirs: its project's admins pick it, and never loosen its
- * rules. Nobody changes a credential the environment sets.
+ * rules. Nobody changes a credential the environment sets, and only
+ * `credentials:manage` changes a per-user credential, which collects other
+ * people's tokens.
  */
 export function canManageCredential(
   viewer: CredentialViewer,
-  credential: Pick<CredentialRecord, 'allProjects' | 'projectIds' | 'managedBy' | 'createdBy' | 'secretEnv'>,
+  credential: Pick<CredentialRecord, 'allProjects' | 'projectIds' | 'managedBy' | 'createdBy' | 'secretEnv'> &
+    Partial<Pick<CredentialRecord, 'perUser'>>,
 ): boolean {
   if (credential.managedBy === 'env') return false;
   if (can(viewer.access, 'credentials:manage')) return true;
+  if (credential.perUser) return false;
   return (
     viewer.userId != null &&
     credential.createdBy === viewer.userId &&
@@ -318,10 +347,14 @@ const iso = (date: Date | null): string | null => (date ? date.toISOString() : n
 
 /** Every credential the caller may manage, as the settings page lists them. */
 export async function listCredentialSummaries(db: DrizzleDB, viewer: CredentialViewer): Promise<CredentialSummary[]> {
-  const [records, references] = await Promise.all([loadCredentialRecords(db), credentialReferences(db)]);
+  const [records, references, tokens] = await Promise.all([
+    loadCredentialRecords(db),
+    credentialReferences(db),
+    userTokenCounts(db),
+  ]);
   return records
     .filter((record) => canReadCredential(viewer, record))
-    .map((record) => credentialSummary(record, references.get(record.id) ?? [], viewer));
+    .map((record) => credentialSummary(record, references.get(record.id) ?? [], viewer, tokens.get(record.id) ?? 0));
 }
 
 /** One credential as its settings page shows it. */
@@ -329,7 +362,9 @@ export function credentialSummary(
   record: CredentialRecord,
   usedBy: CredentialReference[],
   viewer: CredentialViewer,
+  userTokens: number | null = null,
 ): CredentialSummary {
+  const canManage = canManageCredential(viewer, record);
   return {
     id: record.id,
     name: record.name,
@@ -344,11 +379,15 @@ export function credentialSummary(
     managedBy: record.managedBy,
     secretEnv: record.secretEnv,
     secretEnvSet: null,
+    perUser: record.perUser,
+    tokenHelpUrl: record.tokenHelpUrl,
+    userTokens: record.perUser && canManage ? (userTokens ?? 0) : null,
+    oauthClientId: record.oauthClientId,
     createdAt: record.createdAt.toISOString(),
     rotatedAt: record.rotatedAt.toISOString(),
     lastUsedAt: iso(record.lastUsedAt),
     usedBy,
-    canManage: canManageCredential(viewer, record),
+    canManage,
   };
 }
 
@@ -379,6 +418,10 @@ export async function listCredentialOptions(
       managedBy: record.managedBy,
       secretEnv: record.secretEnv,
       secretEnvSet: null,
+      perUser: record.perUser,
+      tokenHelpUrl: record.tokenHelpUrl,
+      userTokens: null,
+      oauthClientId: record.oauthClientId,
       rotatedAt: record.rotatedAt.toISOString(),
       lastUsedAt: iso(record.lastUsedAt),
       canManage: canManageCredential(viewer, record),
@@ -436,6 +479,9 @@ export async function insertCredential(
       destination: input.destination,
       secret: sealed,
       secretEnv: input.secretEnv ?? null,
+      perUser: input.perUser ?? false,
+      tokenHelpUrl: input.tokenHelpUrl ?? null,
+      oauthClientId: input.oauthClientId ?? null,
       allProjects: input.scope.allProjects,
       allowedInputs: input.allowedInputs,
       customRequests: input.customRequests,
@@ -473,6 +519,8 @@ export async function updateCredential(
   if (patch.allowedInputs !== undefined) set.allowedInputs = patch.allowedInputs;
   if (patch.customRequests !== undefined) set.customRequests = patch.customRequests;
   if (patch.disabled !== undefined) set.disabled = patch.disabled;
+  if (patch.tokenHelpUrl !== undefined) set.tokenHelpUrl = patch.tokenHelpUrl;
+  if (patch.oauthClientId !== undefined) set.oauthClientId = patch.oauthClientId;
   if (patch.scope !== undefined) set.allProjects = patch.scope.allProjects;
   if (sealed !== undefined) {
     set.secret = sealed;
@@ -485,6 +533,8 @@ export async function updateCredential(
 
 /** Delete a credential; its log rows stay, under the name they recorded. */
 export async function deleteCredential(db: DrizzleDB, id: number): Promise<void> {
+  // Deleted explicitly rather than through the foreign key's cascade, which the demo's database does not enforce.
+  await db.delete(credentialUserTokens).where(eq(credentialUserTokens.credentialId, id));
   await db.delete(credentials).where(eq(credentials.id, id));
 }
 
@@ -580,6 +630,7 @@ export async function listCredentialUses(
       userName: users.name,
       username: users.username,
       apiKey: apiKeys.name,
+      remoteUser: credentialUses.remoteUser,
       subjectType: credentialUses.subjectType,
       subjectId: credentialUses.subjectId,
       destination: credentialUses.destination,
@@ -632,6 +683,7 @@ export async function listCredentialUses(
       projectName: row.projectLabel || row.projectName || null,
       actor: row.userName || row.username || null,
       apiKey: row.apiKey ?? null,
+      remoteUser: row.remoteUser ?? null,
       subjectType: row.subjectType ?? null,
       subjectId: row.subjectId ?? null,
       subjectName:
@@ -754,6 +806,10 @@ export async function projectScmCredentialProblem(
 ): Promise<string | null> {
   const record = (await loadCredentialRecord(db, credentialId)) ?? undefined;
   if (!sharedWith(record, 'scm', projectId)) return `No SCM credential ${credentialId} is shared with this project.`;
+  // Ingest reads, pull-request feedback and statuses have nobody behind them: only a CI action runs in a person's name.
+  if (record!.perUser) {
+    return `The credential "${record!.name}" runs in the name of whoever starts a CI action: name it in a CI action, not as the project's source control.`;
+  }
   if (!scmDestinationHost(record!.destination, gitlabHosts)) {
     return `The credential "${record!.name}" is sent to ${record!.destination}, which is no repository host's API.`;
   }
@@ -780,9 +836,210 @@ export async function instanceScmCredentialsProblem(db: DrizzleDB, ids: readonly
   for (const id of ids) {
     const record = records.get(id);
     if (!record || record.managedBy !== 'db' || record.service !== 'scm') return `No SCM credential ${id} exists.`;
+    if (record.perUser) {
+      return `The credential "${record.name}" runs in the name of whoever starts a CI action: it cannot be the instance's source control.`;
+    }
     if (!record.allProjects) {
       return `The credential "${record.name}" is not shared with all projects, which the instance's credentials serve.`;
     }
   }
   return null;
+}
+
+/** Every column of a user token but its secret. */
+const USER_TOKEN_COLUMNS = {
+  credentialId: credentialUserTokens.credentialId,
+  userId: credentialUserTokens.userId,
+  remoteUser: credentialUserTokens.remoteUser,
+  state: credentialUserTokens.state,
+  createdAt: credentialUserTokens.createdAt,
+  testedAt: credentialUserTokens.testedAt,
+  lastUsedAt: credentialUserTokens.lastUsedAt,
+};
+
+const userTokenState = (state: string): UserTokenState => (state === 'ready' ? 'ready' : 'invalid');
+
+/** How many people gave a token, per per-user credential. */
+export async function userTokenCounts(db: DrizzleDB): Promise<Map<number, number>> {
+  const rows = await db
+    .select({ credentialId: credentialUserTokens.credentialId, count: sql<number>`count(*)` })
+    .from(credentialUserTokens)
+    .groupBy(credentialUserTokens.credentialId);
+  return new Map(rows.map((row) => [row.credentialId, Number(row.count)]));
+}
+
+/** The state of one person's token for a credential and the account it names, or null when they gave none. */
+export async function userTokenStateOf(
+  db: DrizzleDB,
+  credentialId: number,
+  userId: number,
+): Promise<{ state: UserTokenState; remoteUser: string } | null> {
+  const [row] = await db
+    .select({ state: credentialUserTokens.state, remoteUser: credentialUserTokens.remoteUser })
+    .from(credentialUserTokens)
+    .where(and(eq(credentialUserTokens.credentialId, credentialId), eq(credentialUserTokens.userId, userId)));
+  return row ? { state: userTokenState(row.state), remoteUser: row.remoteUser } : null;
+}
+
+/**
+ * The tokens people gave for a credential, as its managers see them: who, their
+ * account on the service, the state and the dates; never the secret.
+ */
+export async function listUserTokens(db: DrizzleDB, credentialId: number): Promise<UserTokenView[]> {
+  const rows = await db
+    .select({ ...USER_TOKEN_COLUMNS, userName: users.name, username: users.username })
+    .from(credentialUserTokens)
+    .innerJoin(users, eq(users.id, credentialUserTokens.userId))
+    .where(eq(credentialUserTokens.credentialId, credentialId))
+    .orderBy(users.username);
+  return rows.map((row) => userTokenView(row, row.userName || row.username));
+}
+
+function userTokenView(
+  row: {
+    userId: number;
+    remoteUser: string;
+    state: string;
+    createdAt: Date | number;
+    testedAt: Date | number;
+    lastUsedAt: Date | number | null;
+  },
+  userName: string,
+): UserTokenView {
+  return {
+    userId: row.userId,
+    userName,
+    remoteUser: row.remoteUser,
+    state: userTokenState(row.state),
+    createdAt: toDate(row.createdAt)!.toISOString(),
+    testedAt: toDate(row.testedAt)!.toISOString(),
+    lastUsedAt: iso(toDate(row.lastUsedAt)),
+  };
+}
+
+/**
+ * The per-user credentials a person's Account page lists: every one shared
+ * with a project where they hold `run:control`, and every one they hold a
+ * token for, which they may always remove.
+ */
+export async function listMyCredentials(
+  db: DrizzleDB,
+  viewer: { access: AccessSummary; userId: number },
+): Promise<MyCredentialEntry[]> {
+  const records = (await loadCredentialRecords(db)).filter((record) => record.perUser);
+  if (records.length === 0) return [];
+  const tokens = await db
+    .select(USER_TOKEN_COLUMNS)
+    .from(credentialUserTokens)
+    .where(eq(credentialUserTokens.userId, viewer.userId));
+  const tokenOf = new Map(tokens.map((row) => [row.credentialId, row]));
+  const creatorIds = [...new Set(records.map((r) => r.createdBy).filter((id): id is number => id != null))];
+  const creators = new Map(
+    creatorIds.length === 0
+      ? []
+      : (
+          await db
+            .select({ id: users.id, name: users.name, username: users.username })
+            .from(users)
+            .where(inArray(users.id, creatorIds))
+        ).map((u) => [u.id, u.name || u.username]),
+  );
+  const projectIds = (await db.select({ id: projects.id }).from(projects)).map((p) => p.id);
+  const runs = (record: CredentialRecord) =>
+    (record.allProjects ? projectIds : record.projectIds).some((id) => can(viewer.access, 'run:control', id));
+  return records.flatMap((record) => {
+    const token = tokenOf.get(record.id);
+    const usable = runs(record);
+    if (!usable && !token) return [];
+    const view = token ? userTokenView(token, '') : null;
+    return [
+      {
+        id: record.id,
+        name: record.name,
+        service: record.service,
+        destination: record.destination,
+        tokenHelpUrl: record.tokenHelpUrl,
+        disabled: record.disabled,
+        createdByName: record.createdBy != null ? (creators.get(record.createdBy) ?? null) : null,
+        usable,
+        method: userTokenMethod(record.service),
+        token: view
+          ? {
+              remoteUser: view.remoteUser,
+              state: view.state,
+              createdAt: view.createdAt,
+              testedAt: view.testedAt,
+              lastUsedAt: view.lastUsedAt,
+            }
+          : null,
+      },
+    ];
+  });
+}
+
+/** The entry of one per-user credential for a person, or null when their Account page would not list it. */
+export async function myCredential(
+  db: DrizzleDB,
+  viewer: { access: AccessSummary; userId: number },
+  credentialId: number,
+): Promise<MyCredentialEntry | null> {
+  return (await listMyCredentials(db, viewer)).find((entry) => entry.id === credentialId) ?? null;
+}
+
+/** Remove a person's token for a credential, or every person's when `userId` is null. Returns how many went. */
+export async function deleteUserTokens(db: DrizzleDB, credentialId: number, userId: number | null): Promise<number> {
+  const deleted = await db
+    .delete(credentialUserTokens)
+    .where(
+      userId == null
+        ? eq(credentialUserTokens.credentialId, credentialId)
+        : and(eq(credentialUserTokens.credentialId, credentialId), eq(credentialUserTokens.userId, userId)),
+    )
+    .returning({ id: credentialUserTokens.id });
+  return deleted.length;
+}
+
+/**
+ * Whether a CI action's credential is per-user, and the asker's token for it:
+ * refused for an API key, without sign-in, or for a person whose token is
+ * missing or `invalid` (`code` and `reason`). Null for an action on a shared
+ * credential, or none.
+ */
+export async function actionUserTokenReadiness(
+  db: DrizzleDB,
+  target: { credentialId?: number | null },
+  actor: { userId: number | null; apiKeyId: number | null },
+): Promise<{
+  perUser: { credential: PerUserCredentialRef; userToken: UserTokenStatus | null };
+  code?: UserTokenRefusalCode;
+  reason: string | null;
+} | null> {
+  if (target.credentialId == null) return null;
+  const record = await loadCredentialRecord(db, target.credentialId);
+  if (!record?.perUser) return null;
+  const refused = userTokenActorRefusal(record.name, actor);
+  if (refused) {
+    return {
+      perUser: {
+        credential: { id: record.id, name: record.name, account: null, method: userTokenMethod(record.service) },
+        userToken: null,
+      },
+      code: refused.code,
+      reason: refused.message,
+    };
+  }
+  const token = await userTokenStateOf(db, record.id, actor.userId!);
+  const credential = {
+    id: record.id,
+    name: record.name,
+    account: token?.remoteUser ?? null,
+    method: userTokenMethod(record.service),
+  };
+  const state = token?.state ?? 'missing';
+  if (state === 'ready') return { perUser: { credential, userToken: state }, reason: null };
+  return {
+    perUser: { credential, userToken: state },
+    code: 'user-token-required',
+    reason: userTokenMissingMessage(record.name, state),
+  };
 }

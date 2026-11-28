@@ -28,7 +28,7 @@ sidebar.
 
 `/analytics`: trends across projects and over time, where Home shows what is happening now. It opens your
 [default dashboard](./dashboards#your-default-dashboard), else the one an administrator set for everyone, else the
-built-in *Overview*; `/analytics/d/:id` opens one
+built-in _Overview_; `/analytics/d/:id` opens one
 [dashboard](./dashboards), which the header switcher picks, and `/analytics/dashboards` lists them all. The filters at the top
 scope every widget; the widgets are listed on [Analytics widgets](/reference/analytics-widgets), and the filters and
 period comparisons on [Analytics](./analytics). [Timeline markers](./timeline-markers) overlay deploys and
@@ -59,7 +59,8 @@ palette lists its tabs and the pages of this menu. The tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 to a page; select two and **Compare** [what changed](./run-changes) between them, or select any
-  number, page by page, and [delete them](/operate/storage#storage-management).
+  number, page by page, and [delete them](/operate/storage#storage-management). Above it wait the CI dispatches whose
+  run has not reported or still runs, and your own run requests ([Waiting rows](./ci-rerun#waiting-rows)).
 - **Tests**: every test case with its pass rate and last run, in file order, with the
   [test search](/reference/test-search) and a status filter, groupable by file, or by file and describe block.
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
@@ -77,7 +78,7 @@ palette lists its tabs and the pages of this menu. The tabs:
   [capabilities](/operate/capabilities), coverage, [targets](./analytics#targets), the
   [issue tracker](./issue-tracking), [CI](./ci-rerun), keys in test tags, [test management](./test-management),
   [URL patterns](./extension-connection#url-patterns) and, in the desktop app, the
-  [local folder](./desktop#running-tests-from-the-app).
+  [local folder](./desktop#projects-from-local-folders).
 
 ## Locators
 
@@ -106,20 +107,7 @@ that threw, a spec that did not load) show under the facts line. The tabs:
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits, locks and [breakpoint](./editor-breakpoints)
-  stops, the slowest tests and the worker distribution ([Slow tests & wasted time](./slow-tests)).
-  - **Hooks**: hatched over each test's bar, setup (`beforeAll`, `beforeEach`, fixtures) at the start,
-    teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is dark red and counted in
-    the header, even with **Show hooks** off; hover it for the hooks, times and error,
-    click it for the test's steps on that hook. Playwright leaves `beforeAll` and `afterAll` hooks and worker
-    fixtures out of a test's duration; the bar spans them, and its tooltip gives Playwright's duration.
-    Older reporters send no hook list.
-  - **Gaps**: a lane is one [worker](/reference/test-metadata#worker-lanes). Playwright replaces a worker process
-    after a failed test, so a lane can hold several processes in turn: **↻** marks where a new one took
-    over, and the stretch before it is that replacement. A dashed line is time the
-    worker ran no test; hover either for details.
-  - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
-    them with arrows.
-  - **Resources**: the run's CPU, memory and open pages, above the worker rows and under each of them.
+  stops, the slowest tests and the worker distribution ([The run's Timeline](./slow-tests#the-run-s-timeline)).
 - **Video**: the tests' videos in sequence beside a checklist ([Run video](./run-video)).
 - **Resources**, when the run sent a resource report ([CPU, memory & disk](./cpu-memory-disk#in-the-dashboard)).
 
@@ -148,7 +136,7 @@ command palette or `g` then `s`: your **Account** and connected accounts ([OAuth
 ([SCM credentials](/guide/source-control#set-the-credential)), **Integrations** ([Jira Cloud](/operate/integrations), [Zephyr Scale Cloud](/operate/zephyr-scale)),
 **Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
-([Localization](/operate/localization)) and **About** (version and **Changelog**), and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
+([Localization](/operate/localization)) and **About** (version and **Changelog**), and in the [desktop app](./desktop) **Desktop app** and **Team instance** first. A setting backed by
 an environment variable is shown read-only with the variable's name ([Configuration reference](/reference/configuration)).
 
 ## Setup

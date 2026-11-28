@@ -1,7 +1,7 @@
 {
   "name": "@piwitests/reporter",
-  "version": "0.74.0",
-  "description": "Playwright reporter that streams results, traces and HTML reports to a Piwi Dashboard instance",
+  "version": "0.78.0",
+  "description": "Playwright reporter that streams results, traces and HTML reports to Piwi, a free, self-hosted Playwright dashboard",
   "url": "https://github.com/PiwiTests/piwi",
   "homepage": "https://piwitests.dev",
   "repository": {
@@ -63,7 +63,7 @@
     "templates/"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.59.0 <2"

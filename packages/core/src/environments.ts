@@ -185,14 +185,39 @@ export function environmentListProblems(
 }
 
 /**
+ * A grep Playwright's command line reads as the regular expression `/source/flags`, with flags `g` and `i` alone; it
+ * reads any other as a pattern matched ignoring case (flags `gi`), one whose source holds a line break too, as `.`
+ * matches none.
+ */
+const SLASHED_GREP = /^\/(.*)\/([gi]*)$/;
+
+/**
+ * Why a run's own `--grep-invert` (`own`, written after `option`) cannot be kept in the one that keeps the run to a
+ * protected environment's required tags ({@link requiredTagsGrepInvert}), else null. That one is a plain pattern,
+ * which Playwright matches ignoring case, so an own pattern written `/source/flags` without `i`, which matches letters
+ * in their case, is refused.
+ */
+export function requiredTagsGrepInvertProblem(own: string | null | undefined, option = '-G'): string | null {
+  const slashed = own ? SLASHED_GREP.exec(own) : null;
+  if (!slashed || slashed[2]!.includes('i')) return null;
+  return `${option} ${own} matches letters in their case, which a protected environment's run cannot keep: it reads ${option} ignoring case, as ${option} /${slashed[1]}/i does`;
+}
+
+/**
  * The `--grep-invert` that keeps a run to the tests carrying one of `tags`: it leaves out every test whose title and
  * tags (as Playwright matches a grep: the title path and the tags, joined by spaces) hold none of them as a word.
- * `own` is the run's own `--grep-invert`, kept: a test either pattern matches is left out. Tags are checked by
- * {@link requiredTagProblem}, so none needs escaping.
+ * `own` is the run's own `--grep-invert`, kept: a test either pattern matches is left out. An empty one is none, as
+ * Playwright reads it; one written `/source/flags` with `i` is kept as its source, any other as written. Throws for
+ * one {@link requiredTagsGrepInvertProblem} refuses. Tags are checked by {@link requiredTagProblem}, so none needs
+ * escaping.
  */
 export function requiredTagsGrepInvert(tags: readonly string[], own?: string | null): string {
   const required = `^(?!.*(?:^|\\s)(?:${tags.join('|')})(?:\\s|$))`;
-  return own ? `(?:${own})|${required}` : required;
+  if (!own) return required;
+  const problem = requiredTagsGrepInvertProblem(own);
+  if (problem) throw new Error(problem);
+  const source = SLASHED_GREP.exec(own)?.[1] ?? own;
+  return `(?:${source})|${required}`;
 }
 
 /** What a target reads of the environment a run is started for, beside the run variables it gets. */

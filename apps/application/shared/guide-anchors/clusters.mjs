@@ -15,7 +15,7 @@ export const CLUSTERS_ANCHORS = [
     kind: 'block',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
     describes:
-      'The More ways to fix card: every other way to fix, verify or reproduce the failure, each section folded to one line.',
+      'The More ways to fix line above the evidence: one button per other way to fix, verify or reproduce, each opening in a side panel.',
     help: 'fix.toolbox',
     doc: 'guide/first-failure#_6-more-ways-to-fix',
     sample: {
@@ -30,7 +30,7 @@ export const CLUSTERS_ANCHORS = [
     describes:
       'The Diagnosis section of More ways to fix: the AI diagnosis of the failure and its suggested patch, or Diagnose with AI and the context to add.',
     shownWhen:
-      'Folded to its line until opened, or open when the next step points at it, on a cluster as a card of its own.',
+      'A button of More ways to fix, opening a side panel; on a cluster, a card of its own when the next step points at it.',
     doc: 'features/ai-diagnosis',
     sample: { route: '/failure-clusters/10', expect: USERS_TABLE_CLUSTER },
   },
@@ -53,9 +53,8 @@ export const CLUSTERS_ANCHORS = [
     kind: 'block',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
     describes:
-      'The Verify section of More ways to fix: the command that re-runs the failing tests, the CI re-runs, and on a cluster a run in the desktop app.',
-    shownWhen:
-      'On a cluster with a verify command; on an execution with CI re-run set up, to a viewer who may start one or after a re-run.',
+      'The Verify section of More ways to fix: the command that re-runs the failing tests, the last re-run in CI and, on a cluster, the run button.',
+    shownWhen: 'On a cluster with a verify command; on an execution once its cluster was re-run in CI.',
     doc: 'guide/first-failure#_6-more-ways-to-fix',
     sample: { route: '/failure-clusters/10', expect: USERS_TABLE_CLUSTER },
   },
@@ -103,7 +102,7 @@ export const CLUSTERS_ANCHORS = [
     id: 'diagnosis-fix',
     kind: 'block',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
-    reveal: [{ unfold: 'fix-section-diagnosis' }],
+    reveal: [{ open: 'fix-section-diagnosis' }],
     describes:
       'The patch the cluster’s AI diagnosis suggests, checked against the source, with whether it applies cleanly and how to apply it.',
     shownWhen: 'When the cluster has an AI diagnosis that suggests a fix.',
@@ -276,7 +275,7 @@ export const CLUSTERS_ANCHORS = [
     id: 'diagnosis-result',
     kind: 'block',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
-    reveal: [{ unfold: 'fix-section-diagnosis' }],
+    reveal: [{ open: 'fix-section-diagnosis' }],
     describes:
       'The completed AI diagnosis: its category and confidence, the root cause, the evidence it cites, the suggested fix and how to confirm it.',
     shownWhen: 'When the cluster has a completed AI diagnosis.',
@@ -289,7 +288,7 @@ export const CLUSTERS_ANCHORS = [
     id: 'diagnosis-additional-context',
     kind: 'block',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
-    reveal: [{ unfold: 'fix-section-diagnosis' }],
+    reveal: [{ open: 'fix-section-diagnosis' }],
     describes:
       'The diagnosis’s Additional context: notes, text files and screenshots you add to steer the model with what the evidence cannot show.',
     shownWhen: 'When AI is configured.',
@@ -302,7 +301,7 @@ export const CLUSTERS_ANCHORS = [
     id: 'diagnosis-context-strip',
     kind: 'block',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
-    reveal: [{ unfold: 'fix-section-diagnosis' }],
+    reveal: [{ open: 'fix-section-diagnosis' }],
     describes:
       'The diagnosis’s Context strip: the evidence sections the model receives, the truncated ones marked, and the tokens they cost.',
     shownWhen: 'When AI is configured.',
@@ -340,7 +339,7 @@ export const CLUSTERS_ANCHORS = [
     id: 'diagnose-with-ai',
     kind: 'action',
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
-    reveal: [{ unfold: 'fix-section-diagnosis' }],
+    reveal: [{ open: 'fix-section-diagnosis' }],
     describes:
       'The Diagnose with AI button, which streams a diagnosis of the failure from its evidence, its source changes and the context you added.',
     shownWhen: 'When AI is configured and the failure has no completed diagnosis.',

@@ -6,7 +6,8 @@
  * The window holds it only while it has a run to show: a run of the Local runs tray runs, the stream still has a live
  * run, or, in the dashboard window, the hub says it has one (`hub-runs` on the desktop event stream, sent as that
  * stream opens, so a reload finds out at once whether its runs still go on). While it holds it, every headless stop
- * waits for the window, and each stop it hears opens the tray, once.
+ * waits for the window, and each stop it hears opens the tray, once, but a stop of a run shown in a separate window,
+ * which shows it there, and of which the system is told whatever the focus of this window.
  *
  * While a tray is mounted (`trayMounts`), the window says `show` for the running runs whose Hold failures is on
  * (`desktopShownRefs`), and a failure or a `page.pause()` is told to the system while the window is in the background.
@@ -17,8 +18,8 @@
  * One window tells the system of a stop: the one whose tray owns the run, else the dashboard window. The windows say
  * which runs their trays own on a `BroadcastChannel`, again every `CLAIM_BEAT_MS`; a claim not renewed for
  * `CLAIM_MS` lapses, as a window that closed without saying so. A stop from before the page loaded (`since`), heard
- * again after a reload, opens the tray but is not told again. A run's output window shows no runs of its own and holds
- * nothing; a worker's window holds the stream for its worker itself.
+ * again after a reload, opens the tray but is not told again. A run's window holds the stream for its run itself
+ * (`pages/desktop/run-output.vue`), and a worker's window for its worker.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { desktopRunOf, desktopRunRef, desktopShellIdOf, desktopShownRefs } from '~/utils/desktop-run-view';
@@ -41,7 +42,7 @@ const STOP_TITLES: Partial<Record<string, string>> = {
 
 export default defineNuxtPlugin(() => {
   const label = tauriWindowLabel();
-  // A run's output window shows no runs; a worker's window holds the stream itself (`pages/desktop/run-worker.vue`).
+  // A run's window and a worker's window hold the stream themselves (`pages/desktop/run-output.vue`, `run-worker.vue`).
   if (!tauriCore() || label?.startsWith('output-') || label?.startsWith('worker-')) return;
   const loadedAt = Date.now();
   // Another window holds the stream for the runs it started itself alone.
@@ -135,7 +136,10 @@ export default defineNuxtPlugin(() => {
   hub.onStop((session: HubSession, worker: HubWorker) => {
     const stop = worker.stop;
     if (!stop) return;
-    store.trayOpen.value = true;
+    const run = store.runs.value.find((r) => r.hubRefs.includes(desktopRunOf(session.ref)));
+    // A run shown in a separate window shows its stop there, which this window's focus says nothing of.
+    const apart = !!run && !!store.separate.value[run.key];
+    if (!apart) store.trayOpen.value = true;
     if (Date.parse(stop.since) < loadedAt) return;
     const title = STOP_TITLES[stop.reason];
     // With a tray, a step, a pause or a line run to, which the person's own controls asked for here or in Piwi Picker,
@@ -143,7 +147,7 @@ export default defineNuxtPlugin(() => {
     if (trayShown.value && !title) return;
     if (!tellsSystem(session.ref)) return;
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    if (trayShown.value && !document.hidden && document.hasFocus()) return;
+    if (trayShown.value && !apart && !document.hidden && document.hasFocus()) return;
     try {
       new Notification(title ?? 'A test stopped and waits', { body: desktopStopSaid(session, worker, stop) });
     } catch {

@@ -8,7 +8,13 @@ import {
   RUN_REF_METADATA_KEY,
 } from '@piwitests/core/wire';
 import { hideSecretsInError, maskTokenLike, maskUrlFragment } from '@piwitests/core/mask';
-import { capStepValue, withoutTypedText } from '@piwitests/core/step-analysis';
+import {
+  capStepValue,
+  hideStepParamSecrets,
+  hideStepTextSecrets,
+  hideStepTitleUrl,
+  withoutTypedText,
+} from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
 import { withoutIncidentMetadata } from '#shared/run-incident';
 import { reporterIngestHealth } from '#shared/ingest-health';
@@ -426,7 +432,10 @@ function keepSteps(steps: unknown[], limit: number): unknown[] {
 /**
  * Cap the stored steps array (count), keeping the steps that failed, and
  * re-normalize each step's `subtitle` and `params` against the ingest limits,
- * masking token-shaped strings, with the text a fill, a typing or an insert
+ * masking token-shaped strings, with the credentials of its subtitle and of a
+ * param that may carry one hidden (`hideStepTextSecrets`, `hideStepParamSecrets`),
+ * and of the URL a navigation's or a request's title quotes (`hideStepTitleUrl`),
+ * the text a fill, a typing or an insert
  * typed into a field that may hold a secret hidden from its title and params
  * (`withoutTypedText`), and what may be a secret from its error (`hideSecretsInError`).
  * Applied on ingest, so a payload is bounded and hidden whatever sent it.
@@ -438,16 +447,17 @@ export function capSteps(value: unknown, limits: IngestLimits): unknown {
     const s = step as Record<string, unknown>;
     const out: Record<string, unknown> = { ...s };
     if (typeof s.subtitle === 'string') {
-      out.subtitle = capStepValue(maskTokenLike(s.subtitle), limits.stepParamValueChars);
+      out.subtitle = capStepValue(maskTokenLike(hideStepTextSecrets(s.subtitle)), limits.stepParamValueChars);
     }
     const rawParams = s.params && typeof s.params === 'object' && !Array.isArray(s.params) ? s.params : undefined;
+    const category = typeof s.category === 'string' ? s.category : null;
     const typed = withoutTypedText(
       typeof s.title === 'string' ? s.title : '',
-      rawParams as Record<string, unknown> | undefined,
+      rawParams && hideStepParamSecrets(rawParams as Record<string, unknown>, category),
       typeof s.subtitle === 'string' ? s.subtitle : null,
-      typeof s.category === 'string' ? s.category : null,
+      category,
     );
-    if (typeof s.title === 'string') out.title = typed.title;
+    if (typeof s.title === 'string') out.title = hideStepTitleUrl(typed.title, category);
     if (typed.params) {
       const params = capStepParams(typed.params, limits);
       if (params) out.params = params;

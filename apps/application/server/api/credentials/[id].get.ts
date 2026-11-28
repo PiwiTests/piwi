@@ -6,6 +6,7 @@ import {
   canManageCredential,
   credentialReferences,
   credentialSummary,
+  userTokenCounts,
   loadCredentialRecord,
 } from '#shared/handlers/credentials';
 import { can } from '#shared/permissions';
@@ -33,6 +34,13 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 404, message: 'Credential not found' });
   }
   return {
-    credential: withSecretEnvState(credentialSummary(record, (await credentialReferences(db)).get(id) ?? [], viewer)),
+    credential: withSecretEnvState(
+      credentialSummary(
+        record,
+        (await credentialReferences(db)).get(id) ?? [],
+        viewer,
+        (await userTokenCounts(db)).get(id) ?? 0,
+      ),
+    ),
   };
 });

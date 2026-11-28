@@ -10,7 +10,7 @@ import type { RoleCost } from '@piwitests/core/wire';
 import { ProcFs, descendantsOf, roleOf, type ProcessRole } from '../support/system-readers.js';
 
 export type { RoleCost };
-import { internalCall } from './quiet-capture.js';
+import { internalCall, internalCallWithin } from './quiet-capture.js';
 
 /**
  * What a test cost its worker, read at the test's start and end: the worker
@@ -25,8 +25,11 @@ export interface TestMetrics {
   worker: {
     cpuMs: number;
     involuntarySwitches: number;
-    /** Share of the test's time the event loop was busy. */
-    loopUtilization: number;
+    /**
+     * Share of the test's time the event loop was busy; null where the runtime
+     * does not measure it (Bun reads no idle and no active time).
+     */
+    loopUtilization: number | null;
     loopDelayP99Ms: number;
     loopDelayMaxMs: number;
     heapUsedMb: number;
@@ -36,6 +39,11 @@ export interface TestMetrics {
      * the garbage `heapUsedMb` counts until it is collected.
      */
     heapAfterGcMb?: number | null;
+    /**
+     * Whether the worker observes its runtime's full garbage collections:
+     * false under Bun, which reports none, so `heapAfterGcMb` stays null.
+     */
+    gcReported?: boolean;
     /** Open file descriptors at the test's end (Linux). */
     fds: number | null;
   };
@@ -59,6 +67,24 @@ const MB = 1024 * 1024;
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+/**
+ * The share of a window the event loop was busy, to three decimals; null when
+ * the window reads no idle and no active time, as every window does under Bun.
+ */
+export function loopShare(loop: EventLoopUtilization): number | null {
+  if (loop.idle + loop.active === 0) return null;
+  return Math.round(loop.utilization * 1000) / 1000;
+}
+
+/** Whether the runtime reports garbage collections to a performance observer: Bun lists no `gc` entry type. */
+function runtimeReportsGc(): boolean {
+  try {
+    return PerformanceObserver.supportedEntryTypes?.includes('gc') !== false;
+  } catch {
+    return false;
+  }
 }
 
 export class WorkerMetrics {
@@ -92,9 +118,11 @@ export class WorkerMetrics {
 
   /**
    * Read the heap after each full (major) garbage collection V8 runs on its
-   * own: nothing is forced, so a test that triggers none reads null.
+   * own: nothing is forced, so a test that triggers none reads null. Null on a
+   * runtime that reports no garbage collections.
    */
   private observeFullCollections(): PerformanceObserver | null {
+    if (!runtimeReportsGc()) return null;
     try {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
@@ -167,11 +195,12 @@ export class WorkerMetrics {
             (usage.userCPUTime - this.usage.userCPUTime + usage.systemCPUTime - this.usage.systemCPUTime) / 1000,
           ),
           involuntarySwitches: usage.involuntaryContextSwitches - this.usage.involuntaryContextSwitches,
-          loopUtilization: Math.round(loop.utilization * 1000) / 1000,
+          loopUtilization: loopShare(loop),
           loopDelayP99Ms: this.histogram ? round1(this.histogram.percentile(99) / 1e6) : 0,
           loopDelayMaxMs: this.histogram ? round1(this.histogram.max / 1e6) : 0,
           heapUsedMb: round1(process.memoryUsage().heapUsed / MB),
           heapAfterGcMb: this.heapAfterGc === null ? null : round1(this.heapAfterGc / MB),
+          gcReported: this.gcObserver !== null,
           fds: this.linux ? this.proc.fdCount(this.pid) : null,
         },
       };
@@ -214,8 +243,11 @@ export class WorkerMetrics {
 }
 
 interface CdpSessionLike {
-  send(method: string, params?: object): Promise<unknown>;
+  send(method: string, params?: object, options?: { timeout?: number }): Promise<unknown>;
 }
+
+/** How long one DevTools call of a page read runs at most, in ms. */
+const PAGE_CALL_TIMEOUT_MS = 5000;
 
 interface PageLike {
   context(): { newCDPSession(page: unknown): Promise<CdpSessionLike> };
@@ -223,8 +255,10 @@ interface PageLike {
 
 /**
  * Reads pages over CDP, one session per page, opened the first time a page is
- * read and kept while it lives. On a browser without CDP the read is null, and
- * the page is never tried again.
+ * read and kept while it lives. Each DevTools call ends after
+ * `PAGE_CALL_TIMEOUT_MS`. On a browser without CDP, or when the session's
+ * `Performance.enable` fails or does not answer in that time, the read is null,
+ * and the page is never tried again.
  */
 export class PageReader {
   private readonly sessions = new WeakMap<object, Promise<CdpSessionLike | null>>();
@@ -232,17 +266,22 @@ export class PageReader {
   async read(page: object): Promise<PageMain | null> {
     let session = this.sessions.get(page);
     if (!session) {
-      session = internalCall(page, async () => {
-        const opened = await (page as PageLike).context().newCDPSession(page);
-        await opened.send('Performance.enable', { timeDomain: 'threadTicks' });
-        return opened;
-      }).catch(() => null);
+      session = internalCall(page, () => (page as PageLike).context().newCDPSession(page))
+        .then(async (opened) => {
+          await internalCallWithin(page, PAGE_CALL_TIMEOUT_MS, (options) =>
+            opened.send('Performance.enable', { timeDomain: 'threadTicks' }, options),
+          );
+          return opened;
+        })
+        .catch(() => null);
       this.sessions.set(page, session);
     }
     const opened = await session;
     if (!opened) return null;
     try {
-      const result = (await internalCall(page, () => opened.send('Performance.getMetrics'))) as {
+      const result = (await internalCallWithin(page, PAGE_CALL_TIMEOUT_MS, (options) =>
+        opened.send('Performance.getMetrics', undefined, options),
+      )) as {
         metrics?: Array<{ name: string; value: number }>;
       };
       const values = new Map((result.metrics ?? []).map((metric) => [metric.name, metric.value]));
@@ -267,12 +306,12 @@ export class PageReader {
    */
   private async countElements(page: object, session: CdpSessionLike): Promise<number | null> {
     try {
-      const result = (await internalCall(page, () =>
-        session.send('Runtime.evaluate', {
-          expression: "document.getElementsByTagName('*').length",
-          returnByValue: true,
-          silent: true,
-        }),
+      const result = (await internalCallWithin(page, PAGE_CALL_TIMEOUT_MS, (options) =>
+        session.send(
+          'Runtime.evaluate',
+          { expression: "document.getElementsByTagName('*').length", returnByValue: true, silent: true },
+          options,
+        ),
       )) as { result?: { value?: unknown } };
       const value = result.result?.value;
       return typeof value === 'number' && Number.isFinite(value) ? value : null;

@@ -9,25 +9,15 @@ export type RunRequestSourceChoice =
   | { runId: number; tests: 'failed' | 'all' }
   | { runId: number; filePath: string };
 
-/** One thing a page can send, as its menu lists it. */
-export interface RunOnMyMachineChoice {
-  label: string;
-  /** How many tests it names, as the page counts them. */
-  count: number;
-  source: RunRequestSourceChoice;
-  /** The Playwright projects its tests ran in, which the menu offers to pick one of. */
-  projects?: readonly string[];
-}
-
 /** A connected app that takes run requests. */
 export type RunTargetApp = ConnectedApp & { target: NonNullable<ConnectedApp['target']> };
 
 /**
- * **Run on my machine** on one project's pages: whether it shows (sign-in on, the capability read as on for the
- * project, so a list that failed to load hides it, and the person holds `run:request` there; never in the desktop
- * window, which runs tests itself), the person's apps that take requests, and sending one. The apps load in the
- * browser, when the menu opens. A page whose data says whether the capability is on (the run's `machineRuns`) passes
- * it, and the project's capability list is then not loaded.
+ * **Run on my machine** on one project's pages: whether a person's apps are offered (sign-in on, the capability read
+ * as on for the project, so a list that failed to load hides it, and the person holds `run:request` there; never in
+ * the desktop window, which runs tests itself), the person's apps that take requests, and sending one. The apps load
+ * in the browser, when the run dialog or its button's menu opens. A page whose data says whether the capability is on
+ * (the run's `machineRuns`) passes it, and the project's capability list is then not loaded.
  */
 export async function useRunOnMyMachine(projectId: number, machineRuns?: boolean) {
   const config = useRuntimeConfig();
@@ -83,85 +73,5 @@ export async function useRunOnMyMachine(projectId: number, machineRuns?: boolean
   return { shown, apps, appsLoaded, loadApps, send };
 }
 
-/**
- * Follow one request every 2 seconds until it ends, not while the tab is hidden; `stop` asks for its end. Reading
- * stops for good once the request is gone for this person, or they are signed out.
- */
-export function useRunRequestProgress() {
-  const request = ref<RunRequestView | null>(null);
-  const error = ref<string | null>(null);
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let waitingToShow = false;
-  let disposed = false;
-
-  function clear() {
-    if (timer) clearTimeout(timer);
-    timer = null;
-    if (waitingToShow) document.removeEventListener('visibilitychange', pollWhenShown);
-    waitingToShow = false;
-  }
-
-  function pollWhenShown() {
-    if (!document.hidden) void poll();
-  }
-
-  async function poll() {
-    clear();
-    const current = request.value;
-    if (disposed || !current || runRequestIsFinal(current)) return;
-    if (document.hidden) {
-      waitingToShow = true;
-      document.addEventListener('visibilitychange', pollWhenShown);
-      return;
-    }
-    try {
-      const read = await $fetch<RunRequestView>(`/api/run-requests/${current.id}`);
-      // Another request was followed meanwhile, or the page went away.
-      if (disposed || request.value?.id !== current.id) return;
-      request.value = read;
-      error.value = null;
-    } catch (e) {
-      if (disposed || request.value?.id !== current.id) return;
-      error.value = errorMessage(e);
-      // The request is gone for this person (deleted, or its project no longer readable), or they were signed out.
-      if ([401, 403, 404].includes(statusOf(e) ?? 0)) return;
-    }
-    if (request.value && !runRequestIsFinal(request.value)) timer = setTimeout(poll, 2000);
-  }
-
-  function follow(view: RunRequestView) {
-    clear();
-    request.value = view;
-    error.value = null;
-    if (!disposed) timer = setTimeout(poll, 2000);
-  }
-
-  async function stop() {
-    const current = request.value;
-    if (!current) return;
-    try {
-      request.value = await $fetch<RunRequestView>(`/api/run-requests/${current.id}/stop`, { method: 'POST' });
-      error.value = null;
-    } catch (e) {
-      error.value = errorMessage(e);
-    }
-  }
-
-  function reset() {
-    clear();
-    request.value = null;
-    error.value = null;
-  }
-
-  onScopeDispose(() => {
-    disposed = true;
-    clear();
-  });
-  return { request, error, follow, stop, reset };
-}
-
-function statusOf(error: unknown): number | undefined {
-  return (
-    (error as { statusCode?: number; status?: number } | null)?.statusCode ?? (error as { status?: number })?.status
-  );
-}
+/** A project's Run on my machine, as `useRunOnMyMachine` answers it. */
+export type RunOnMyMachine = Awaited<ReturnType<typeof useRunOnMyMachine>>;

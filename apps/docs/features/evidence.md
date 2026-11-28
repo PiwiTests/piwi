@@ -34,7 +34,8 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   filter both. A trace adds a **Screen** lane per page: hover for the page then, click for its frames. **Show the
   page** puts it beside the steps for the hovered or picked row, in a card on hover, or as thumbnails; without a
   panel, a row's time opens it below. Hooks and fixtures fold into
-  **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
+  **Setup** and **Teardown** rows, open when the failure is there; what passed before the failure, but for the last
+  three steps and any problem, folds into a **Passed** row; a `test.step` holds its steps; the failing step
   shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out; a
   [breakpoint](./editor-breakpoints)'s stop is a **Paused** band.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
@@ -54,8 +55,7 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   performance hints and Web Vitals. **Output**: what the test wrote to stdout and stderr
   ([Test output](/reference/test-metadata#test-output)).
 
-Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
-of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error and keeps its
+A test that **passed on retry** leads with its failed attempt's error and keeps its
 next step; any other passing execution shows identity and facts. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
 Web Vitals, ARIA, focus and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 
@@ -73,7 +73,7 @@ When a test passed on retry, the **Attempts** tab lists every attempt (status an
 - the **error** present on the failing attempt and gone on the pass;
 - a **request**, keyed by route (`GET /api/cart/:id`), that failed (5xx or no response) on one attempt only, or took
   at least 1 s and twice as long on the failing one;
-- a **console** error or warning logged on one attempt only;
+- a **console** error, warning or page error on one attempt;
 - a **step** that errored, ran much slower, or ran with different **params** on one attempt;
 - a **page-state or URL** difference, including storage keys and cookies;
 - an **ARIA structural** difference at the landmark and heading level.
@@ -94,8 +94,8 @@ and reports nodes **added**, **removed**, **renamed**, **changed** (an attribute
 **moved**. The element the failing locator names
 is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the button renamed `"Pay now"`.
 
-The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then
-the same branch. Green snapshots come from
+The baseline is the same test's latest passing snapshot on the same browser, preferring the same environment, then
+Playwright release, then branch. Green snapshots come from
 [sampling on pass](/guide/capture-fixtures#green-page-sampling-on-pass), about once a day per test; until one exists the
 view says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
 `explain_failure` [MCP tool](/features/mcp).

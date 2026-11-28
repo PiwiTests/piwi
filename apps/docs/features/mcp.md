@@ -50,25 +50,25 @@ the project they act on, and `get_instance_stats` needs an administrator.
 the result; read tools never are. A cluster's **Activity** section shows the calls on it, the log is pruned after
 `PIWI_RETENTION_NOTIFICATION_DAYS`, and declining the **Agent write log** capability in **Settings → Capabilities** keeps none.
 
-**Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no SSE or WebSocket. Protocol versions
-`2025-06-18`, `2025-03-26` and `2024-11-05` are supported.
+**Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no session, for clients of protocol `2026-07-28`
+and those that open with `initialize` (`2025-11-25` down to `2024-11-05`). Any other gets a `400`.
 
 
 ## Authentication
 
 With authentication on, a client signs in through OAuth, as the
-[MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
-describes and as remote servers such as Atlassian's work: you give the client the MCP URL only, and the first time
-it connects it opens this instance in your browser. Sign in if asked, check the client's name and where the answer
-goes, and click **Allow**. The client then holds an access token that lasts an hour and that it renews on its own, for 30 days after
-its last use. The tokens act with your role and project access, on the MCP server only: the REST API refuses them.
-Each connection is listed with your API keys in **Settings → Account → API keys**, named after the client, and
-revoking it there disconnects the client at its next request.
+[MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+describes: you give the client the MCP URL only, and the first time it connects it opens this instance in your
+browser. Sign in if asked, check the client's name and where the answer goes, and click **Allow**. The client then
+holds an access token of one hour, which it renews on its own for 30 days after its last use. The tokens act with your
+role and project access, on the MCP server only: the REST API refuses them. Each connection is listed, named after
+the client, with your API keys in **Settings → Account → API keys**; revoking it there disconnects the client.
 
 Claude Code (`/mcp`, then **Authenticate**), Cursor, VS Code, Gemini CLI, Opencode and Claude Desktop through
-`mcp-remote` sign in this way. The instance is its own authorization server: clients register on their own (dynamic
-client registration), PKCE is required, and the API reference (`/settings/api` in your instance) lists the endpoints under
-**MCP OAuth**.
+`mcp-remote` sign in this way. The instance is its own authorization server; PKCE is required. A client registers on
+its own, or, once [`PIWI_MCP_CLIENT_METADATA_DOCUMENTS`](/reference/configuration#authentication) turns it on, names
+its metadata document's HTTPS address as its client ID. The API reference
+(`/settings/api` in your instance) lists the endpoints under **MCP OAuth**.
 
 A client that cannot sign in sends an API key instead, the same `pd_` keys as the REST API, created in **Settings →
 Account → API keys** (administrators manage anyone's keys from **Settings → Users**), as a Bearer token on every
@@ -83,9 +83,9 @@ except in the desktop app, which requires its local access token as the Bearer v
 
 ## Client setup
 
-Replace `<your-piwi-url>` with your dashboard base URL (for example `http://localhost:3000`). For a client that signs
-in through OAuth, leave out the `headers` entry (`--header` on a command line); otherwise replace `pd_YOUR_API_KEY`
-with a real API key. The **MCP server** page of the dashboard shows both forms. In the
+Replace `<your-piwi-url>` with your dashboard base URL (for example `http://localhost:3000`). A client that signs in
+through OAuth leaves out the `headers` entry (`--header` on a command line); any other replaces `pd_YOUR_API_KEY`
+with a real API key. The dashboard's **MCP server** page shows both forms. In the
 [desktop app](#in-the-desktop-app), the MCP server page detects the installed clients and writes their entry in one
 click instead.
 
@@ -150,8 +150,7 @@ that offer **Settings → Connectors → Add custom connector** take the `/mcp` 
 claude mcp add --transport http --scope user piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
 ```
 
-`--scope user` makes the server available in every folder; without it, Claude Code keeps it for the folder the command
-ran in. Restart Claude Code, then check with `/mcp` that **piwi** is listed.
+`--scope user` makes the server available in every folder, not only the one the command ran in. Restart Claude Code, then check with `/mcp` that **piwi** is listed.
 
 ### Cursor
 

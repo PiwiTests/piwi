@@ -74,7 +74,11 @@ executions, tagged `@no-reuse`, or in a spec file holding a serial group always 
 their pass ran them in, so a new or renamed test runs. The diff counts untracked files, and a commit a shallow clone
 lacks is fetched. A plan is kept for 24 hours, and a job other than the one that made it uses it only when both
 checkouts are clean at the same commit; a job that cannot use it (an unreachable dashboard, an expired plan, another
-checkout) runs the whole suite, not a shard of it. The run records the tests it skipped and did not execute as its
+checkout) runs the whole suite, not a shard of it. With Playwright 1.62 or later in the project, the reporter skips the
+plan's tests itself as Playwright builds the run, so every reporter shows each one as skipped with the run whose pass
+stands in for it (`passed in run #41`), and the reporter sends the dashboard none of them; below 1.62, `piwi run` leaves
+them out with Playwright's `--test-list-invert`. A reporter that cannot read the plan runs every test, the whole suite
+in a shard. The run records the tests it skipped and did not execute as its
 reused results: the run page's header counts them and lists them with the pass each one reuses, the pull-request
 comment counts them, and the `get_run` MCP tool returns their count. The run's own status, pass rate, flaky scores,
 durations and fix verification read executions only. The [CI merge gate](/features/merge-gate#what-fails-it) can limit reuse, and counts a reused test as passed in a run

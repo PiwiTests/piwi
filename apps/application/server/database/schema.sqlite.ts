@@ -46,6 +46,9 @@ export const projects = sqliteTable(
     liveView: integer('live_view', { mode: 'boolean' }).notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
     liveViewMasks: text('live_view_masks', { mode: 'json' }), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
     askToWatch: integer('ask_to_watch', { mode: 'boolean' }).notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
+    liveViewHold: integer('live_view_hold', { mode: 'boolean' }).notNull().default(false), // true = a CI test that fails while someone with run:control watches its worker in full waits at its failure, liveViewHoldMinutes long at most; off by default
+    liveViewHoldMinutes: integer('live_view_hold_minutes').notNull().default(5), // how long a failing CI test is held for its controllers, 1 to 15 minutes
+    liveViewPause: integer('live_view_pause', { mode: 'boolean' }).notNull().default(false), // true = someone with run:control watching a CI worker in full may pause its test at its next call, resume and end it, for liveViewHoldMinutes at most; needs liveViewHold; off by default
     statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: text('tag_keys', { mode: 'json' }), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
     defaultEnvironmentId: integer('default_environment_id').references((): AnySQLiteColumn => environments.id, {
@@ -324,7 +327,6 @@ export const failureClusters = sqliteTable(
     timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
-    lastRerunDispatch: text('last_rerun_dispatch', { mode: 'json' }), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
     bisectResult: text('bisect_result', { mode: 'json' }), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
     // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
     // inbox queue until the deadline passes (or, in "until-recurs" mode, until a
@@ -537,6 +539,17 @@ export const appSettings = sqliteTable('app_settings', {
   updatedAt: integer('updated_at', { mode: 'timestamp' })
     .notNull()
     .$defaultFn(() => new Date()),
+});
+
+// The bytes Settings → Storage counts (the stored files that are not trace blobs, the trace blobs and the pooled trace
+// resources), kept by the triggers on those three tables and recounted each night. One row on SQLite (`slot` 0);
+// PostgreSQL spreads its writes over 16 rows by session, so concurrent uploads do not wait on one. The total is their sum.
+export const storageTotals = sqliteTable('storage_totals', {
+  // A row inserted through Drizzle without its slot is slot 0, the one the recount writes; the table has no default.
+  slot: integer('slot')
+    .primaryKey()
+    .$defaultFn(() => 0),
+  bytes: integer('bytes').notNull().default(0),
 });
 
 // Content-addressed storage for large per-execution text payloads (ARIA
@@ -1457,6 +1470,8 @@ export const accountTokens = sqliteTable(
     email: text('email'),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+    // 'operator' for an invitation whoever runs the instance asked for; null for one an administrator sent.
+    issuedBy: text('issued_by'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1939,6 +1954,37 @@ export const runPlans = sqliteTable(
   (table) => ({
     projectExpiresIdx: index('idx_run_plans_project_expires').on(table.projectId, table.expiresAt),
     createdByIdx: index('idx_run_plans_created_by').on(table.createdBy),
+  }),
+);
+
+// Shard splits: how the reporter's balanced sharding splits one listing of a
+// run's tests between its shards, keyed by project, commit, shard count and the
+// listing's hash. The first shard to ask stores it and every other shard reads
+// it, so a run landing between two shards' start changes nothing. A split
+// expires after a day; storing one deletes the project's expired ones.
+export const shardSplits = sqliteTable(
+  'shard_splits',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commitSha: text('commit_sha').notNull(), // the commit the shards run, '' when the reporter names none
+    shardTotal: integer('shard_total').notNull(),
+    testsHash: text('tests_hash').notNull(), // SHA-256 of the listed tests, in the order the reporter lists them
+    split: text('split', { mode: 'json' }).notNull(), // StoredShardSplit: each listed test's shard, each shard's duration
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  },
+  (table) => ({
+    keyUnique: uniqueIndex('idx_shard_splits_key').on(
+      table.projectId,
+      table.commitSha,
+      table.shardTotal,
+      table.testsHash,
+    ),
   }),
 );
 
@@ -2682,6 +2728,7 @@ export type ReportSchedule = typeof reportSchedules.$inferSelect;
 export type ReportSnapshot = typeof reportSnapshots.$inferSelect;
 export type RunTarget = typeof runTargets.$inferSelect;
 export type RunRequestRow = typeof runRequests.$inferSelect;
+export type CiDispatchRow = typeof ciDispatches.$inferSelect;
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;
@@ -3251,6 +3298,53 @@ export const runRequests = sqliteTable(
   }),
 );
 
+// CI dispatches: one row per dispatch of a CI action, from any place, and the run it was matched to
+export const ciDispatches = sqliteTable(
+  'ci_dispatches',
+  {
+    id: text('id').primaryKey(), // 16 hex digits: the dispatch id, which the run hands back as PIWI_ORIGIN_REF
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    actionId: text('action_id'), // the CI action (`ciRerun.actions[].id`); null for a dispatch stored before CI actions
+    actionName: text('action_name'), // the action's name when it was dispatched, kept after a rename or a removal
+    origin: text('origin').notNull(), // CiDispatchOrigin: what started it ('page', 'mcp', 'api')
+    kind: text('kind').notNull(), // CiActionKind: 'tests', 'suite', 'tags' or 'flakeLab'
+    sourceRunId: integer('source_run_id'), // the run its tests or its branch came from; no foreign key, so a run's delete never waits on it
+    clusterId: integer('cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }), // the cluster it re-ran, or the cluster of the test it re-ran
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }), // the test of a Flake Lab experiment
+    provider: text('provider').notNull(), // CiRerunProvider: 'github', 'gitlab', 'bitbucket' or 'ci-server'
+    preset: text('preset'), // CiServerPreset, for a 'ci-server' dispatch
+    ref: text('ref'), // the branch sent; null when the target runs its configured branch
+    inputs: text('inputs', { mode: 'json' }), // Record<string, string>: the action's inputs as sent, fixed and chosen
+    args: text('args').notNull(), // the Playwright (or `piwi flake`) arguments handed to CI
+    files: text('files', { mode: 'json' }), // string[]: the spec files the arguments name, POSIX separators
+    tests: integer('tests'), // how many tests the arguments name
+    url: text('url'), // the provider's run once known, else its runs list; null before the provider answered
+    providerRunId: text('provider_run_id'), // GitHub's run id, GitLab's pipeline id, Bitbucket's or the CI server's build number
+    state: text('state').notNull().default('dispatched'), // CiDispatchState
+    detail: text('detail'), // the provider's error, for a refused dispatch
+    runId: integer('run_id'), // the run matched to it; no foreign key, so a run's delete never waits on it
+    byUserId: integer('by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    byName: text('by_name'), // who pressed it, kept after their account is deleted
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    matchedAt: integer('matched_at', { mode: 'timestamp_ms' }),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_ci_dispatches_project').on(t.projectId, t.createdAt),
+    projectStateIdx: index('idx_ci_dispatches_project_state').on(t.projectId, t.state),
+    clusterIdx: index('idx_ci_dispatches_cluster').on(t.clusterId, t.createdAt),
+    testCaseIdx: index('idx_ci_dispatches_test_case').on(t.testCaseId),
+    byUserIdx: index('idx_ci_dispatches_by_user').on(t.byUserId),
+    runIdx: index('idx_ci_dispatches_run').on(t.runId),
+  }),
+);
+
 // Credentials: the secrets Piwi sends to other services, saved once and referenced by id
 // (`server/utils/credentials.ts`). The secret is sealed with the destination it may be sent under and never returned.
 export const credentials = sqliteTable(
@@ -3269,6 +3363,9 @@ export const credentials = sqliteTable(
     customRequests: integer('custom_requests', { mode: 'boolean' }).notNull().default(false), // whether a Custom CI server request may carry it
     disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false), // every use is refused
     managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    perUser: integer('per_user', { mode: 'boolean' }).notNull().default(false), // each person gives their own token (credential_user_tokens); no secret here
+    tokenHelpUrl: text('token_help_url'), // where a person creates their token, for a per-user credential
+    oauthClientId: text('oauth_client_id'), // the OAuth application a per-user SCM credential authorizes people through; its secret is in `secret`
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -3282,6 +3379,68 @@ export const credentials = sqliteTable(
     // Unique ignoring case, as the routes compare names.
     nameIdx: uniqueIndex('idx_credentials_name_lower').on(sql`lower(${t.name})`),
     createdByIdx: index('idx_credentials_created_by').on(t.createdBy),
+  }),
+);
+
+// A person's own token for a per-user credential, sealed with the credential, the person and the destination.
+export const credentialUserTokens = sqliteTable(
+  'credential_user_tokens',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    remoteUser: text('remote_user').notNull(), // the account the service named when the token was tested
+    secret: text('secret').notNull(), // AES-256-GCM JSON { credentialId, userId, destination, user, secret }
+    state: text('state').notNull().default('ready'), // 'ready' | 'invalid'
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    testedAt: integer('tested_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }), // when an OAuth access token expires; null for a token that does not
+  },
+  (t) => ({
+    credentialUserIdx: uniqueIndex('idx_credential_user_tokens_credential_user').on(t.credentialId, t.userId),
+    userIdx: index('idx_credential_user_tokens_user').on(t.userId),
+    // One account on the service serves one person per credential, ignoring case.
+    remoteUserIdx: uniqueIndex('idx_credential_user_tokens_remote_user').on(
+      t.credentialId,
+      sql`lower(${t.remoteUser})`,
+    ),
+  }),
+);
+
+// An OAuth authorization a person started for a per-user credential: its `state`, single-use, bound to the person and
+// the credential, until the host sends them back or it expires.
+export const credentialAuthorizations = sqliteTable(
+  'credential_authorizations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    stateHash: text('state_hash').notNull(), // SHA-256 of the state sent to the host
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    verifier: text('verifier').notNull(), // AES-256-GCM PKCE code verifier
+    returnTo: text('return_to'), // the page to go back to, checked by safeReturnPath
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    stateIdx: uniqueIndex('idx_credential_authorizations_state').on(t.stateHash),
+    expiresIdx: index('idx_credential_authorizations_expires').on(t.expiresAt),
+    credentialIdx: index('idx_credential_authorizations_credential').on(t.credentialId),
+    userIdx: index('idx_credential_authorizations_user').on(t.userId),
   }),
 );
 
@@ -3314,6 +3473,7 @@ export const credentialUses = sqliteTable(
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
     userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    remoteUser: text('remote_user'), // the person's own account, for a use of a per-user credential
     subjectType: text('subject_type'), // 'ci-action'
     subjectId: text('subject_id'),
     destination: text('destination'), // the request's origin and path, never its query
@@ -3338,3 +3498,4 @@ export const credentialUses = sqliteTable(
 
 export type CredentialRow = typeof credentials.$inferSelect;
 export type CredentialUseRow = typeof credentialUses.$inferSelect;
+export type CredentialUserTokenRow = typeof credentialUserTokens.$inferSelect;

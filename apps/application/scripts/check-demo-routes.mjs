@@ -28,6 +28,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/ai/deepseek-cli/status', // official local CLI credentials have no browser-demo equivalent
   'GET /api/ai/codex-cli/status', // local CLI authentication has no browser-demo equivalent
   'POST /api/auth/setup', // initial admin setup (server only)
+  'GET /api/credentials/:id/authorize', // sends a person to GitLab or Bitbucket; the demo talks to no host and takes the authorization through its token route
+  'GET /api/credentials/oauth/callback', // where GitLab or Bitbucket sends a person back; the demo talks to no host
   'POST /api/test-runs/submit', // bulk result submission (no server in demo)
   'POST /api/test-runs/upload', // multipart upload (no server in demo)
   'POST /api/test-runs/upload/results', // a run's results ahead of its files (no server in demo)
@@ -42,7 +44,11 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/projects/:id/run-plans/sources', // pass reuse — plans need a local git diff the browser demo cannot produce
   'POST /api/projects/:id/run-plans', // pass reuse — needs the diffs `piwi plan` computes from a local checkout
   'GET /api/projects/:id/run-plans/:planId', // pass reuse — reads a plan only `POST /api/projects/:id/run-plans` stores
+  'POST /api/projects/:id/shard-split', // the reporter's balanced sharding — asked by a sharded Playwright run, which the browser demo has none of
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
+  'GET /api/desktop/team/executions/:id/comparison', // desktop build only; asks the team instance the app connected to, 404 everywhere else
+  'GET /api/desktop/team/test-cases/:id/comparison', // desktop build only; asks the team instance the app connected to, 404 everywhere else
+  'GET /api/desktop/team/projects', // desktop build only; lists the projects of the team instance the app connected to, 404 everywhere else
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
   'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
   'GET /api/desktop/live-runs', // desktop build only; reports the shell's watched runs, empty everywhere else
@@ -104,12 +110,18 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
+  // The operator's usage, notice and invitation, for whoever runs the instance with PIWI_OPERATOR_TOKEN: the browser
+  // demo has no server to run, and no token.
+  'GET /api/operator/usage',
+  'GET /api/operator/notice',
+  'PUT /api/operator/notice',
+  'DELETE /api/operator/notice',
+  'POST /api/operator/admin-invite',
   // The run page's live view: a live run's test workers hold its streams and post its frames, and a page watches
   // them. The demo runs no test worker and no browser: its simulator plays the workers' call logs to the page over the
   // demo's event channel, which the page's own watch reads (`app/demo/live-watch.ts`), so only the page Inspect shows
-  // at a call has a demo route.
+  // at a call, a simulated CI worker's held failure, and Let it go have demo routes.
   'GET /api/test-runs/:id/live-view',
-  'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
   'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
@@ -140,6 +152,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/run-targets/requests/:id/folder-hints',
   'GET /api/run-targets/projects/:id/environments',
   'GET /api/run-targets/projects/:id/run-variables',
+  'GET /api/run-targets/projects',
+  'GET /api/run-targets/projects/:id/test-comparison',
   'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the
   // authorize endpoint stored, and the client redeems a code for tokens. The

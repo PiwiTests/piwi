@@ -20,6 +20,7 @@ import type { AttemptOutcome, EntityLinkInfo, TestCaseHistoryPoint } from '~~/ty
 import type { LinkEntityType } from '#shared/handlers/links';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { shownWorkerNumber } from '#shared/worker-lane';
+import { lockDescription, lockLabel } from '#shared/test-locks';
 import { failurePlace } from '~/utils/ide-links';
 
 const props = defineProps<{
@@ -342,9 +343,9 @@ defineExpose({ revealRawError });
                     v-for="lock in testCase.locks"
                     :key="lock"
                     class="inline-flex items-center gap-1 text-highlighted"
-                    title="Only one holder of this lock runs at a time"
+                    :title="lockDescription(lock)"
                   >
-                    <UIcon name="i-lucide-lock" class="size-3 text-warning" />{{ lock }}
+                    <UIcon name="i-lucide-lock" class="size-3 text-warning" />{{ lockLabel(lock) }}
                   </span>
                 </p>
               </div>

@@ -16,6 +16,7 @@ const NO_CONNECTION: RunTargetConnectionView = {
   keyToKeep: false,
   linkedProjectIds: [],
   projectNames: {},
+  compares: null,
 };
 
 export function useDesktopTeamRequests() {

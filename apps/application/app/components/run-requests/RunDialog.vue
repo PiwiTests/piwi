@@ -1,0 +1,360 @@
+<script setup lang="ts">
+/**
+ * The run dialog of one place (`useRunPlace`): from top to bottom, a sentence that follows the pick, **What** (the
+ * place's choices, with the tests a choice names, not editable, and for tagged tests the tags to pick), **Where** (the
+ * person's apps and the project's CI actions, a row that cannot take the chosen What disabled with the reason), and
+ * the fields of the pick: the environment and the run options of Copy retry command for an app, the branch and the
+ * choice inputs for a CI action.
+ * After **Send**, the same window follows what was sent (`RunFollowUp`) until **New run**. In the desktop window,
+ * **Where** has _This computer_ instead of the person's apps, whose fields are `RunThisComputerFields`: **Run** starts
+ * the run in the Local runs tray, which follows it, and closes the dialog.
+ */
+import { MAX_RERUN_TESTS } from '#shared/ci-dispatch-request';
+import { ciTagsPhrase, MAX_CI_TAGS } from '#shared/ci-tags';
+import type { RunPlace, RunWhat } from '~/composables/useRunPlace';
+
+const props = defineProps<{ place: RunPlace }>();
+
+const branchListId = useId();
+const testCount = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
+/** The tests a What names, shown under it: the first few, then how many more. */
+const SHOWN_TESTS = 5;
+
+/** How much a What runs, under its label: its one test's title, how many tests, or the whole suite. */
+function whatSize(w: RunWhat): string | undefined {
+  if (w.wholeSuite) return w.label === 'The whole suite' ? undefined : 'The whole suite';
+  if (w.count === 1 && w.tests?.length === 1) return w.tests[0];
+  return w.count == null ? undefined : testCount(w.count);
+}
+const whatItems = computed(() =>
+  props.place.whats.map((w) => ({ value: w.key, label: w.label, description: whatSize(w) })),
+);
+const what = computed(() => props.place.what);
+/** The tests of the chosen What, listed under it when it names more than one. */
+const shownTests = computed(() => {
+  const tests = what.value?.tests ?? [];
+  return tests.length > 1 ? tests.slice(0, SHOWN_TESTS) : [];
+});
+const moreTests = computed(() => Math.max(0, (what.value?.tests?.length ?? 0) - SHOWN_TESTS));
+/** The line under the chosen What when CI is picked, with the most tests a re-run names when it names more. */
+const ciNote = computed(() => {
+  if (!props.place.ciPick) return undefined;
+  const capped =
+    props.place.ciOffer?.kind === 'tests' && (what.value?.count ?? 0) > MAX_RERUN_TESTS
+      ? `A CI re-run names ${MAX_RERUN_TESTS} of them at most.`
+      : null;
+  return [what.value?.ci?.note, capped].filter(Boolean).join(' ') || undefined;
+});
+const ciInputs = computed(() => props.place.ciPick?.inputs ?? []);
+const choiceInputs = computed(() => ciInputs.value.filter((i) => i.kind === 'choice'));
+const fixedInputs = computed(() => ciInputs.value.flatMap((i) => (i.kind === 'fixed' ? [`${i.name}=${i.value}`] : [])));
+/** The environment the picked CI action's team run is against. */
+const ciEnvironment = computed(() => props.place.ciPick?.environment ?? null);
+
+/**
+ * The project's tags to pick from, each with how many of the tests run in the catalog's window carry it; the rest
+ * disabled once the most are picked.
+ */
+const tagItems = computed(() =>
+  (props.place.tagOptions ?? []).map((option) => ({
+    value: option.value,
+    label: `@${option.value}`,
+    description: testCount(option.count),
+    disabled: props.place.tags.length >= MAX_CI_TAGS && !props.place.tags.includes(option.value),
+  })),
+);
+const TAG_MATCH_ITEMS = [
+  { value: 'any', label: 'Any of them' },
+  { value: 'all', label: 'All of them' },
+];
+/** Why no tag can be picked: no test run in the window carries one, or none of them can be sent to CI. */
+const noTags = computed(() => {
+  if (props.place.tagsRefused > 0) {
+    return "None of this project's tags can be sent to CI: each holds a space, a double quote or a character a command line changes ($ ` \\ % !).";
+  }
+  return props.place.tagDays
+    ? `No test of this project run in the last ${props.place.tagDays} days carries a tag.`
+    : 'No test of this project carries a tag yet.';
+});
+/** What the picked tags run, under the picker. */
+const tagsLine = computed(() =>
+  props.place.tags.length === 0
+    ? `Pick up to ${MAX_CI_TAGS} tags: CI runs the tests tagged with them, through one --grep.`
+    : `CI runs the tests tagged ${ciTagsPhrase(props.place.tags, props.place.tagMatch)}, through one --grep.`,
+);
+
+const config = useRuntimeConfig();
+const instanceAddress = computed(() => {
+  if (config.public.siteUrl) return config.public.siteUrl.replace(/\/$/, '');
+  if (!import.meta.client) return '';
+  return new URL(config.app.baseURL || '/', window.location.origin).href.replace(/\/$/, '');
+});
+</script>
+
+<template>
+  <UModal v-model:open="place.open" :title="place.dialogTitle" :ui="{ content: 'max-w-lg' }">
+    <template #body>
+      <RunFollowUp
+        v-if="place.followUp"
+        :follow-up="place.followUp"
+        :skipped="place.followUp.kind === 'request' ? place.skipped : 0"
+        :error="place.sendError ? `Not sent again: ${place.sendError}` : place.followUpError"
+      />
+
+      <div v-else class="space-y-4" data-shot="run-dialog">
+        <p v-if="place.localPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
+          Runs in the project's linked folder on this computer, with its own Playwright. The run streams into the Local
+          runs tray and keeps going while you browse; with the Piwi reporter set up, it reports to this app.
+          <DocLink to="features/run-on-this-computer" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
+        </p>
+        <p v-else-if="place.appPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
+          Your app shows the request with its checks and the command; nothing runs until you click
+          <strong>Run</strong> there. The run reports here, and only you see it.
+        </p>
+        <p
+          v-else-if="place.ciPick && place.ciOffer?.kind === 'flakeLab'"
+          class="text-sm text-highlighted leading-relaxed"
+          data-testid="run-dialog-sentence"
+        >
+          A lab run: the experiment stays out of the project's history, its notifications and pull-request feedback. It
+          spends CI minutes, and runs against
+          {{ ciEnvironment ? `the ${ciEnvironment} environment` : 'the environment its job sets up' }}.
+        </p>
+        <p v-else-if="place.ciPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
+          A team run: it counts in the project's history, sends its notifications and pull-request feedback, spends CI
+          minutes, and runs against
+          {{ ciEnvironment ? `the ${ciEnvironment} environment` : 'the environment its job sets up' }}.
+        </p>
+
+        <div v-if="what" class="space-y-1">
+          <div class="text-sm font-semibold text-highlighted">What</div>
+          <URadioGroup
+            v-if="whatItems.length > 1"
+            v-model="place.whatKey"
+            :items="whatItems"
+            size="sm"
+            aria-label="What"
+          >
+            <template #description="{ item }">
+              <span class="break-words">{{ item.description }}</span>
+              <template v-if="item.value === what.key">
+                <ul v-if="shownTests.length" class="mt-0.5 space-y-0.5" data-testid="run-dialog-tests">
+                  <li v-for="(title, i) in shownTests" :key="i" class="truncate" :title="title">{{ title }}</li>
+                  <li v-if="moreTests">and {{ moreTests }} more</li>
+                </ul>
+                <span v-if="ciNote" class="block mt-0.5">{{ ciNote }}</span>
+              </template>
+            </template>
+          </URadioGroup>
+          <template v-else>
+            <p class="text-sm text-highlighted">
+              {{ what.label }}
+              <span v-if="whatSize(what)" class="text-xs text-muted break-words">· {{ whatSize(what) }}</span>
+            </p>
+            <ul v-if="shownTests.length" class="text-xs text-muted space-y-0.5" data-testid="run-dialog-tests">
+              <li v-for="(title, i) in shownTests" :key="i" class="truncate" :title="title">{{ title }}</li>
+              <li v-if="moreTests">and {{ moreTests }} more</li>
+            </ul>
+            <p v-if="ciNote" class="text-xs text-muted">{{ ciNote }}</p>
+          </template>
+        </div>
+
+        <div v-if="place.tagsShown" class="space-y-1" data-testid="run-dialog-tags">
+          <div class="text-sm font-semibold text-highlighted">Tags</div>
+          <p v-if="place.tagsError" class="text-xs text-error">{{ place.tagsError }}</p>
+          <p
+            v-else-if="place.tagOptions?.length === 0"
+            class="text-sm text-highlighted"
+            data-testid="run-dialog-no-tags"
+          >
+            {{ noTags }}
+          </p>
+          <template v-else>
+            <USelectMenu
+              v-model="place.tags"
+              :items="tagItems"
+              value-key="value"
+              multiple
+              :loading="!place.tagOptions"
+              placeholder="Pick tags"
+              aria-label="Tags"
+              class="w-full sm:w-64"
+            />
+            <URadioGroup
+              v-if="place.tags.length > 1"
+              v-model="place.tagMatch"
+              :items="TAG_MATCH_ITEMS"
+              orientation="horizontal"
+              size="sm"
+              aria-label="Tests carrying"
+            />
+            <p class="text-xs text-muted">{{ tagsLine }}</p>
+          </template>
+        </div>
+
+        <div class="space-y-2">
+          <div class="text-sm font-semibold text-highlighted">Where</div>
+          <LoadingState v-if="!place.ready" />
+          <template v-else>
+            <div v-if="place.appsShown" class="space-y-1">
+              <div class="text-xs text-muted">Your apps</div>
+              <URadioGroup
+                v-if="place.appRows.length"
+                v-model="place.where"
+                :items="place.appRows"
+                size="sm"
+                aria-label="Your apps"
+                data-testid="run-dialog-apps"
+              />
+              <p v-else class="text-sm text-highlighted leading-relaxed">
+                No app of yours takes run requests yet. In Piwi Desktop, open
+                <strong>Settings → Team instance</strong> and connect it to
+                <code class="text-xs">{{ instanceAddress }}</code
+                >.
+                <DocLink to="features/run-on-my-machine" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
+              </p>
+            </div>
+            <div v-if="place.localShown" class="space-y-1">
+              <div class="text-xs text-muted">This computer</div>
+              <URadioGroup
+                v-model="place.where"
+                :items="place.localRows"
+                size="sm"
+                aria-label="This computer"
+                data-testid="run-dialog-local"
+              />
+            </div>
+            <div v-if="place.ciShown" class="space-y-1">
+              <div class="text-xs text-muted">CI</div>
+              <URadioGroup
+                v-model="place.where"
+                :items="place.ciRows"
+                size="sm"
+                aria-label="CI"
+                data-testid="run-dialog-ci"
+              />
+            </div>
+          </template>
+        </div>
+
+        <RunThisComputerFields v-if="place.localPick" :here="place.here" />
+
+        <template v-else-if="place.appPick">
+          <div v-if="place.environmentOffered" class="space-y-1" data-testid="run-dialog-environment">
+            <div class="text-sm font-semibold text-highlighted">Environment</div>
+            <EnvironmentPicker v-model="place.environmentId" :project-id="place.projectId" class="w-full sm:w-64" />
+            <p v-if="place.protectedPick" class="flex items-start gap-1.5 text-xs text-highlighted">
+              <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 mt-px text-warning" aria-hidden="true" />
+              <span
+                >{{ place.protectedPick.name }} is protected: the run keeps to the tests tagged
+                {{ place.protectedPick.requiredTags.join(', ') }} and the setup and teardown projects they depend on,
+                and your app asks you to confirm it.</span
+              >
+            </p>
+          </div>
+          <RetryCommandOptions :projects="place.whatProjects" :naming="false" class="-mx-2" />
+        </template>
+
+        <template v-else-if="place.ciPick">
+          <div v-if="place.ciPick.credential" class="space-y-2" data-testid="run-dialog-in-your-name">
+            <p class="text-sm text-highlighted">
+              {{ place.ciPick.target.label }} runs in your name<template v-if="place.ciPick.credential.account"
+                >, as <span class="font-mono">{{ place.ciPick.credential.account }}</span></template
+              >, with your own token for “{{ place.ciPick.credential.name }}”: the CI server shows you as who started
+              it.
+            </p>
+            <template v-if="place.ciTokenAsked">
+              <p class="text-sm text-muted">
+                {{
+                  place.ciTokenAsked.state === 'invalid'
+                    ? place.ciTokenAsked.credential.method === 'oauth'
+                      ? 'Your authorization was refused or expired: authorize again.'
+                      : 'The CI server refused your token: give it again.'
+                    : place.ciTokenAsked.credential.method === 'oauth'
+                      ? 'Authorize it first.'
+                      : 'Give your token first.'
+                }}
+              </p>
+              <UserTokenForm
+                :key="place.ciTokenAsked.credential.id"
+                :credential-id="place.ciTokenAsked.credential.id"
+                @saved="place.refreshCiOffer()"
+              />
+            </template>
+          </div>
+          <div class="space-y-1" data-testid="run-dialog-branch">
+            <div class="text-sm font-semibold text-highlighted">Branch</div>
+            <p v-if="place.ciPick.branch.mode === 'fixed'" class="text-sm text-highlighted">
+              Runs on the job's configured branch
+            </p>
+            <template v-else>
+              <UInput
+                v-model="place.branch"
+                :list="branchListId"
+                :placeholder="place.ciPick.branch.default ?? 'The CI’s default branch'"
+                aria-label="Branch"
+                autocomplete="off"
+                class="w-full sm:w-64"
+                @update:model-value="(value: string | number) => place.searchBranches(String(value ?? ''))"
+              />
+              <datalist :id="branchListId">
+                <option v-for="name in place.branches" :key="name" :value="name" />
+              </datalist>
+              <p v-if="place.refProblem" class="text-xs text-error">{{ place.refProblem }}</p>
+            </template>
+          </div>
+          <div v-for="input in choiceInputs" :key="input.name" class="space-y-1">
+            <div class="text-sm font-semibold text-highlighted">{{ input.name }}</div>
+            <USelect
+              v-model="place.inputs[input.name]"
+              :items="input.kind === 'choice' ? input.options : []"
+              :aria-label="input.name"
+              class="w-full sm:w-64"
+            />
+          </div>
+          <p v-if="fixedInputs.length" class="text-xs text-muted">Sends {{ fixedInputs.join(', ') }}</p>
+        </template>
+
+        <p v-if="place.sendError" class="text-xs text-error" data-testid="run-dialog-error">{{ place.sendError }}</p>
+      </div>
+    </template>
+
+    <template #footer>
+      <div class="flex flex-wrap justify-end gap-2 w-full">
+        <template v-if="place.followUp">
+          <UButton
+            v-if="place.followUp.canStop"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-square"
+            :loading="place.stopping"
+            @click="place.stopRun()"
+            >Stop</UButton
+          >
+          <template v-else>
+            <UButton color="neutral" variant="ghost" @click="place.newRun()">New run</UButton>
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-rotate-ccw"
+              :loading="place.sending"
+              @click="place.runAgain()"
+              >Run again</UButton
+            >
+          </template>
+          <UButton color="neutral" variant="ghost" @click="place.open = false">Close</UButton>
+        </template>
+        <template v-else>
+          <UButton color="neutral" variant="ghost" @click="place.open = false">Cancel</UButton>
+          <UButton
+            :icon="place.localPick ? 'i-lucide-play' : 'i-lucide-send'"
+            :disabled="!place.canSend"
+            :loading="place.sending"
+            @click="place.send()"
+            >{{ place.localPick ? 'Run' : 'Send' }}</UButton
+          >
+        </template>
+      </div>
+    </template>
+  </UModal>
+</template>

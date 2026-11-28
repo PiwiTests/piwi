@@ -40,7 +40,7 @@ import { t } from './i18n.js';
  * preview, `piwi-desktop-repro-status`, and the hub of its runs for the Runs
  * window, `fetchDesktopHubs`; and the CI runs in progress the Runs window lists
  * while it is open, `fetchActiveRuns`, `fetchRunMetadata` and `openRunStream`, and
- * the CI lane it watches, `openLiveWatch` and `changeLiveWatch`) only,
+ * the CI lane it watches, `openLiveWatch`, `changeLiveWatch`, `letGoCiTest` and `controlCiTest`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -276,6 +276,42 @@ export async function changeLiveWatch(
 ): Promise<Response> {
   const headers = await authHeaders(settings);
   return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/watch`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
+}
+
+/**
+ * **Let it go** on a CI test held at its failure (`POST /api/test-runs/:id/live-view/let-go`), on the watch of its lane
+ * `body` names.
+ */
+export async function letGoCiTest(
+  settings: ConnectionSettings,
+  runId: number,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/let-go`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
+}
+
+/**
+ * **Pause**, **Resume** or **End the test** of a CI test (`POST /api/test-runs/:id/live-view/control`), on the watch of
+ * its lane `body` names.
+ */
+export async function controlCiTest(
+  settings: ConnectionSettings,
+  runId: number,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/control`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

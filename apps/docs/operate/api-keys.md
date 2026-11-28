@@ -10,15 +10,16 @@ An API key is a long-lived token tied to one user account, and the recommended w
 Playwright reporter and scripts once [authentication](./authentication) is on. A key carries its owner's access: their
 [instance role](./authentication#roles) and the [project roles](./project-access) they hold, directly or through
 their groups. A key for a Member with the Uploader role on one project can read that project and upload to it, and
-nothing else. The key a connected run target receives (the desktop app) is the one exception: it holds
-`run:receive` alone, and serves only that app's routes.
+nothing else. The key a connected run target receives (the desktop app, Piwi Runner) is the one exception: it holds
+`run:receive` and, for the desktop app, `project:read`, and serves only that app's routes.
 
 For CI, give the key to a dedicated account that can only upload: [CI accounts](./project-access#ci-accounts) says
 which role and where.
 
 With authentication on, every endpoint needs a session cookie or an API key whose owner holds the permission the
 endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/settings/api)). The exceptions are the
-health and version endpoints, the sign-in flows themselves, and live-run streaming, which uses per-run stream tokens.
+health endpoint, the version endpoint (which then answers every field empty), the sign-in flows themselves, and
+live-run streaming, which uses per-run stream tokens.
 
 ## Security properties
 

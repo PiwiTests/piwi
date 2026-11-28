@@ -83,7 +83,13 @@ export interface ExecutionReportInput {
   /** A page of the site the test ran on (the page it ended on), for a test whose navigations name no origin. */
   origin?: string | null;
   snapshots?: readonly ExecutionElementSnapshot[];
-  console?: ReadonlyArray<{ level: 'error' | 'warn'; message: string; time?: number | null }>;
+  /** The page's console errors and warnings, and its uncaught errors (`source: 'error'`). */
+  console?: ReadonlyArray<{
+    level: 'error' | 'warn';
+    message: string;
+    time?: number | null;
+    source?: BugConsoleEntry['source'];
+  }>;
   requests?: ReadonlyArray<{ method: string; url: string; status: number; time?: number | null }>;
   viewport?: { width: number; height: number } | null;
   /** The browser the test ran in, such as `chromium`. */
@@ -784,7 +790,7 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
   const evidence = emptyBugEvidence();
   const consoleEntries = (input.console ?? []).map((entry): BugConsoleEntry => ({
     level: entry.level,
-    source: 'console',
+    source: entry.source ?? 'console',
     message: entry.message.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
     page: '',
     time: entry.time ?? 0,

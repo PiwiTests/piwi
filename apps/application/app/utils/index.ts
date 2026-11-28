@@ -41,13 +41,6 @@ export const SELECTED_TAB_CLASS = 'bg-elevated text-highlighted font-medium';
 export const SEGMENTED_SELECTED_CLASS = 'bg-default shadow-sm text-highlighted font-medium';
 
 /**
- * The selected row of a list that picks what the page shows (an affected test,
- * the opened attempt): a raised surface inside a neutral ring, never the primary
- * color.
- */
-export const SELECTED_ROW_CLASS = 'bg-elevated ring-1 ring-inset ring-accented';
-
-/**
  * A row of the evidence card a citation just opened (a request, a console
  * entry): a neutral ring the card takes off again after `CITED_ROW_MS`.
  */
@@ -84,7 +77,7 @@ export function reproduceSectionSummary(steps: number, bisectAvailable: boolean)
 /** The cluster Toolbox's one-line Verify summary: how many tests the command runs, then whether CI can re-run them. */
 export function verifySectionSummary(testCount: number, rerunAvailable: boolean): string {
   const parts = [`Runs the ${testCount} affected test${testCount === 1 ? '' : 's'}`];
-  if (rerunAvailable) parts.push('Re-run in CI');
+  if (rerunAvailable) parts.push('Run on CI');
   return parts.join(' · ');
 }
 

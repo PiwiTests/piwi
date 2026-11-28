@@ -280,7 +280,10 @@ export interface TestTreeNode {
   runnable: boolean;
   /** On a test, what the service says of it. */
   test: TreeTest | null;
-  /** On a project node (a test that runs in several), the project's name. */
+  /**
+   * On a project node (a test that runs in several), the project's name; its label says `(only with --project)` after
+   * it for a project that runs only when `--project` names it.
+   */
   project: string | null;
   children: TestTreeNode[];
 }
@@ -322,7 +325,9 @@ export const CONFIG_NODE = 'config\x1f';
  * `CONFIG_NODE`), without the nodes `exclude` names under them: each node by the narrowest filter Playwright takes for
  * it (a config whole, a folder or a spec by its path, a describe block or a test by `file:line`, a project with
  * `--project`, a test that shares its line with others by its title too), one run per config and set of projects, so
- * that a run needs no instance. A node that is not `runnable` runs nothing.
+ * that a run needs no instance. A test whose projects all run only when `--project` names them (`default: false`, and
+ * no other project a run runs depends on one) runs with `--project`, apart from the tests under the same node that run
+ * without it. A node that is not `runnable` runs nothing.
  */
 export interface TestRunsParams {
   nodes: string[];
@@ -550,7 +555,10 @@ export interface RunTestsArgs extends RunStartOptions {
   locations?: string[];
   /** Every test of the config, in place of `locations` and `testIds`. */
   all?: boolean;
-  /** Runs the tests in these Playwright projects alone (`--project`); in every project when absent. */
+  /**
+   * Runs the tests in these Playwright projects alone (`--project`, `--project=` for an unnamed one); in every project
+   * when absent.
+   */
   projects?: string[];
   /**
    * Runs only the tests whose title path matches `grep` (`--grep`), and none that `grepInvert` matches
@@ -685,8 +693,9 @@ export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 
 /**
  * What a failures view shows: failures, none in a run read (`clear`), an instance that does not answer (`unreachable`),
- * a desktop app that did not prove it holds the token (`desktop-unproven`), an instance still being read (`loading`), no
- * run to read yet (`norun`), or no connection (`disconnected`).
+ * a desktop app that did not prove it holds the token (`desktop-unproven`), an instance that refused the key or asked
+ * for one (`refused`), no project chosen or found (`no-project`), an instance still being read (`loading`), no run to
+ * read yet (`norun`), or no connection (`disconnected`).
  */
 export type FailuresViewState =
   | 'failures'
@@ -694,6 +703,8 @@ export type FailuresViewState =
   | 'norun'
   | 'unreachable'
   | 'desktop-unproven'
+  | 'refused'
+  | 'no-project'
   | 'loading'
   | 'disconnected';
 
@@ -1214,6 +1225,12 @@ export interface LiveRun {
   /** The branch it runs on, as it reported it; absent for a run that names none. */
   branch?: string;
   /**
+   * Where a run the editor did not start comes from, by its origin, for the tooltips: `from the desktop app`, `on a
+   * developer's machine`, `a Flake Lab run`. Absent for the editor's own run, a CI run, an imported one, and a run that
+   * names no origin.
+   */
+  from?: string;
+  /**
    * Who started an own run when a person did not (`Started by Claude Code`, as `RunSession.label` says): the clients
    * say it where they would say the run is the person's. Absent for a person's run.
    */
@@ -1243,7 +1260,8 @@ export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
 /**
  * `piwi/ciSessionChanged` (notification, server to client): a CI run of the branch a context reads, or of the
  * checked-out branch, while it runs, as the instance tells it: read-only, so no control, share or hold reaches it, and
- * its tests never stop. Sent when the service starts to follow it, when its progress, its tests or the calls they are
+ * its tests never stop, but for a test its project holds at its failure for its controllers (`CiTest.held`), which
+ * **Let it go** ends (`piwi/ciLetGo`). Sent when the service starts to follow it, when its progress, its tests or the calls they are
  * at change (a burst at most every 500 ms), and last with `ended`. A client keeps the latest of each `root` and
  * `runId` until one says `ended`.
  */
@@ -1323,6 +1341,72 @@ export interface CiTest {
    * it can be watched, as it can in the editor by its `lane` and `shard` (`piwi/ciWatch`); null otherwise.
    */
   watch: string | null;
+  /** While it runs and waits at its failure, held for the people who may control its project's runs; absent otherwise. */
+  held?: CiHeld;
+  /** While it runs and stands paused for the people who may control its project's runs; absent otherwise. */
+  paused?: CiPaused;
+  /**
+   * A Pause of its lane that waits for its next call (`Pause asked by Ana`), or why its worker dropped the last one; in
+   * the run page's words, absent for neither.
+   */
+  pauseAsk?: string;
+  /**
+   * The controls the client offers on its lane (`piwi/ciControl`), as the run page offers them (`ciControlsOffered`):
+   * **Pause** while it runs, **Resume** while a Pause waits or it is paused, **End the test** while it is paused; only
+   * while the client's watch shows its lane as a controller's, absent otherwise. `id` names the lane's state they
+   * follow (its worker, its test and the instance's count of its pause state's changes): a client asks one control in
+   * each state, again after a refusal or once the lane shows anything new after the instance took the ask.
+   */
+  controls?: { id: string; offered: CiControl[] };
+}
+
+/**
+ * A running CI test paused for the people who may control its project's runs (the project's setting, by one of them
+ * watching its lane), in the run page's words: where it stands (`state`, `Paused`), by whom and until when
+ * (`pausedBy`, `Paused by Ana · until 12:05`, null when its worker names no end), the call it stopped before, its place
+ * as the run names it (`place`) and in the workspace (`at`, the file and its 0-based line, which the clients open from
+ * the place; null when the workspace holds no such file), and that the CI job's own timeout still runs (`note`).
+ */
+export interface CiPaused {
+  state: string;
+  pausedBy: string | null;
+  call: string;
+  place: string | null;
+  at: { uri: string; line: number } | null;
+  note: string;
+}
+
+/** A control of a CI lane, in the run page's words: its command, the button's label and its tooltip. */
+export interface CiControl {
+  command: CiControlCommand;
+  label: string;
+  title: string;
+}
+
+export type CiControlCommand = 'pause' | 'resume' | 'end';
+
+/**
+ * A running test of a CI run held at its failure for the people who may control its project's runs (the project's
+ * setting, while one of them watches its lane), in the run page's words: which hold it is (`id`, another for each hold
+ * of each worker), where it stands (`state`, `Failed, held at its line`), for whom and until when (`heldFor`,
+ * `Held for Ana · until 12:05`, null when its worker names no end), the error (the failing call as its worker titled
+ * it), its place as the run names it (`place`, `tests/pay.spec.ts:12`, null for none) and in the workspace (`at`, the
+ * file and its 0-based line, which the clients open from the place; null when the workspace holds no such file), and
+ * that the CI job's own timeout still runs (`note`). `letGo` says the client offers **Let it go**, in these words
+ * (`letGoLabel`, `letGoTitle` its tooltip): the client's watch (`piwi/ciWatch`) shows the lane, and the instance said it
+ * counts as a controller's. A client asks it once per hold (`id`), again only after a refusal.
+ */
+export interface CiHeld {
+  id: string;
+  state: string;
+  heldFor: string | null;
+  error: string;
+  place: string | null;
+  at: { uri: string; line: number } | null;
+  note: string;
+  letGo: boolean;
+  letGoLabel: string;
+  letGoTitle: string;
 }
 
 /** Where a running test of a CI run is: the call it runs, in a file of the workspace. */
@@ -1345,7 +1429,9 @@ export const CI_SESSION_NOTIFICATION = 'piwi/ciSessionChanged';
  * test the lane's worker runs, through its next tests and the worker Playwright starts in its place, until the client
  * stops (`on: false`), its session ends, or the instance ends the watch. One watch per client: another replaces it.
  * Answered once the instance opened the watch, or with why not (`ok: false`): a run the service does not follow, one
- * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick.
+ * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick. The
+ * instance counts the watch as a full view of the lane, a controller's when the key's person may control the
+ * project's runs: a test that fails in it then waits for them, when the project holds failing CI tests.
  */
 export interface CiWatchParams {
   /** The session's `root`; absent, the first session of the run. */
@@ -1391,6 +1477,40 @@ export type CiLayer = {
   test: string | null;
 } & LaneLayerData;
 
+/**
+ * `piwi/ciLetGo`: **Let it go** on the CI lane the client watches (`lane` and `shard` as its `CiTest` names them), whose
+ * test is held at its failure (`CiTest.held`): the service asks the instance on its watch of the lane, which must count
+ * as a controller's, and the test then tears down as it would have, its result unchanged. Answered with the instance's
+ * sentence, or why not (`ok: false`): no watch of the lane, a watch of someone who may not control the run, no hold,
+ * or the instance's refusal in its own words.
+ */
+export interface CiLetGoParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+}
+
+export const CI_LET_GO_REQUEST = 'piwi/ciLetGo';
+
+/**
+ * `piwi/ciControl`: **Pause**, **Resume** or **End the test** (`command`) on the CI lane the client watches (`lane` and
+ * `shard` as its `CiTest` names them), as its `CiTest.controls` offers them: the service asks the instance on its watch
+ * of the lane, which must count as a controller's, for the lane's worker. Answered with the instance's sentence, or why
+ * not (`ok: false`): no watch of the lane, a watch of someone who may not control the run, no worker in the lane, or
+ * the instance's refusal in its own words.
+ */
+export interface CiControlParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  command: CiControlCommand;
+}
+
+export const CI_CONTROL_REQUEST = 'piwi/ciControl';
 export const CI_WATCH_REQUEST = 'piwi/ciWatch';
 export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
 export const CI_LAYER_NOTIFICATION = 'piwi/ciLayer';

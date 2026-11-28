@@ -11,7 +11,7 @@ it is needed: a CI server action, [source control](/guide/source-control), an AI
 connection or a Slack channel. A rotation is one change, and every use is logged.
 
 <figure>
-  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins and two GitHub credentials, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
+  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: four Jenkins, two GitHub and a Zephyr Scale credential, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
   <figcaption>Settings → Credentials: a credential's panel, with the CI actions that name it and its log.</figcaption>
 </figure>
 
@@ -68,15 +68,15 @@ Slack channel): the answer lists them.
 
 In **Project → Settings → CI**, a CI server action's editor has a **Credential** picker and a **New credential**
 button. The action's base URL may stay empty: it is then the credential's destination. The request preview shows which
-credential the request carries, and says when the credential would refuse it.
+credential the request carries, the inputs it does not allow, and when it would refuse the request.
 
 Each dispatch and each **Check** checks the credential again before anything is sent: still active, shared with the
 project, and holding the request's URL under its destination, and allowing a Custom request when the action sends one.
 
 ## What names a credential
 
-- **A CI action**: a CI server action's requests, or the dispatch and the **Check** of a GitHub, GitLab or Bitbucket
-  action ([Re-run in CI](/features/ci-rerun)).
+- **A CI action**: a CI server action's requests, or the dispatch, **Check** and listings of a GitHub, GitLab or
+  Bitbucket action ([CI actions](/features/ci-actions)).
 - **Source control**: a project's repository calls, else the instance's, with a GitHub, GitLab or Bitbucket token sent
   to the host's API ([Source control](/guide/source-control#set-the-credential)).
 - **An AI role**: the key of a role of **Settings → AI**, sent to its provider ([AI provider](/guide/ai-provider#api-keys)).
@@ -119,12 +119,12 @@ connection's token moves to a credential of its own, and equal tokens of global 
 A credential's panel lists its uses, newest first, and the page's **Log**, for an administrator, those of every
 credential, a deleted one and the environment's included:
 
-- **What**: a CI dispatch or a Check, with the CI action it was for; a repository read, a commit status, a
+- **What**: a CI dispatch, Check or job listing, with the CI action it was for; a repository read, a commit status, a
   pull-request comment or an auto-heal write, with its commit, pull request or branch; an AI model call; a read or a
   write of a Jira or Zephyr Scale connection; a Slack message, with its channel.
 - **Where**: the project, and the request's origin and path (never its query).
 - **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script); for counted
-  Checks, the last of the hour.
+  Checks and listings, the last of the hour.
 - **How it ended**: `sent` until the service answers, then `ok` or `failed` with the reason; `refused` when the
   credential's rules stopped it before anything was sent, with the reason.
 
@@ -135,7 +135,8 @@ page's **Log**, under its name, until then.
 
 ## Related
 
-- [Re-run in CI](/features/ci-rerun): the CI actions that name a credential
+- [CI actions](/features/ci-actions): the CI actions that name a credential
+- [Per-user credentials](./per-user-credentials): each person's own token
 - [Source control](/guide/source-control): what reads and writes a repository with an SCM credential
 - [Jira Cloud](./integrations) and [Zephyr Scale](./zephyr-scale): the connections that name a credential
 - [Access, roles and groups](./project-access): who holds `credentials:manage` and `project:manage`

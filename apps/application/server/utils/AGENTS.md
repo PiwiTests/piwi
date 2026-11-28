@@ -16,6 +16,7 @@ in-app assistant).
 | `ai-context*.ts`, `integrations/automation.ts`                                                                                                                                        | [Wiring rules](#wiring-rules)                       |
 | `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes                                                                                                           | [Desktop runs](#desktop-runs)                       |
 | `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token, `ai-credentials.ts`, `integrations/connection-credentials.ts`, `notifications/slack-credentials.ts` | [Credentials](#credentials)                         |
+| `ci-providers/`, `ci-rerun.ts`, `ci-jobs.ts`, `shared/ci-targets.ts`                                                                                                                  | [CI targets](#ci-targets)                           |
 
 ## SCM providers
 
@@ -53,9 +54,9 @@ in-app assistant).
   object stays one cluster (`tests/unit/error-fingerprint.test.ts`).
 - **A normalization change bumps `FINGERPRINT_VERSION`** and makes the same change to
   `shared/demo/demo-fingerprint.mjs#computeDemoFingerprint`, regex for regex: the seed generator runs under plain Node,
-  which cannot load the TypeScript module, and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run
-  `npm run app:seed:demo`. `shared/error-fingerprint-v4.ts` stays as it is: the aliases stored without a sample hold
-  version 4 fingerprints, which `backfillAliasSamples` matches with it.
+  and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run `npm run app:seed:demo`.
+  `shared/error-fingerprint-v4.ts` keeps computing what version 4 stored, whatever `extractSelector` reads (its test
+  pins the values), for the aliases stored without a sample (`backfillAliasSamples`).
 - **A change to `maskVolatile` or `condenseErrorText` also bumps `EMBEDDING_INPUT_VERSION`**
   (`server/utils/cluster-similarity.ts`): they shape the text embedded for cluster similarity, and the bump re-embeds
   the stored vectors. `tests/unit/cluster-similarity.test.ts` pins that text.
@@ -290,11 +291,17 @@ runs (`@piwitests/editor/run-host`), plus these:
   copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).
 
+## CI targets
+
+- **What reaches a CI action's target goes through its kind's provider** (`ciProvider`), never a `target.type` switch
+  in `ci-rerun.ts`, `ci-actions.ts` or `ci-jobs.ts`; what is known without reaching it, through its definition
+  (`shared/ci-targets.ts`). Adding a kind: `ARCHITECTURE.md`, _Extension points_.
+
 ## Credentials
 
-- **A credential's secret is opened only by `withCredential`** (`credentials.ts`), which checks the credential's rules
-  (`credentialRefusal`), logs the use and masks the secret in what it keeps: never read `credentials.secret` or select a
-  whole credential row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
+- **A credential's secret, or a person's token, is opened only by `withCredential`** (`credentials.ts`), which checks
+  the credential's rules (`credentialRefusal`), logs the use and masks it in what it keeps: never read either column or
+  select a whole row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
   without the secret and builds it again inside `withCredential`'s `send`, as `ci-server-dispatch.ts` does.
 - **An SCM provider gets a token only from `openScmProvider`** (`scm/index.ts`), which picks the credential
   (`scmCredentialFor`) and opens it through `withCredential` as one counted read. Every write of `ScmProvider` is a

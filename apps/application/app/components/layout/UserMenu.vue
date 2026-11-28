@@ -231,7 +231,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'GitHub repository',
         icon: 'i-lucide-github',
-        to: 'https://github.com/piwitests/piwi',
+        to: 'https://github.com/PiwiTests/piwi',
         target: '_blank',
       },
     ],

@@ -13,7 +13,7 @@ import { SETTINGS_PAGES } from '#shared/settings-metadata';
 import { findGuideAnchor } from '#shared/guide-anchors/index.mjs';
 
 delete process.env.PIWI_DATABASE_URL;
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
+vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, appVersion: '0.59.0', public: {} }));
 
 const { explainSetting } = await import('../../server/utils/assistant/settings');
 const { setAppSetting } = await import('../../server/utils/app-settings');

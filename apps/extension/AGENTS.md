@@ -131,11 +131,9 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the
-  trace so far (`trace`) and End the test while a Pause waits (`give-up`) names the stop shown (`since`),** so a click
-  made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share live, Hold failures, Stop
-  the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window,
-  and Stop sharing every time (`runs.spec.ts`). (see "The Runs window")
+- **A Runs window control names the stop shown (`since`), the run-wide and lane ones aside,** so a click made twice
+  never answers the next stop (`parseRunsRequest`, `runs.test.ts`). Share live asks first, the first time in a
+  window, and Stop sharing every time (`runs.spec.ts`). (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
@@ -160,9 +158,9 @@ each rule below ends with the section to read there.
   copy it here. The window says its words through `runsSpeaker` (`src/shared/run-words.ts`), and `run-words.test.ts`
   holds the model's English words to the catalogs. (see "The Runs window")
 - **The Runs window's CI runs are read-only, read from the connected instance only while a window is open**
-  (`CiRunsWatch`, `src/background/ci-runs.ts`): no control, input or pick reaches them, and the worker holds one CI
-  watch at a time (`CiLaneWatch`), its images kept in memory alone. Checked by `ci-runs.test.ts`, `ci-watch.test.ts`
-  and `runs-ci.spec.ts`. (see "The CI runs in progress")
+  (`CiRunsWatch`, `src/background/ci-runs.ts`): only Pause, Resume, End the test and Let it go reach them, on the
+  worker's one CI watch (`CiLaneWatch`) once its `hello` says controller, and its images are kept in memory alone.
+  Checked by `ci-runs.test.ts`, `ci-watch.test.ts` and `runs-ci.spec.ts`. (see "The CI runs in progress")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
   window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
   it was written. (see "The Runs window")

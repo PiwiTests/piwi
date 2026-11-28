@@ -73,6 +73,12 @@ function int(value: unknown): number | null {
   return n === null ? null : Math.round(n);
 }
 
+/** A share from 0 to 1, or null when it was not measured. */
+function share(value: unknown): number | null {
+  const n = num(value);
+  return n === null ? null : Math.min(1, n);
+}
+
 function text(value: unknown, cap = TEXT_CAP): string | null {
   return typeof value === 'string' && value.length > 0 ? value.slice(0, cap) : null;
 }
@@ -121,7 +127,7 @@ export function sanitizeExecutionResources(value: unknown): WireExecutionResourc
   return {
     workerCpuMs,
     roles: byRole(raw.roles, roleCost),
-    loopUtilization: Math.min(1, num(raw.loopUtilization) ?? 0),
+    loopUtilization: share(raw.loopUtilization),
     loopDelayP99Ms: num(raw.loopDelayP99Ms) ?? 0,
     involuntarySwitches: int(raw.involuntarySwitches) ?? 0,
     heapUsedMb: num(raw.heapUsedMb) ?? 0,
@@ -229,12 +235,14 @@ function workerHealth(value: unknown): WorkerHealth | null {
   const raw = obj(value);
   const tests = raw ? int(raw.tests) : null;
   if (!raw || !tests) return null;
-  return {
+  const health: WorkerHealth = {
     tests,
-    loopUtilization: Math.min(1, num(raw.loopUtilization) ?? 0),
+    loopUtilization: share(raw.loopUtilization),
     loopDelayP99Ms: num(raw.loopDelayP99Ms) ?? 0,
     involuntarySwitchesPerTest: num(raw.involuntarySwitchesPerTest) ?? 0,
   };
+  if (typeof raw.gcReported === 'boolean') health.gcReported = raw.gcReported;
+  return health;
 }
 
 /** A timed series rebuilt: `[ms, value]` pairs of finite, non-negative numbers, each value at most `max`. */

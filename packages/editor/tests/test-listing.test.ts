@@ -8,6 +8,7 @@ import { LIST_TESTS_ENV, type ListedTestLine } from '../src/recorder/use-reporte
 import {
   excludingFilter,
   listTests,
+  onlyNamedIds,
   parseErrorLines,
   parseTestsLine,
   specFilter,
@@ -68,6 +69,7 @@ const listed = (fields: Partial<ListedTestLine>): ListedTestLine => ({
   suites: [],
   project: '',
   tags: [],
+  onlyNamed: false,
   ...fields,
 });
 
@@ -140,7 +142,7 @@ describe('a listing', () => {
     const asked: string[][] = [];
     const run: ListRunner = (_config, args) => {
       asked.push(args);
-      if (args.length === 0) {
+      if (args.length === 1) {
         return Promise.resolve({
           stdout: `${testsLine([])}PIWI_ERROR {"message":"SyntaxError: Unexpected token","file":"tests/broken.spec.ts","line":3}\n`,
           stderr: '',
@@ -153,7 +155,8 @@ describe('a listing', () => {
       tests: [listed({ file: 'tests/cart.spec.ts' })],
       broken: new Map([['tests/broken.spec.ts', 'SyntaxError: Unexpected token (line 3)']]),
     });
-    expect(asked).toEqual([[], [excludingFilter('/work', ['tests/broken.spec.ts'])]]);
+    // Every project's tests, those with `default: false` too.
+    expect(asked).toEqual([['--project=*'], [excludingFilter('/work', ['tests/broken.spec.ts']), '--project=*']]);
   });
 
   test('says why when Playwright lists nothing at all, or cannot run', async () => {
@@ -214,6 +217,74 @@ describe('a listing', () => {
     const one = await listTests(playwright, config, ['tests/cart.spec.js']);
     expect('tests' in one && one.tests.length).toBe(6);
   }, 120_000);
+
+  test('lists a config whose projects none matches without --project, as it lists nothing', async () => {
+    const asked: string[][] = [];
+    const run: ListRunner = (_config, args) => {
+      asked.push(args);
+      return Promise.resolve(
+        args.includes('--project=*')
+          ? { stdout: '', stderr: 'Error: No projects matched. Available projects: \n    at filterProjects\n' }
+          : { stdout: `PIWI_USE {"rootDir":"/work","projects":[]}\n${testsLine([])}`, stderr: '' },
+      );
+    };
+    expect(await listTests(run, '/work/playwright.config.ts', null)).toEqual({ tests: [], broken: new Map() });
+    expect(asked).toEqual([['--project=*'], []]);
+  });
+
+  test('lists the tests of a project with default: false, each saying whether a run must name it', async () => {
+    const test = (title: string) =>
+      `const { test } = require('@playwright/test');\ntest('${title}', async () => {});\n`;
+    const config = project('named', {
+      'playwright.config.js': [
+        'module.exports = {',
+        "  testDir: 'tests',",
+        '  projects: [',
+        "    { name: 'setup', testMatch: /\\.setup\\.js/, default: false, teardown: 'cleanup' },",
+        "    { name: 'cleanup', testMatch: /\\.teardown\\.js/, default: false },",
+        "    { name: 'chromium', testMatch: /cart/, dependencies: ['setup'] },",
+        "    { name: 'slow', testMatch: /slow/, default: false },",
+        '    { testMatch: /visual/, default: false },',
+        '  ],',
+        '};',
+        '',
+      ].join('\n'),
+      'tests/auth.setup.js': test('logs in'),
+      'tests/db.teardown.js': test('cleans'),
+      'tests/cart.spec.js': test('adds'),
+      'tests/slow.spec.js': test('waits'),
+      'tests/visual.spec.js': test('looks'),
+    });
+    const result = await listTests(playwright, config, null);
+    if ('error' in result) throw new Error(result.error);
+    // A setup project and its teardown, which the default project runs, run without --project too.
+    expect(result.tests.map((t) => `${t.project}: ${t.title}${t.onlyNamed ? ' (only named)' : ''}`).sort()).toEqual([
+      ': looks (only named)',
+      'chromium: adds',
+      'cleanup: cleans',
+      'setup: logs in',
+      'slow: waits (only named)',
+    ]);
+    // Two projects of one name, one run by default: the other's tests alone are named.
+    const shared = project('shared-name', {
+      'playwright.config.js':
+        "module.exports = { projects: [{ name: 'e2e', testDir: 'a' }, { name: 'e2e', testDir: 'b', default: false }] };\n",
+      'a/x.spec.js': test('x'),
+      'b/y.spec.js': test('y'),
+    });
+    const both = await listTests(playwright, shared, null);
+    if ('error' in both) throw new Error(both.error);
+    expect(both.tests.map((t) => `${t.project}: ${t.title}${t.onlyNamed ? ' (only named)' : ''}`).sort()).toEqual([
+      'e2e: x',
+      'e2e: y (only named)',
+    ]);
+    // A config with no project lists nothing, and says nothing failed.
+    const empty = project('no-projects', {
+      'playwright.config.js': "module.exports = { testDir: 'tests', projects: [] };\n",
+      'tests/cart.spec.js': test('adds'),
+    });
+    expect(await listTests(playwright, empty, null)).toEqual({ tests: [], broken: new Map() });
+  }, 120_000);
 });
 
 describe('each config’s listing', () => {
@@ -222,7 +293,10 @@ describe('each config’s listing', () => {
     const calls: Array<{ args: string[]; answer: () => void }> = [];
     const run: ListRunner = (_config, args) =>
       new Promise((resolve) => {
-        const tests = args.length ? all.filter((t) => args.some((a) => playwrightRegExp(a).test(`/w/${t.file}`))) : all;
+        const filters = args.filter((a) => a !== '--project=*');
+        const tests = filters.length
+          ? all.filter((t) => filters.some((a) => playwrightRegExp(a).test(`/w/${t.file}`)))
+          : all;
         calls.push({ args, answer: () => resolve({ stdout: testsLine(tests), stderr: '' }) });
       });
     return { calls, run };
@@ -249,7 +323,11 @@ describe('each config’s listing', () => {
     expect(changed).toEqual(['/w']);
     // The two specs asked meanwhile, in one listing.
     expect(calls).toHaveLength(2);
-    expect(calls[1]!.args).toEqual([specFilter('/w', 'tests/a.spec.ts'), specFilter('/w', 'tests/b.spec.ts')]);
+    expect(calls[1]!.args).toEqual([
+      specFilter('/w', 'tests/a.spec.ts'),
+      specFilter('/w', 'tests/b.spec.ts'),
+      '--project=*',
+    ]);
   });
 
   test('a listing of some specs keeps theirs alone, whatever else Playwright lists', async () => {
@@ -275,8 +353,9 @@ describe('each config’s listing', () => {
   test('a spec listed alone replaces its own tests, a spec with none leaves the listing', async () => {
     let tests = [listed({ file: 'tests/a.spec.ts', id: 'a' }), listed({ file: 'tests/b.spec.ts', id: 'b' })];
     const run: ListRunner = (_config, args) => {
-      const picked = args.length
-        ? tests.filter((t) => args.some((a) => playwrightRegExp(a).test(`/w/${t.file}`)))
+      const filters = args.filter((a) => a !== '--project=*');
+      const picked = filters.length
+        ? tests.filter((t) => filters.some((a) => playwrightRegExp(a).test(`/w/${t.file}`)))
         : tests;
       return Promise.resolve({ stdout: testsLine(picked), stderr: '' });
     };
@@ -293,6 +372,23 @@ describe('each config’s listing', () => {
     const listing = listings.state('/w')!.listing!;
     expect([...listing.specs]).toEqual([['tests/a.spec.ts', [tests[0]]]]);
     expect(listing.listedAt.has('tests/b.spec.ts')).toBe(true);
+  });
+
+  test('names the tests whose project runs only when --project names it', async () => {
+    const run: ListRunner = () =>
+      Promise.resolve({
+        stdout: testsLine([listed({ id: 'a' }), listed({ id: 'b', onlyNamed: true }), listed({ id: 'c', file: 'x' })]),
+        stderr: '',
+      });
+    const listings = new TestListings(
+      run,
+      () => {},
+      () => 'same',
+    );
+    listings.listAll('/w', '/w/playwright.config.ts');
+    await settle();
+    expect([...onlyNamedIds(listings.state('/w')!.listing)]).toEqual(['b']);
+    expect(onlyNamedIds(null).size).toBe(0);
   });
 
   test('lists a config whole again when a file it reads changed, and keeps the last listing past a failure', async () => {
